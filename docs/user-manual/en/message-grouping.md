@@ -78,7 +78,7 @@ Here's a simple example using the "ConnectionFactory" connection factory
 which is available in the context by default:
 
     java.naming.factory.initial=org.apache.activemq.artemis.jndi.ActiveMQInitialContextFactory
-    connectionFactory.myConnectionFactory=tcp://localhost:61616?roupID=Group-0
+    connectionFactory.myConnectionFactory=tcp://localhost:61616?groupID=Group-0
 
 ## Example
 
@@ -120,7 +120,7 @@ file.
     </grouping-handler>
 
 The *address* attribute refers to a [cluster connection and the address
-it uses](#clusters.address), refer to the clustering section on how to
+it uses](clusters.md#configuring-cluster-connections), refer to the clustering section on how to
 configure clusters. The *timeout* attribute referees to how long to wait
 for a decision to be made, an exception will be thrown during the send
 if this timeout is reached, this ensures that strict ordering is kept.

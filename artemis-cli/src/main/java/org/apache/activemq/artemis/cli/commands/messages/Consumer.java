@@ -24,11 +24,10 @@ import javax.jms.Session;
 import io.airlift.airline.Command;
 import io.airlift.airline.Option;
 import org.apache.activemq.artemis.cli.commands.ActionContext;
-import org.apache.activemq.artemis.cli.commands.util.ConsumerThread;
 import org.apache.activemq.artemis.jms.client.ActiveMQConnectionFactory;
 import org.apache.activemq.artemis.jms.client.ActiveMQDestination;
 
-@Command(name = "consumer", description = "It will send consume messages from an instance")
+@Command(name = "consumer", description = "It will consume messages from an instance")
 public class Consumer extends DestAbstract {
 
    @Option(name = "--durable", description = "It will use durable subscription in case of client")
@@ -49,17 +48,16 @@ public class Consumer extends DestAbstract {
 
       System.out.println("Consumer:: filter = " + filter);
 
-      ActiveMQConnectionFactory factory = new ActiveMQConnectionFactory(brokerURL, user, password);
+      ActiveMQConnectionFactory factory = createConnectionFactory();
 
-      Destination dest = ActiveMQDestination.createDestination(this.destination, ActiveMQDestination.QUEUE_TYPE);
+      Destination dest = ActiveMQDestination.createDestination(this.destination, ActiveMQDestination.TYPE.QUEUE);
       try (Connection connection = factory.createConnection()) {
          ConsumerThread[] threadsArray = new ConsumerThread[threads];
          for (int i = 0; i < threads; i++) {
             Session session;
             if (txBatchSize > 0) {
                session = connection.createSession(true, Session.SESSION_TRANSACTED);
-            }
-            else {
+            } else {
                session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
             }
             threadsArray[i] = new ConsumerThread(session, dest, i);

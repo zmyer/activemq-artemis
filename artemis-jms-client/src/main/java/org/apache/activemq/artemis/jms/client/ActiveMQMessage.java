@@ -43,9 +43,16 @@ import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.api.core.client.ClientMessage;
 import org.apache.activemq.artemis.api.core.client.ClientSession;
 import org.apache.activemq.artemis.api.jms.ActiveMQJMSConstants;
-import org.apache.activemq.artemis.core.message.impl.MessageInternal;
+import org.apache.activemq.artemis.core.client.ActiveMQClientMessageBundle;
+import org.apache.activemq.artemis.core.client.impl.ClientMessageInternal;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.reader.MessageUtil;
 import org.apache.activemq.artemis.utils.UUID;
+
+import static org.apache.activemq.artemis.jms.client.ActiveMQDestination.QUEUE_QUALIFIED_PREFIX;
+import static org.apache.activemq.artemis.jms.client.ActiveMQDestination.TEMP_QUEUE_QUALIFED_PREFIX;
+import static org.apache.activemq.artemis.jms.client.ActiveMQDestination.TEMP_TOPIC_QUALIFED_PREFIX;
+import static org.apache.activemq.artemis.jms.client.ActiveMQDestination.TOPIC_QUALIFIED_PREFIX;
 
 /**
  * ActiveMQ Artemis implementation of a JMS Message.
@@ -62,7 +69,7 @@ public class ActiveMQMessage implements javax.jms.Message {
       Map<String, Object> jmsMessage = new HashMap<>();
 
       String deliveryMode = (Boolean) coreMessage.get("durable") ? "PERSISTENT" : "NON_PERSISTENT";
-      byte priority = (Byte) coreMessage.get("priority");
+      int priority = (Byte) coreMessage.get("priority");
       long timestamp = (Long) coreMessage.get("timestamp");
       long expiration = (Long) coreMessage.get("expiration");
 
@@ -77,16 +84,13 @@ public class ActiveMQMessage implements javax.jms.Message {
             entry.getKey().equals("timestamp") ||
             entry.getKey().equals("priority")) {
             // Ignore
-         }
-         else if (entry.getKey().equals("userID")) {
+         } else if (entry.getKey().equals("userID")) {
             jmsMessage.put("JMSMessageID", entry.getValue().toString());
-         }
-         else {
+         } else {
             Object value = entry.getValue();
             if (value instanceof SimpleString) {
                jmsMessage.put(entry.getKey(), value.toString());
-            }
-            else {
+            } else {
                jmsMessage.put(entry.getKey(), value);
             }
          }
@@ -94,8 +98,6 @@ public class ActiveMQMessage implements javax.jms.Message {
 
       return jmsMessage;
    }
-
-
 
    public static CompositeData coreCompositeTypeToJMSCompositeType(CompositeDataSupport data) throws Exception {
       CompositeData jmsdata = new CompositeDataSupport(data.getCompositeType(), new HashMap<String, Object>());
@@ -124,7 +126,9 @@ public class ActiveMQMessage implements javax.jms.Message {
       return createMessage(message, session, null);
    }
 
-   public static ActiveMQMessage createMessage(final ClientMessage message, final ClientSession session, final ConnectionFactoryOptions options) {
+   public static ActiveMQMessage createMessage(final ClientMessage message,
+                                               final ClientSession session,
+                                               final ConnectionFactoryOptions options) {
       int type = message.getType();
 
       ActiveMQMessage msg;
@@ -197,6 +201,8 @@ public class ActiveMQMessage implements javax.jms.Message {
 
    private boolean individualAck;
 
+   private boolean clientAck;
+
    private long jmsDeliveryTime;
 
    // Constructors --------------------------------------------------
@@ -248,16 +254,14 @@ public class ActiveMQMessage implements javax.jms.Message {
          try {
             byte[] corrIDBytes = foreign.getJMSCorrelationIDAsBytes();
             setJMSCorrelationIDAsBytes(corrIDBytes);
-         }
-         catch (JMSException e) {
+         } catch (JMSException e) {
             // specified as String
             String corrIDString = foreign.getJMSCorrelationID();
             if (corrIDString != null) {
                setJMSCorrelationID(corrIDString);
             }
          }
-      }
-      else {
+      } else {
          // Some providers, like WSMQ do automatic conversions between native byte[] correlation id
          // and String correlation id. This makes it impossible for ActiveMQ Artemis to guarantee to return the correct
          // type as set by the user
@@ -292,7 +296,7 @@ public class ActiveMQMessage implements javax.jms.Message {
    @Override
    public String getJMSMessageID() {
       if (msgID == null) {
-         UUID uid = message.getUserID();
+         UUID uid = (UUID)message.getUserID();
 
          msgID = uid == null ? null : "ID:" + uid.toString();
       }
@@ -329,8 +333,7 @@ public class ActiveMQMessage implements javax.jms.Message {
    public void setJMSCorrelationIDAsBytes(final byte[] correlationID) throws JMSException {
       try {
          MessageUtil.setJMSCorrelationIDAsBytes(message, correlationID);
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          JMSException ex = new JMSException(e.getMessage());
          ex.initCause(e);
          throw ex;
@@ -359,7 +362,7 @@ public class ActiveMQMessage implements javax.jms.Message {
          SimpleString repl = MessageUtil.getJMSReplyTo(message);
 
          if (repl != null) {
-            replyTo = ActiveMQDestination.fromAddress(repl.toString());
+            replyTo = ActiveMQDestination.fromPrefixedName(repl.toString());
          }
       }
       return replyTo;
@@ -369,17 +372,26 @@ public class ActiveMQMessage implements javax.jms.Message {
    public void setJMSReplyTo(final Destination dest) throws JMSException {
 
       if (dest == null) {
-         MessageUtil.setJMSReplyTo(message, null);
+         MessageUtil.setJMSReplyTo(message, (String) null);
          replyTo = null;
-      }
-      else {
+      } else {
          if (dest instanceof ActiveMQDestination == false) {
             throw new InvalidDestinationException("Foreign destination " + dest);
          }
 
+         String prefix = "";
+         if (dest instanceof ActiveMQTemporaryQueue) {
+            prefix = TEMP_QUEUE_QUALIFED_PREFIX;
+         } else if (dest instanceof ActiveMQQueue) {
+            prefix = QUEUE_QUALIFIED_PREFIX;
+         } else if (dest instanceof ActiveMQTemporaryTopic) {
+            prefix = TEMP_TOPIC_QUALIFED_PREFIX;
+         } else if (dest instanceof ActiveMQTopic) {
+            prefix = TOPIC_QUALIFIED_PREFIX;
+         }
          ActiveMQDestination jbd = (ActiveMQDestination) dest;
 
-         MessageUtil.setJMSReplyTo(message, jbd.getSimpleAddress());
+         MessageUtil.setJMSReplyTo(message, prefix + jbd.getAddress());
 
          replyTo = jbd;
       }
@@ -388,9 +400,16 @@ public class ActiveMQMessage implements javax.jms.Message {
    @Override
    public Destination getJMSDestination() throws JMSException {
       if (dest == null) {
-         SimpleString sdest = message.getAddress();
-
-         dest = sdest == null ? null : ActiveMQDestination.fromAddress(sdest.toString());
+         SimpleString address = message.getAddressSimpleString();
+         if (address == null) {
+            dest = null;
+         } else if (RoutingType.ANYCAST.equals(message.getRoutingType())) {
+            dest = ActiveMQDestination.createQueue(address);
+         } else if (RoutingType.MULTICAST.equals(message.getRoutingType())) {
+            dest = ActiveMQDestination.createTopic(address);
+         } else {
+            dest = ActiveMQDestination.fromPrefixedName(address.toString());
+         }
       }
 
       return dest;
@@ -410,11 +429,9 @@ public class ActiveMQMessage implements javax.jms.Message {
    public void setJMSDeliveryMode(final int deliveryMode) throws JMSException {
       if (deliveryMode == DeliveryMode.PERSISTENT) {
          message.setDurable(true);
-      }
-      else if (deliveryMode == DeliveryMode.NON_PERSISTENT) {
+      } else if (deliveryMode == DeliveryMode.NON_PERSISTENT) {
          message.setDurable(false);
-      }
-      else {
+      } else {
          throw ActiveMQJMSClientBundle.BUNDLE.illegalDeliveryMode(deliveryMode);
       }
    }
@@ -428,12 +445,10 @@ public class ActiveMQMessage implements javax.jms.Message {
    public void setJMSRedelivered(final boolean redelivered) throws JMSException {
       if (!redelivered) {
          message.setDeliveryCount(1);
-      }
-      else {
+      } else {
          if (message.getDeliveryCount() > 1) {
             // do nothing
-         }
-         else {
+         } else {
             message.setDeliveryCount(2);
          }
       }
@@ -499,9 +514,8 @@ public class ActiveMQMessage implements javax.jms.Message {
    @Override
    public boolean getBooleanProperty(final String name) throws JMSException {
       try {
-         return message.getBooleanProperty(new SimpleString(name));
-      }
-      catch (ActiveMQPropertyConversionException e) {
+         return message.getBooleanProperty(name);
+      } catch (ActiveMQPropertyConversionException e) {
          throw new MessageFormatException(e.getMessage());
       }
    }
@@ -509,9 +523,8 @@ public class ActiveMQMessage implements javax.jms.Message {
    @Override
    public byte getByteProperty(final String name) throws JMSException {
       try {
-         return message.getByteProperty(new SimpleString(name));
-      }
-      catch (ActiveMQPropertyConversionException e) {
+         return message.getByteProperty(name);
+      } catch (ActiveMQPropertyConversionException e) {
          throw new MessageFormatException(e.getMessage());
       }
    }
@@ -519,9 +532,8 @@ public class ActiveMQMessage implements javax.jms.Message {
    @Override
    public short getShortProperty(final String name) throws JMSException {
       try {
-         return message.getShortProperty(new SimpleString(name));
-      }
-      catch (ActiveMQPropertyConversionException e) {
+         return message.getShortProperty(name);
+      } catch (ActiveMQPropertyConversionException e) {
          throw new MessageFormatException(e.getMessage());
       }
    }
@@ -533,9 +545,8 @@ public class ActiveMQMessage implements javax.jms.Message {
       }
 
       try {
-         return message.getIntProperty(new SimpleString(name));
-      }
-      catch (ActiveMQPropertyConversionException e) {
+         return message.getIntProperty(name);
+      } catch (ActiveMQPropertyConversionException e) {
          throw new MessageFormatException(e.getMessage());
       }
    }
@@ -547,9 +558,8 @@ public class ActiveMQMessage implements javax.jms.Message {
       }
 
       try {
-         return message.getLongProperty(new SimpleString(name));
-      }
-      catch (ActiveMQPropertyConversionException e) {
+         return message.getLongProperty(name);
+      } catch (ActiveMQPropertyConversionException e) {
          throw new MessageFormatException(e.getMessage());
       }
    }
@@ -557,9 +567,8 @@ public class ActiveMQMessage implements javax.jms.Message {
    @Override
    public float getFloatProperty(final String name) throws JMSException {
       try {
-         return message.getFloatProperty(new SimpleString(name));
-      }
-      catch (ActiveMQPropertyConversionException e) {
+         return message.getFloatProperty(name);
+      } catch (ActiveMQPropertyConversionException e) {
          throw new MessageFormatException(e.getMessage());
       }
    }
@@ -567,9 +576,8 @@ public class ActiveMQMessage implements javax.jms.Message {
    @Override
    public double getDoubleProperty(final String name) throws JMSException {
       try {
-         return message.getDoubleProperty(new SimpleString(name));
-      }
-      catch (ActiveMQPropertyConversionException e) {
+         return message.getDoubleProperty(name);
+      } catch (ActiveMQPropertyConversionException e) {
          throw new MessageFormatException(e.getMessage());
       }
    }
@@ -583,15 +591,12 @@ public class ActiveMQMessage implements javax.jms.Message {
       try {
          if (MessageUtil.JMSXGROUPID.equals(name)) {
             return message.getStringProperty(org.apache.activemq.artemis.api.core.Message.HDR_GROUP_ID);
+         } else if (MessageUtil.JMSXUSERID.equals(name)) {
+            return message.getValidatedUserID();
+         } else {
+            return message.getStringProperty(name);
          }
-         else if (MessageUtil.JMSXUSERID.equals(name)) {
-            return message.getStringProperty(org.apache.activemq.artemis.api.core.Message.HDR_VALIDATED_USER);
-         }
-         else {
-            return message.getStringProperty(new SimpleString(name));
-         }
-      }
-      catch (ActiveMQPropertyConversionException e) {
+      } catch (ActiveMQPropertyConversionException e) {
          throw new MessageFormatException(e.getMessage());
       }
    }
@@ -604,7 +609,7 @@ public class ActiveMQMessage implements javax.jms.Message {
 
       Object val = message.getObjectProperty(name);
       if (val instanceof SimpleString) {
-         val = ((SimpleString) val).toString();
+         val = val.toString();
       }
       return val;
    }
@@ -618,43 +623,43 @@ public class ActiveMQMessage implements javax.jms.Message {
    public void setBooleanProperty(final String name, final boolean value) throws JMSException {
       checkProperty(name);
 
-      message.putBooleanProperty(new SimpleString(name), value);
+      message.putBooleanProperty(name, value);
    }
 
    @Override
    public void setByteProperty(final String name, final byte value) throws JMSException {
       checkProperty(name);
-      message.putByteProperty(new SimpleString(name), value);
+      message.putByteProperty(name, value);
    }
 
    @Override
    public void setShortProperty(final String name, final short value) throws JMSException {
       checkProperty(name);
-      message.putShortProperty(new SimpleString(name), value);
+      message.putShortProperty(name, value);
    }
 
    @Override
    public void setIntProperty(final String name, final int value) throws JMSException {
       checkProperty(name);
-      message.putIntProperty(new SimpleString(name), value);
+      message.putIntProperty(name, value);
    }
 
    @Override
    public void setLongProperty(final String name, final long value) throws JMSException {
       checkProperty(name);
-      message.putLongProperty(new SimpleString(name), value);
+      message.putLongProperty(name, value);
    }
 
    @Override
    public void setFloatProperty(final String name, final float value) throws JMSException {
       checkProperty(name);
-      message.putFloatProperty(new SimpleString(name), value);
+      message.putFloatProperty(name, value);
    }
 
    @Override
    public void setDoubleProperty(final String name, final double value) throws JMSException {
       checkProperty(name);
-      message.putDoubleProperty(new SimpleString(name), value);
+      message.putDoubleProperty(name, value);
    }
 
    @Override
@@ -663,12 +668,10 @@ public class ActiveMQMessage implements javax.jms.Message {
 
       if (handleCoreProperty(name, value, MessageUtil.JMSXGROUPID, org.apache.activemq.artemis.api.core.Message.HDR_GROUP_ID)) {
          return;
-      }
-      else if (handleCoreProperty(name, value, MessageUtil.JMSXUSERID, org.apache.activemq.artemis.api.core.Message.HDR_VALIDATED_USER)) {
+      } else if (handleCoreProperty(name, value, MessageUtil.JMSXUSERID, org.apache.activemq.artemis.api.core.Message.HDR_VALIDATED_USER)) {
          return;
-      }
-      else {
-         message.putStringProperty(new SimpleString(name), SimpleString.toSimpleString(value));
+      } else {
+         message.putStringProperty(name, value);
       }
    }
 
@@ -686,8 +689,7 @@ public class ActiveMQMessage implements javax.jms.Message {
          setOutputStream((OutputStream) value);
 
          return;
-      }
-      else if (ActiveMQJMSConstants.JMS_ACTIVEMQ_SAVE_STREAM.equals(name)) {
+      } else if (ActiveMQJMSConstants.JMS_ACTIVEMQ_SAVE_STREAM.equals(name)) {
          saveToOutputStream((OutputStream) value);
 
          return;
@@ -702,9 +704,8 @@ public class ActiveMQMessage implements javax.jms.Message {
       }
 
       try {
-         message.putObjectProperty(new SimpleString(name), value);
-      }
-      catch (ActiveMQPropertyConversionException e) {
+         message.putObjectProperty(name, value);
+      } catch (ActiveMQPropertyConversionException e) {
          throw new MessageFormatException(e.getMessage());
       }
    }
@@ -713,13 +714,16 @@ public class ActiveMQMessage implements javax.jms.Message {
    public void acknowledge() throws JMSException {
       if (session != null) {
          try {
+            if (session.isClosed()) {
+               throw ActiveMQClientMessageBundle.BUNDLE.sessionClosed();
+            }
             if (individualAck) {
                message.individualAcknowledge();
             }
-
-            session.commit();
-         }
-         catch (ActiveMQException e) {
+            if (clientAck || individualAck) {
+               session.commit(session.isBlockOnAcknowledge());
+            }
+         } catch (ActiveMQException e) {
             throw JMSExceptionHelper.convertFromActiveMQException(e);
          }
       }
@@ -727,31 +731,20 @@ public class ActiveMQMessage implements javax.jms.Message {
 
    @Override
    public long getJMSDeliveryTime() throws JMSException {
-      Long value;
-      try {
-         value = message.getLongProperty(org.apache.activemq.artemis.api.core.Message.HDR_SCHEDULED_DELIVERY_TIME);
-      }
-      catch (Exception e) {
-         return 0;
-      }
-
-      if (value == null) {
-         return 0;
-      }
-      else {
-         return value.longValue();
-      }
+      return message.getScheduledDeliveryTime();
    }
 
    @Override
    public void setJMSDeliveryTime(long deliveryTime) throws JMSException {
-      message.putLongProperty(org.apache.activemq.artemis.api.core.Message.HDR_SCHEDULED_DELIVERY_TIME, deliveryTime);
+      message.setScheduledDeliveryTime(deliveryTime);
    }
 
    @Override
    public <T> T getBody(Class<T> c) throws JMSException {
       if (isBodyAssignableTo(c)) {
          return getBodyInternal(c);
+      } else if (hasNoBody()) {
+         return null;
       }
       // XXX HORNETQ-1209 Do we need translations here?
       throw new MessageFormatException("Body not assignable to " + c);
@@ -759,12 +752,11 @@ public class ActiveMQMessage implements javax.jms.Message {
 
    @SuppressWarnings("unchecked")
    protected <T> T getBodyInternal(Class<T> c) throws MessageFormatException {
-      InputStream is = ((MessageInternal) message).getBodyInputStream();
+      InputStream is = ((ClientMessageInternal) message).getBodyInputStream();
       try {
          ObjectInputStream ois = new ObjectInputStream(is);
          return (T) ois.readObject();
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          throw new MessageFormatException(e.getMessage());
       }
    }
@@ -793,6 +785,10 @@ public class ActiveMQMessage implements javax.jms.Message {
 
    public void setIndividualAcknowledge() {
       this.individualAck = true;
+   }
+
+   public void setClientAcknowledge() {
+      this.clientAck = true;
    }
 
    public void resetMessageID(final String newMsgID) {
@@ -842,8 +838,7 @@ public class ActiveMQMessage implements javax.jms.Message {
 
       try {
          message.setOutputStream(output);
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          throw JMSExceptionHelper.convertFromActiveMQException(e);
       }
    }
@@ -856,8 +851,7 @@ public class ActiveMQMessage implements javax.jms.Message {
 
       try {
          message.saveToOutputStream(output);
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          throw JMSExceptionHelper.convertFromActiveMQException(e);
       }
    }
@@ -866,8 +860,7 @@ public class ActiveMQMessage implements javax.jms.Message {
       checkStream();
       try {
          return message.waitOutputStreamCompletion(timeWait);
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          throw JMSExceptionHelper.convertFromActiveMQException(e);
       }
    }
@@ -913,8 +906,7 @@ public class ActiveMQMessage implements javax.jms.Message {
                                                       " or " +
                                                       ActiveMQJMSConstants.JMS_ACTIVEMQ_SAVE_STREAM +
                                                       "?");
-         }
-         else {
+         } else {
             throw ActiveMQJMSClientBundle.BUNDLE.messageNotWritable();
          }
       }
@@ -966,11 +958,14 @@ public class ActiveMQMessage implements javax.jms.Message {
       }
    }
 
-   private boolean handleCoreProperty(final String name, final Object value, String jmsPropertyName, SimpleString corePropertyName) {
+   private boolean handleCoreProperty(final String name,
+                                      final Object value,
+                                      String jmsPropertyName,
+                                      SimpleString corePropertyName) {
       boolean result = false;
 
       if (jmsPropertyName.equals(name)) {
-         message.putStringProperty(corePropertyName, SimpleString.toSimpleString(value.toString()));
+         message.putStringProperty(corePropertyName, value.toString());
 
          result = true;
       }

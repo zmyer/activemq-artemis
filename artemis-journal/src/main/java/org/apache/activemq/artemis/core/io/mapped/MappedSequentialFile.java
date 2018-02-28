@@ -20,16 +20,13 @@ import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
 import org.apache.activemq.artemis.api.core.ActiveMQExceptionType;
 import org.apache.activemq.artemis.api.core.ActiveMQIOErrorException;
-import org.apache.activemq.artemis.core.buffers.impl.ChannelBufferWrapper;
 import org.apache.activemq.artemis.core.io.IOCallback;
 import org.apache.activemq.artemis.core.io.IOCriticalErrorListener;
 import org.apache.activemq.artemis.core.io.SequentialFile;
@@ -41,40 +38,52 @@ import org.apache.activemq.artemis.journal.ActiveMQJournalLogger;
 final class MappedSequentialFile implements SequentialFile {
 
    private final File directory;
-   private final long chunkBytes;
-   private final long overlapBytes;
    private final IOCriticalErrorListener criticalErrorListener;
+   private final MappedSequentialFileFactory factory;
    private File file;
    private File absoluteFile;
    private String fileName;
    private MappedFile mappedFile;
-   private ActiveMQBuffer pooledActiveMQBuffer;
+   private int capacity;
 
-   MappedSequentialFile(final File directory,
+   MappedSequentialFile(MappedSequentialFileFactory factory,
+                        final File directory,
                         final File file,
-                        final long chunkBytes,
-                        final long overlapBytes,
+                        final int capacity,
                         final IOCriticalErrorListener criticalErrorListener) {
+      this.factory = factory;
       this.directory = directory;
       this.file = file;
       this.absoluteFile = null;
       this.fileName = null;
-      this.chunkBytes = chunkBytes;
-      this.overlapBytes = overlapBytes;
+      this.capacity = capacity;
       this.mappedFile = null;
-      this.pooledActiveMQBuffer = null;
       this.criticalErrorListener = criticalErrorListener;
+   }
+
+   public MappedFile mappedFile() {
+      return mappedFile;
+   }
+
+   public int capacity() {
+      return this.capacity;
    }
 
    private void checkIsOpen() {
       if (!isOpen()) {
-         throw new IllegalStateException("must be open!");
+         throw new IllegalStateException("File not opened!");
+      }
+   }
+
+   private void checkIsOpen(IOCallback callback) {
+      if (!isOpen()) {
+         callback.onError(ActiveMQExceptionType.IO_ERROR.getCode(), "File not opened");
       }
    }
 
    private void checkIsNotOpen() {
       if (isOpen()) {
-         throw new IllegalStateException("must be closed!");
+         throw new IllegalStateException("File opened!");
       }
    }
 
@@ -91,14 +100,13 @@ final class MappedSequentialFile implements SequentialFile {
    @Override
    public void open() throws IOException {
       if (this.mappedFile == null) {
-         this.mappedFile = MappedFile.of(file, chunkBytes, overlapBytes);
+         this.mappedFile = MappedFile.of(this.file, 0, this.capacity);
       }
    }
 
    @Override
    public void open(int maxIO, boolean useExecutor) throws IOException {
       //ignore maxIO e useExecutor
-      ActiveMQJournalLogger.LOGGER.warn("ignoring maxIO and useExecutor unsupported parameters!");
       this.open();
    }
 
@@ -108,11 +116,6 @@ final class MappedSequentialFile implements SequentialFile {
       final long newPosition = this.mappedFile.position() + size;
       final boolean hasRemaining = newPosition <= this.mappedFile.length();
       return hasRemaining;
-   }
-
-   @Override
-   public int getAlignment() {
-      return 0;
    }
 
    @Override
@@ -131,12 +134,18 @@ final class MappedSequentialFile implements SequentialFile {
    @Override
    public void fill(int size) throws IOException {
       checkIsOpen();
-      this.mappedFile.zeros(this.mappedFile.position(), size);
+      //the fill will give a big performance hit when done in parallel of other writings!
+      this.mappedFile.zeros(0, size);
+      if (factory.isDatasync()) {
+         this.mappedFile.force();
+      }
+      //set the position to 0 to match the fill contract
+      this.mappedFile.position(0);
    }
 
    @Override
    public void delete() {
-      checkIsNotOpen();
+      close();
       if (file.exists() && !file.delete()) {
          ActiveMQJournalLogger.LOGGER.errorDeletingFile(this);
       }
@@ -144,10 +153,10 @@ final class MappedSequentialFile implements SequentialFile {
 
    @Override
    public void write(ActiveMQBuffer bytes, boolean sync, IOCallback callback) throws IOException {
-      checkIsOpen();
       if (callback == null) {
          throw new NullPointerException("callback parameter need to be set");
       }
+      checkIsOpen(callback);
       try {
          final ByteBuf byteBuf = bytes.byteBuf();
          final int writerIndex = byteBuf.writerIndex();
@@ -155,13 +164,12 @@ final class MappedSequentialFile implements SequentialFile {
          final int readableBytes = writerIndex - readerIndex;
          if (readableBytes > 0) {
             this.mappedFile.write(byteBuf, readerIndex, readableBytes);
-            if (sync) {
+            if (factory.isDatasync() && sync) {
                this.mappedFile.force();
             }
          }
          callback.done();
-      }
-      catch (IOException e) {
+      } catch (IOException e) {
          if (this.criticalErrorListener != null) {
             this.criticalErrorListener.onIOException(new ActiveMQIOErrorException(e.getMessage(), e), e.getMessage(), this);
          }
@@ -179,45 +187,25 @@ final class MappedSequentialFile implements SequentialFile {
       final int readableBytes = writerIndex - readerIndex;
       if (readableBytes > 0) {
          this.mappedFile.write(byteBuf, readerIndex, readableBytes);
-         if (sync) {
+         if (factory.isDatasync() && sync) {
             this.mappedFile.force();
          }
       }
    }
 
-   private ActiveMQBuffer acquiresActiveMQBufferWithAtLeast(int size) {
-      if (this.pooledActiveMQBuffer == null || this.pooledActiveMQBuffer.capacity() < size) {
-         this.pooledActiveMQBuffer = new ChannelBufferWrapper(Unpooled.directBuffer(size, size).order(ByteOrder.nativeOrder()));
-      }
-      else {
-         this.pooledActiveMQBuffer.clear();
-      }
-      return pooledActiveMQBuffer;
-   }
-
    @Override
    public void write(EncodingSupport bytes, boolean sync, IOCallback callback) throws IOException {
-      checkIsOpen();
       if (callback == null) {
          throw new NullPointerException("callback parameter need to be set");
       }
+      checkIsOpen(callback);
       try {
-         final int encodedSize = bytes.getEncodeSize();
-         final ActiveMQBuffer outBuffer = acquiresActiveMQBufferWithAtLeast(encodedSize);
-         bytes.encode(outBuffer);
-         final ByteBuf byteBuf = outBuffer.byteBuf();
-         final int writerIndex = byteBuf.writerIndex();
-         final int readerIndex = byteBuf.readerIndex();
-         final int readableBytes = writerIndex - readerIndex;
-         if (readableBytes > 0) {
-            this.mappedFile.write(byteBuf, readerIndex, readableBytes);
-            if (sync) {
-               this.mappedFile.force();
-            }
+         this.mappedFile.write(bytes);
+         if (factory.isDatasync() && sync) {
+            this.mappedFile.force();
          }
          callback.done();
-      }
-      catch (IOException e) {
+      } catch (IOException e) {
          if (this.criticalErrorListener != null) {
             this.criticalErrorListener.onIOException(new ActiveMQIOErrorException(e.getMessage(), e), e.getMessage(), this);
          }
@@ -229,68 +217,68 @@ final class MappedSequentialFile implements SequentialFile {
    @Override
    public void write(EncodingSupport bytes, boolean sync) throws IOException {
       checkIsOpen();
-      final int encodedSize = bytes.getEncodeSize();
-      final ActiveMQBuffer outBuffer = acquiresActiveMQBufferWithAtLeast(encodedSize);
-      bytes.encode(outBuffer);
-      final ByteBuf byteBuf = outBuffer.byteBuf();
-      final int writerIndex = byteBuf.writerIndex();
-      final int readerIndex = byteBuf.readerIndex();
-      final int readableBytes = writerIndex - readerIndex;
-      if (readableBytes > 0) {
-         this.mappedFile.write(byteBuf, readerIndex, readableBytes);
-         if (sync) {
-            this.mappedFile.force();
-         }
+      this.mappedFile.write(bytes);
+      if (factory.isDatasync() && sync) {
+         this.mappedFile.force();
       }
    }
 
    @Override
    public void writeDirect(ByteBuffer bytes, boolean sync, IOCallback callback) {
-      checkIsOpen();
-      if (callback == null) {
-         throw new NullPointerException("callback parameter need to be set");
-      }
       try {
+         if (callback == null) {
+            throw new NullPointerException("callback parameter need to be set");
+         }
+         checkIsOpen(callback);
          final int position = bytes.position();
          final int limit = bytes.limit();
          final int remaining = limit - position;
          if (remaining > 0) {
             this.mappedFile.write(bytes, position, remaining);
-            if (sync) {
+            final int newPosition = position + remaining;
+            bytes.position(newPosition);
+            if (factory.isDatasync() && sync) {
                this.mappedFile.force();
             }
          }
          callback.done();
-      }
-      catch (IOException e) {
+      } catch (IOException e) {
          if (this.criticalErrorListener != null) {
             this.criticalErrorListener.onIOException(new ActiveMQIOErrorException(e.getMessage(), e), e.getMessage(), this);
          }
          callback.onError(ActiveMQExceptionType.IO_ERROR.getCode(), e.getMessage());
          throw new RuntimeException(e);
+      } finally {
+         this.factory.releaseBuffer(bytes);
       }
    }
 
    @Override
    public void writeDirect(ByteBuffer bytes, boolean sync) throws IOException {
-      checkIsOpen();
-      final int position = bytes.position();
-      final int limit = bytes.limit();
-      final int remaining = limit - position;
-      if (remaining > 0) {
-         this.mappedFile.write(bytes, position, remaining);
-         if (sync) {
-            this.mappedFile.force();
+      try {
+         checkIsOpen();
+         final int position = bytes.position();
+         final int limit = bytes.limit();
+         final int remaining = limit - position;
+         if (remaining > 0) {
+            this.mappedFile.write(bytes, position, remaining);
+            final int newPosition = position + remaining;
+            bytes.position(newPosition);
+            if (factory.isDatasync() && sync) {
+               this.mappedFile.force();
+            }
          }
+      } finally {
+         this.factory.releaseBuffer(bytes);
       }
    }
 
    @Override
    public int read(ByteBuffer bytes, IOCallback callback) throws IOException {
-      checkIsOpen();
       if (callback == null) {
          throw new NullPointerException("callback parameter need to be set");
       }
+      checkIsOpen(callback);
       try {
          final int position = bytes.position();
          final int limit = bytes.limit();
@@ -302,10 +290,11 @@ final class MappedSequentialFile implements SequentialFile {
             bytes.flip();
             callback.done();
             return bytesRead;
+         } else {
+            callback.done();
+            return 0;
          }
-         return 0;
-      }
-      catch (IOException e) {
+      } catch (IOException e) {
          if (this.criticalErrorListener != null) {
             this.criticalErrorListener.onIOException(new ActiveMQIOErrorException(e.getMessage(), e), e.getMessage(), this);
          }
@@ -332,8 +321,11 @@ final class MappedSequentialFile implements SequentialFile {
 
    @Override
    public void position(long pos) {
+      if (pos > Integer.MAX_VALUE) {
+         throw new IllegalArgumentException("pos must be < " + Integer.MAX_VALUE);
+      }
       checkIsOpen();
-      this.mappedFile.position(pos);
+      this.mappedFile.position((int) pos);
    }
 
    @Override
@@ -344,8 +336,13 @@ final class MappedSequentialFile implements SequentialFile {
 
    @Override
    public void close() {
+      close(true);
+   }
+
+   @Override
+   public void close(boolean waitOnSync) {
       if (this.mappedFile != null) {
-         this.mappedFile.closeAndResize(this.mappedFile.length());
+         this.mappedFile.close();
          this.mappedFile = null;
       }
    }
@@ -353,22 +350,23 @@ final class MappedSequentialFile implements SequentialFile {
    @Override
    public void sync() throws IOException {
       checkIsOpen();
-      this.mappedFile.force();
+      if (factory.isDatasync()) {
+         this.mappedFile.force();
+      }
    }
 
    @Override
    public long size() {
       if (this.mappedFile != null) {
          return this.mappedFile.length();
-      }
-      else {
+      } else {
          return this.file.length();
       }
    }
 
    @Override
    public void renameTo(String newFileName) throws Exception {
-      checkIsNotOpen();
+      close();
       if (this.fileName == null) {
          this.fileName = this.file.getName();
       }
@@ -376,8 +374,7 @@ final class MappedSequentialFile implements SequentialFile {
          final File newFile = new File(this.directory, newFileName);
          if (!file.renameTo(newFile)) {
             throw ActiveMQJournalBundle.BUNDLE.ioRenameFileError(file.getName(), newFileName);
-         }
-         else {
+         } else {
             this.file = newFile;
             this.fileName = newFileName;
             this.absoluteFile = null;
@@ -386,9 +383,9 @@ final class MappedSequentialFile implements SequentialFile {
    }
 
    @Override
-   public SequentialFile cloneFile() {
+   public MappedSequentialFile cloneFile() {
       checkIsNotOpen();
-      return new MappedSequentialFile(this.directory, this.file, this.chunkBytes, this.overlapBytes, this.criticalErrorListener);
+      return new MappedSequentialFile(this.factory, this.directory, this.file, this.capacity, this.criticalErrorListener);
    }
 
    @Override
@@ -397,14 +394,10 @@ final class MappedSequentialFile implements SequentialFile {
       if (dstFile.isOpen()) {
          throw new IllegalArgumentException("dstFile must be closed too");
       }
-      try (RandomAccessFile src = new RandomAccessFile(file, "rw");
-           FileChannel srcChannel = src.getChannel();
-           FileLock srcLock = srcChannel.lock()) {
+      try (RandomAccessFile src = new RandomAccessFile(file, "rw"); FileChannel srcChannel = src.getChannel(); FileLock srcLock = srcChannel.lock()) {
          final long readableBytes = srcChannel.size();
          if (readableBytes > 0) {
-            try (RandomAccessFile dst = new RandomAccessFile(dstFile.getJavaFile(), "rw");
-                 FileChannel dstChannel = dst.getChannel();
-                 FileLock dstLock = dstChannel.lock()) {
+            try (RandomAccessFile dst = new RandomAccessFile(dstFile.getJavaFile(), "rw"); FileChannel dstChannel = dst.getChannel(); FileLock dstLock = dstChannel.lock()) {
                final long oldLength = dst.length();
                final long newLength = oldLength + readableBytes;
                dst.setLength(newLength);

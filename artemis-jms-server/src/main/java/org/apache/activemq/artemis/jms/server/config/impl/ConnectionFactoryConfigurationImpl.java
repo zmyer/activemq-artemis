@@ -122,6 +122,8 @@ public class ConnectionFactoryConfigurationImpl implements ConnectionFactoryConf
 
    private String deserializationWhiteList;
 
+   private int initialMessagePacketSize = ActiveMQClient.DEFAULT_INITIAL_MESSAGE_PACKET_SIZE;
+
    // Static --------------------------------------------------------
 
    // Constructors --------------------------------------------------
@@ -186,9 +188,8 @@ public class ConnectionFactoryConfigurationImpl implements ConnectionFactoryConf
       return this;
    }
 
-
    @Override
-   public ConnectionFactoryConfiguration setConnectorNames(final String...names) {
+   public ConnectionFactoryConfiguration setConnectorNames(final String... names) {
       return this.setConnectorNames(Arrays.asList(names));
    }
 
@@ -634,8 +635,7 @@ public class ConnectionFactoryConfigurationImpl implements ConnectionFactoryConf
 
       if (this.connectorNames == null) {
          buffer.writeInt(0);
-      }
-      else {
+      } else {
          buffer.writeInt(connectorNames.size());
 
          for (String tc : connectorNames) {
@@ -819,7 +819,7 @@ public class ConnectionFactoryConfigurationImpl implements ConnectionFactoryConf
          BufferHelper.sizeOfNullableSimpleString(groupID) +
 
          DataConstants.SIZE_INT +
-          // factoryType
+         // factoryType
 
          BufferHelper.sizeOfNullableSimpleString(protocolManagerFactoryStr) +
 
@@ -882,6 +882,18 @@ public class ConnectionFactoryConfigurationImpl implements ConnectionFactoryConf
    public String getProtocolManagerFactoryStr() {
       return protocolManagerFactoryStr;
    }
+
+   @Override
+   public int getInitialMessagePacketSize() {
+      return initialMessagePacketSize;
+   }
+
+   @Override
+   public ConnectionFactoryConfiguration setInitialMessagePacketSize(int size) {
+      this.initialMessagePacketSize = size;
+      return this;
+   }
+
 
    // Public --------------------------------------------------------
 

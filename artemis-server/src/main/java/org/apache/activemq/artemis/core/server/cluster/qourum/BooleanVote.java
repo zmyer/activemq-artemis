@@ -16,16 +16,16 @@
  */
 package org.apache.activemq.artemis.core.server.cluster.qourum;
 
-import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
-
 import java.util.Map;
+
+import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
 
 /**
  * a simple yes.no vote
  */
-public final class BooleanVote extends Vote<Boolean> {
+public class BooleanVote extends Vote<Boolean> {
 
-   private boolean vote;
+   protected boolean vote;
 
    public BooleanVote(boolean vote) {
       this.vote = vote;
@@ -56,4 +56,8 @@ public final class BooleanVote extends Vote<Boolean> {
       vote = buff.readBoolean();
    }
 
+   @Override
+   public String toString() {
+      return "BooleanVote [vote=" + vote + "]";
+   }
 }

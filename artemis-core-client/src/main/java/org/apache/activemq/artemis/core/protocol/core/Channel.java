@@ -42,6 +42,7 @@ public interface Channel {
    /**
     * This number increases every time the channel reconnects successfully.
     * This is used to guarantee the integrity of the channel on sequential commands such as large messages.
+    *
     * @return
     */
    int getReconnectID();
@@ -50,6 +51,11 @@ public interface Channel {
     * For protocol check
     */
    boolean supports(byte packetID);
+
+   /**
+    * For protocol check
+    */
+   boolean supports(byte packetID, int version);
 
    /**
     * Sends a packet on this channel.
@@ -67,7 +73,7 @@ public interface Channel {
     * @return false if the packet was rejected by an outgoing interceptor; true if the send was
     * successful
     */
-   boolean send(Packet packet, final int reconnectID);
+   boolean send(Packet packet, int reconnectID);
 
    /**
     * Sends a packet on this channel using batching algorithm if appropriate

@@ -16,11 +16,49 @@
  */
 package org.apache.activemq.artemis.core.protocol;
 
+import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
+import org.apache.activemq.artemis.core.message.impl.CoreMessage;
+import org.apache.activemq.artemis.core.protocol.core.CoreRemotingConnection;
+import org.apache.activemq.artemis.core.protocol.core.Packet;
+import org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.BackupRegistrationMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.BackupReplicationStartFailedMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.BackupRequestMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.BackupResponseMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ClusterConnectMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ClusterConnectReplyMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.NodeAnnounceMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.QuorumVoteMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.QuorumVoteReplyMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationAddMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationAddTXMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationCommitMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationDeleteMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationDeleteTXMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationLargeMessageBeginMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationLargeMessageEndMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationLargeMessageWriteMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationLiveIsStoppingMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationPageEventMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationPageWriteMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationPrepareMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationResponseMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationResponseMessageV2;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationStartSyncMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationSyncFileMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ScaleDownAnnounceMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionAcknowledgeMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionConsumerFlowCreditMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionRequestProducerCreditsMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionSendLargeMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionSendMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionSendMessage_1X;
+
+import static org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl.BACKUP_REQUEST;
+import static org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl.BACKUP_REQUEST_RESPONSE;
 import static org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl.CLUSTER_CONNECT;
 import static org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl.CLUSTER_CONNECT_REPLY;
 import static org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl.NODE_ANNOUNCE;
-import static org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl.BACKUP_REQUEST;
-import static org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl.BACKUP_REQUEST_RESPONSE;
 import static org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl.QUORUM_VOTE;
 import static org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl.QUORUM_VOTE_REPLY;
 import static org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl.REPLICATION_APPEND;
@@ -36,62 +74,75 @@ import static org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl.REP
 import static org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl.REPLICATION_PREPARE;
 import static org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl.REPLICATION_RESPONSE;
 import static org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl.REPLICATION_RESPONSE_V2;
+import static org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl.SCALEDOWN_ANNOUNCEMENT;
+import static org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl.SESS_ACKNOWLEDGE;
+import static org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl.SESS_FLOWTOKEN;
+import static org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl.SESS_PRODUCER_REQUEST_CREDITS;
 import static org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl.SESS_SEND;
 import static org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl.SESS_SEND_LARGE;
-import static org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl.SCALEDOWN_ANNOUNCEMENT;
-
-import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
-import org.apache.activemq.artemis.core.protocol.core.Packet;
-import org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.BackupRegistrationMessage;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.BackupReplicationStartFailedMessage;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ClusterConnectMessage;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ClusterConnectReplyMessage;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.NodeAnnounceMessage;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.BackupRequestMessage;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.BackupResponseMessage;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.QuorumVoteMessage;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.QuorumVoteReplyMessage;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationLiveIsStoppingMessage;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationAddMessage;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationAddTXMessage;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationCommitMessage;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationDeleteMessage;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationDeleteTXMessage;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationLargeMessageBeginMessage;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationLargeMessageEndMessage;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationLargeMessageWriteMessage;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationPageEventMessage;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationPageWriteMessage;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationPrepareMessage;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationResponseMessage;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationResponseMessageV2;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationStartSyncMessage;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationSyncFileMessage;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ScaleDownAnnounceMessage;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionSendLargeMessage;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionSendMessage;
-import org.apache.activemq.artemis.core.server.impl.ServerMessageImpl;
 
 public class ServerPacketDecoder extends ClientPacketDecoder {
 
    private static final long serialVersionUID = 3348673114388400766L;
-   public static final ServerPacketDecoder INSTANCE = new ServerPacketDecoder();
+
+   private SessionSendMessage decodeSessionSendMessage(final ActiveMQBuffer in, CoreRemotingConnection connection) {
+      final SessionSendMessage sendMessage;
+
+      if (connection.isVersionBeforeAddressChange()) {
+         sendMessage = new SessionSendMessage_1X(new CoreMessage(this.coreMessageObjectPools));
+      } else {
+         sendMessage = new SessionSendMessage(new CoreMessage(this.coreMessageObjectPools));
+      }
+
+      sendMessage.decode(in);
+      return sendMessage;
+   }
+
+   private static SessionAcknowledgeMessage decodeSessionAcknowledgeMessage(final ActiveMQBuffer in, CoreRemotingConnection connection) {
+      final SessionAcknowledgeMessage acknowledgeMessage = new SessionAcknowledgeMessage();
+      acknowledgeMessage.decode(in);
+      return acknowledgeMessage;
+   }
+
+   private static SessionRequestProducerCreditsMessage decodeRequestProducerCreditsMessage(final ActiveMQBuffer in, CoreRemotingConnection connection) {
+      final SessionRequestProducerCreditsMessage requestProducerCreditsMessage = new SessionRequestProducerCreditsMessage();
+      requestProducerCreditsMessage.decode(in);
+      return requestProducerCreditsMessage;
+   }
+
+   private static SessionConsumerFlowCreditMessage decodeSessionConsumerFlowCreditMessage(final ActiveMQBuffer in, CoreRemotingConnection connection) {
+      final SessionConsumerFlowCreditMessage sessionConsumerFlowCreditMessage = new SessionConsumerFlowCreditMessage();
+      sessionConsumerFlowCreditMessage.decode(in);
+      return sessionConsumerFlowCreditMessage;
+   }
 
    @Override
-   public Packet decode(final ActiveMQBuffer in) {
+   public Packet decode(final ActiveMQBuffer in, CoreRemotingConnection connection) {
       final byte packetType = in.readByte();
+      //optimized for the most common cases: hottest and commons methods will be inlined and this::decode too due to the byte code size
+      switch (packetType) {
+         case SESS_SEND:
+            return decodeSessionSendMessage(in, connection);
+         case SESS_ACKNOWLEDGE:
+            return decodeSessionAcknowledgeMessage(in, connection);
+         case SESS_PRODUCER_REQUEST_CREDITS:
+            return decodeRequestProducerCreditsMessage(in, connection);
+         case SESS_FLOWTOKEN:
+            return decodeSessionConsumerFlowCreditMessage(in, connection);
+         default:
+            return slowPathDecode(in, packetType, connection);
+      }
+   }
 
+
+   // separating for performance reasons
+   private Packet slowPathDecode(ActiveMQBuffer in, byte packetType, CoreRemotingConnection connection) {
       Packet packet;
 
       switch (packetType) {
 
-         case SESS_SEND: {
-            packet = new SessionSendMessage(new ServerMessageImpl());
-            break;
-         }
          case SESS_SEND_LARGE: {
-            packet = new SessionSendLargeMessage(new ServerMessageImpl());
+            packet = new SessionSendLargeMessage(new CoreMessage());
             break;
          }
          case REPLICATION_APPEND: {
@@ -199,7 +250,7 @@ public class ServerPacketDecoder extends ClientPacketDecoder {
             break;
          }
          default: {
-            packet = super.decode(packetType);
+            packet = super.decode(packetType, connection);
          }
       }
 
@@ -207,5 +258,4 @@ public class ServerPacketDecoder extends ClientPacketDecoder {
 
       return packet;
    }
-
 }

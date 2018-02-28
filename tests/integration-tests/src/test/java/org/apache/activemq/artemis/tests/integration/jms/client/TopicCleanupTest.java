@@ -16,17 +16,19 @@
  */
 package org.apache.activemq.artemis.tests.integration.jms.client;
 
+import java.util.List;
+import java.util.Map;
+
 import javax.jms.Connection;
 import javax.jms.MessageConsumer;
 import javax.jms.MessageProducer;
 import javax.jms.Session;
 import javax.jms.TextMessage;
 import javax.jms.Topic;
-import java.util.List;
-import java.util.Map;
 
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.api.jms.ActiveMQJMSClient;
+import org.apache.activemq.artemis.core.filter.Filter;
 import org.apache.activemq.artemis.core.filter.impl.FilterImpl;
 import org.apache.activemq.artemis.core.persistence.StorageManager;
 import org.apache.activemq.artemis.core.postoffice.Binding;
@@ -34,7 +36,6 @@ import org.apache.activemq.artemis.core.postoffice.Bindings;
 import org.apache.activemq.artemis.core.postoffice.impl.BindingsImpl;
 import org.apache.activemq.artemis.core.postoffice.impl.LocalQueueBinding;
 import org.apache.activemq.artemis.core.server.Queue;
-import org.apache.activemq.artemis.core.server.impl.ActiveMQServerImpl;
 import org.apache.activemq.artemis.core.server.impl.QueueImpl;
 import org.apache.activemq.artemis.jms.client.ActiveMQTopic;
 import org.apache.activemq.artemis.tests.util.JMSTestBase;
@@ -81,7 +82,12 @@ public class TopicCleanupTest extends JMSTestBase {
          for (int i = 0; i < 100; i++) {
             long txid = storage.generateID();
 
-            final Queue queue = new QueueImpl(storage.generateID(), SimpleString.toSimpleString("jms.topic.topic"), SimpleString.toSimpleString("jms.topic.topic"), FilterImpl.createFilter(ActiveMQServerImpl.GENERIC_IGNORED_FILTER), null, true, false, false, server.getScheduledPool(), server.getPostOffice(), storage, server.getAddressSettingsRepository(), server.getExecutorFactory().getExecutor());
+            final Queue queue = new QueueImpl(storage.generateID(), SimpleString.toSimpleString("topic"),
+                                              SimpleString.toSimpleString("topic"),
+                                              FilterImpl.createFilter(Filter.GENERIC_IGNORED_FILTER), null,
+                                              true, false, false, server.getScheduledPool(), server.getPostOffice(),
+                                              storage, server.getAddressSettingsRepository(),
+                                              server.getExecutorFactory().getExecutor(), server, null);
 
             LocalQueueBinding binding = new LocalQueueBinding(queue.getAddress(), queue, server.getNodeID());
 
@@ -94,12 +100,10 @@ public class TopicCleanupTest extends JMSTestBase {
 
          jmsServer.start();
 
-      }
-      finally {
+      } finally {
          try {
             conn.close();
-         }
-         catch (Throwable igonred) {
+         } catch (Throwable igonred) {
          }
       }
 
@@ -141,16 +145,14 @@ public class TopicCleanupTest extends JMSTestBase {
          }
 
          assertFalse(foundStrayRoutingBinding);
-      }
-      finally {
+      } finally {
          jmsServer.stop();
 
          jmsServer.start();
 
          try {
             conn.close();
-         }
-         catch (Throwable igonred) {
+         } catch (Throwable igonred) {
          }
       }
    }

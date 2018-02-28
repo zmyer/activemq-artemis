@@ -42,18 +42,19 @@ public class RestTestBase extends JMSTestBase {
    protected HandlerList handlers;
 
    @Before
+   @Override
    public void setUp() throws Exception {
       super.setUp();
       webAppDir = testFolder.newFolder("test-apps");
    }
 
    @After
+   @Override
    public void tearDown() throws Exception {
       if (server != null) {
          try {
             server.stop();
-         }
-         catch (Throwable t) {
+         } catch (Throwable t) {
             t.printStackTrace();
          }
       }
@@ -77,8 +78,7 @@ public class RestTestBase extends JMSTestBase {
       WebAppContext webapp = new WebAppContext();
       if (contextPath.startsWith("/")) {
          webapp.setContextPath(contextPath);
-      }
-      else {
+      } else {
          webapp.setContextPath("/" + contextPath);
       }
       webapp.setWar(warFile.getAbsolutePath());

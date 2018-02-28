@@ -16,6 +16,9 @@
  */
 package org.apache.activemq.artemis.tests.integration.server;
 
+import javax.transaction.xa.XAResource;
+import javax.transaction.xa.Xid;
+
 import org.apache.activemq.artemis.api.core.Message;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.api.core.client.ClientConsumer;
@@ -32,9 +35,6 @@ import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
-
-import javax.transaction.xa.XAResource;
-import javax.transaction.xa.Xid;
 
 public class LVQRecoveryTest extends ActiveMQTestBase {
 
@@ -170,7 +170,7 @@ public class LVQRecoveryTest extends ActiveMQTestBase {
       server = createServer(true, configuration);
       server.start();
 
-      qs = new AddressSettings().setLastValueQueue(true);
+      qs = new AddressSettings().setDefaultLastValueQueue(true);
       server.getAddressSettingsRepository().addMatch(address.toString(), qs);
       // then we create a client as normal
       locator = createInVMNonHALocator().setBlockOnAcknowledge(true).setAckBatchSize(0);
@@ -188,7 +188,7 @@ public class LVQRecoveryTest extends ActiveMQTestBase {
       // start the server
       server.start();
 
-      server.getAddressSettingsRepository().addMatch(address.toString(), new AddressSettings().setLastValueQueue(true));
+      server.getAddressSettingsRepository().addMatch(address.toString(), new AddressSettings().setDefaultLastValueQueue(true));
       // then we create a client as normal
       locator.close();
       locator = createInVMNonHALocator().setBlockOnAcknowledge(true).setAckBatchSize(0);

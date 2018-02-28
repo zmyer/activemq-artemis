@@ -16,6 +16,7 @@
  */
 package org.apache.activemq.cli.test;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -44,31 +45,6 @@ import static org.junit.Assert.fail;
 public class FileBrokerTest {
 
    @Test
-   public void startWithJMS() throws Exception {
-      ServerDTO serverDTO = new ServerDTO();
-      serverDTO.configuration = "broker.xml";
-      FileBroker broker = null;
-      try {
-         broker = new FileBroker(serverDTO, new ActiveMQJAASSecurityManager());
-         broker.start();
-         JMSServerManagerImpl jmsServerManager = (JMSServerManagerImpl) broker.getComponents().get("jms");
-         Assert.assertNotNull(jmsServerManager);
-         Assert.assertTrue(jmsServerManager.isStarted());
-         //this tells us the jms server is activated
-         Assert.assertTrue(jmsServerManager.getJMSStorageManager().isStarted());
-         ActiveMQServerImpl activeMQServer = (ActiveMQServerImpl) broker.getComponents().get("core");
-         Assert.assertNotNull(activeMQServer);
-         Assert.assertTrue(activeMQServer.isStarted());
-         Assert.assertTrue(broker.isStarted());
-      }
-      finally {
-         if (broker != null) {
-            broker.stop();
-         }
-      }
-   }
-
-   @Test
    public void startWithoutJMS() throws Exception {
       ServerDTO serverDTO = new ServerDTO();
       serverDTO.configuration = "broker-nojms.xml";
@@ -82,10 +58,49 @@ public class FileBrokerTest {
          Assert.assertNotNull(activeMQServer);
          Assert.assertTrue(activeMQServer.isStarted());
          Assert.assertTrue(broker.isStarted());
-      }
-      finally {
+      } finally {
          assert broker != null;
          broker.stop();
+      }
+   }
+
+   @Test
+   public void startTwoBrokersWithSameDataDir() throws Exception {
+      ServerDTO serverDTO1 = new ServerDTO();
+      ServerDTO serverDTO2 = new ServerDTO();
+      serverDTO1.configuration = "FileBrokerTest-broker1.xml";
+      serverDTO2.configuration = "FileBrokerTest-broker2.xml";
+      FileBroker broker1 = new FileBroker(serverDTO1, new ActiveMQJAASSecurityManager());
+      FileBroker broker2 = new FileBroker(serverDTO2, new ActiveMQJAASSecurityManager());
+      try {
+         broker1.start();
+         Assert.assertTrue(broker1.isStarted());
+
+         Thread thread = new Thread(() -> {
+            try {
+               broker2.start();
+            } catch (Exception e) {
+               e.printStackTrace();
+            }
+         });
+         thread.start();
+
+         Assert.assertFalse(broker2.isStarted());
+         //only if broker1 is stopped can broker2 be fully started
+         broker1.stop();
+         broker1 = null;
+
+         thread.join(5000);
+         Assert.assertTrue(broker2.isStarted());
+         broker2.stop();
+
+      } finally {
+         if (broker1 != null) {
+            broker1.stop();
+         }
+         if (broker2 != null) {
+            broker2.stop();
+         }
       }
    }
 
@@ -106,7 +121,8 @@ public class FileBrokerTest {
          Assert.assertNotNull(activeMQServer);
          Assert.assertTrue(activeMQServer.isStarted());
          Assert.assertTrue(broker.isStarted());
-         path = activeMQServer.getConfiguration().getConfigurationUrl().getPath();
+         File file = new File(activeMQServer.getConfiguration().getConfigurationUrl().toURI());
+         path = file.getPath();
          Assert.assertNotNull(activeMQServer.getConfiguration().getConfigurationUrl());
 
          Thread.sleep(activeMQServer.getConfiguration().getConfigurationFileRefreshPeriod() * 2);
@@ -114,7 +130,7 @@ public class FileBrokerTest {
          ServerLocator locator = ActiveMQClient.createServerLocator("tcp://localhost:61616");
          ClientSessionFactory sf = locator.createSessionFactory();
          ClientSession session = sf.createSession("myUser", "myPass", false, true, false, false, 0);
-         ClientProducer producer = session.createProducer("jms.queue.DLQ");
+         ClientProducer producer = session.createProducer("DLQ");
          producer.send(session.createMessage(true));
 
          replacePatternInFile(path, "guest", "X");
@@ -124,13 +140,11 @@ public class FileBrokerTest {
          try {
             producer.send(session.createMessage(true));
             fail("Should throw a security exception");
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
          }
 
          locator.close();
-      }
-      finally {
+      } finally {
          assert broker != null;
          broker.stop();
          if (path != null) {

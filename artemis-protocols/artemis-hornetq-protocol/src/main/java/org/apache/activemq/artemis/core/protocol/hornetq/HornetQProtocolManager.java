@@ -49,7 +49,7 @@ class HornetQProtocolManager extends CoreProtocolManager {
          buffer.getByte(5) == 'T' &&
          buffer.getByte(6) == 'Q') {
          //todo add some handshaking
-         buffer.readBytes(7);
+         buffer.skipBytes(7);
       }
    }
 
@@ -58,10 +58,14 @@ class HornetQProtocolManager extends CoreProtocolManager {
       return true;
    }
 
-
    @Override
    public boolean isProtocol(byte[] array) {
       String frameStart = new String(array, StandardCharsets.US_ASCII);
       return frameStart.startsWith("HORNETQ");
+   }
+
+   @Override
+   public String toString() {
+      return "HornetQProtocolManager(server=" + super.server + ")";
    }
 }

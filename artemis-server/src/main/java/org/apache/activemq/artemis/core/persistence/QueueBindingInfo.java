@@ -16,7 +16,10 @@
  */
 package org.apache.activemq.artemis.core.persistence;
 
+import java.util.List;
+
 import org.apache.activemq.artemis.api.core.SimpleString;
+import org.apache.activemq.artemis.core.persistence.impl.journal.codec.QueueStatusEncoding;
 
 public interface QueueBindingInfo {
 
@@ -39,4 +42,23 @@ public interface QueueBindingInfo {
 
    SimpleString getUser();
 
+   void addQueueStatusEncoding(QueueStatusEncoding status);
+
+   List<QueueStatusEncoding> getQueueStatusEncodings();
+
+   int getMaxConsumers();
+
+   void setMaxConsumers(int maxConsumers);
+
+   boolean isPurgeOnNoConsumers();
+
+   void setPurgeOnNoConsumers(boolean purgeOnNoConsumers);
+
+   boolean isExclusive();
+
+   void setExclusive(boolean exclusive);
+
+   byte getRoutingType();
+
+   void setRoutingType(byte routingType);
 }

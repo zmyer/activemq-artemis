@@ -21,15 +21,22 @@ import org.apache.activemq.artemis.core.transaction.Transaction;
 
 public interface PageSubscriptionCounter {
 
+   //incremental counter of messages added
+   long getValueAdded();
+
    long getValue();
 
-   void increment(Transaction tx, int add) throws Exception;
+   long getPersistentSizeAdded();
 
-   void loadValue(final long recordValueID, final long value);
+   long getPersistentSize();
 
-   void loadInc(final long recordInd, final int add);
+   void increment(Transaction tx, int add, long persistentSize) throws Exception;
 
-   void applyIncrementOnTX(Transaction tx, long recordID, int add);
+   void loadValue(long recordValueID, long value, long persistentSize);
+
+   void loadInc(long recordInd, int add, long persistentSize);
+
+   void applyIncrementOnTX(Transaction tx, long recordID, int add, long persistentSize);
 
    /**
     * This will process the reload
@@ -40,17 +47,17 @@ public interface PageSubscriptionCounter {
     * @param id
     * @param variance
     */
-   void addInc(long id, int variance);
+   void addInc(long id, int variance, long size);
 
    // used when deleting the counter
    void delete() throws Exception;
 
-   void pendingCounter(Page page, int increment) throws Exception;
+   void pendingCounter(Page page, int increment, long persistentSize) throws Exception;
 
    // used when leaving page mode, so the counters are deleted in batches
    // for each queue on the address
    void delete(Transaction tx) throws Exception;
 
-   void cleanupNonTXCounters(final long pageID) throws Exception;
+   void cleanupNonTXCounters(long pageID) throws Exception;
 
 }

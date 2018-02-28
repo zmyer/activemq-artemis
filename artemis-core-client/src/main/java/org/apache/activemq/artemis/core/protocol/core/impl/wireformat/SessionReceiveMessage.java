@@ -16,9 +16,10 @@
  */
 package org.apache.activemq.artemis.core.protocol.core.impl.wireformat;
 
+import io.netty.buffer.ByteBuf;
 import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
-import org.apache.activemq.artemis.core.message.impl.MessageInternal;
-import org.apache.activemq.artemis.spi.core.protocol.RemotingConnection;
+import org.apache.activemq.artemis.api.core.ICoreMessage;
+import org.apache.activemq.artemis.core.message.impl.CoreMessage;
 import org.apache.activemq.artemis.utils.DataConstants;
 
 public class SessionReceiveMessage extends MessagePacket {
@@ -26,11 +27,11 @@ public class SessionReceiveMessage extends MessagePacket {
 
    // Attributes ----------------------------------------------------
 
-   private long consumerID;
+   protected long consumerID;
 
-   private int deliveryCount;
+   protected int deliveryCount;
 
-   public SessionReceiveMessage(final long consumerID, final MessageInternal message, final int deliveryCount) {
+   public SessionReceiveMessage(final long consumerID, final ICoreMessage message, final int deliveryCount) {
       super(SESS_RECEIVE_MSG, message);
 
       this.consumerID = consumerID;
@@ -38,7 +39,7 @@ public class SessionReceiveMessage extends MessagePacket {
       this.deliveryCount = deliveryCount;
    }
 
-   public SessionReceiveMessage(final MessageInternal message) {
+   public SessionReceiveMessage(final CoreMessage message) {
       super(SESS_RECEIVE_MSG, message);
    }
 
@@ -52,52 +53,32 @@ public class SessionReceiveMessage extends MessagePacket {
       return deliveryCount;
    }
 
+
    @Override
-   public ActiveMQBuffer encode(final RemotingConnection connection) {
-      ActiveMQBuffer buffer = message.getEncodedBuffer();
-
-      ActiveMQBuffer bufferWrite = connection.createTransportBuffer(buffer.writerIndex());
-      bufferWrite.writeBytes(buffer, 0, bufferWrite.capacity());
-      bufferWrite.setIndex(buffer.readerIndex(), buffer.writerIndex());
-
-      // Sanity check
-      if (bufferWrite.writerIndex() != message.getEndOfMessagePosition()) {
-         throw new IllegalStateException("Wrong encode position");
-      }
-
-      bufferWrite.writeLong(consumerID);
-      bufferWrite.writeInt(deliveryCount);
-
-      size = bufferWrite.writerIndex();
-
-      // Write standard headers
-
-      int len = size - DataConstants.SIZE_INT;
-      bufferWrite.setInt(0, len);
-      bufferWrite.setByte(DataConstants.SIZE_INT, getType());
-      bufferWrite.setLong(DataConstants.SIZE_INT + DataConstants.SIZE_BYTE, channelID);
-
-      // Position reader for reading by Netty
-      bufferWrite.setIndex(0, size);
-
-      return bufferWrite;
+   public int expectedEncodeSize() {
+      return message.getEncodeSize() + PACKET_HEADERS_SIZE + DataConstants.SIZE_LONG + DataConstants.SIZE_INT;
    }
 
    @Override
-   public void decode(final ActiveMQBuffer buffer) {
-      channelID = buffer.readLong();
+   public void encodeRest(ActiveMQBuffer buffer) {
+      message.sendBuffer(buffer.byteBuf(), deliveryCount);
+      buffer.writeLong(consumerID);
+      buffer.writeInt(deliveryCount);
+   }
 
-      message.decodeFromBuffer(buffer);
+   @Override
+   public void decodeRest(final ActiveMQBuffer buffer) {
+      // Buffer comes in after having read standard headers and positioned at Beginning of body part
 
-      consumerID = buffer.readLong();
+      receiveMessage(copyMessageBuffer(buffer.byteBuf(), DataConstants.SIZE_LONG + DataConstants.SIZE_INT));
 
-      deliveryCount = buffer.readInt();
+      buffer.readerIndex(buffer.capacity() - DataConstants.SIZE_LONG - DataConstants.SIZE_INT);
+      this.consumerID = buffer.readLong();
+      this.deliveryCount = buffer.readInt();
+   }
 
-      size = buffer.readerIndex();
-
-      // Need to position buffer for reading
-
-      buffer.setIndex(PACKET_HEADERS_SIZE + DataConstants.SIZE_INT, message.getEndOfBodyPosition());
+   protected void receiveMessage(ByteBuf buffer) {
+      message.receiveBuffer(buffer);
    }
 
    @Override

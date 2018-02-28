@@ -71,7 +71,7 @@ public class AssertionLoggerHandler extends ExtHandler {
       return false;
    }
 
-   public static boolean findText(long mstimeout, String ... text) {
+   public static boolean findText(long mstimeout, String... text) {
 
       long timeMax = System.currentTimeMillis() + mstimeout;
       do {
@@ -84,6 +84,7 @@ public class AssertionLoggerHandler extends ExtHandler {
       return false;
 
    }
+
    /**
     * Find a line that contains the parameters passed as an argument
     *
@@ -105,8 +106,7 @@ public class AssertionLoggerHandler extends ExtHandler {
                   if (!found) {
                      break;
                   }
-               }
-               else {
+               } else {
                   break;
                }
             }

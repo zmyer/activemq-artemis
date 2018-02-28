@@ -5,6 +5,11 @@ performance.
 
 ## Tuning persistence
 
+-   To get the best performance from Apache ActiveMQ Artemis whilst
+    using persistent messages it is recommended that the file store
+    is used.  Apache ActiveMQ Artemis also supports JDBC persistence,
+    but there is a performance cost when persisting to a database vs 
+    local disk.
 -   Put the message journal on its own physical volume. If the disk is
     shared with other processes e.g. transaction co-ordinator, database
     or other journals which are also reading and writing from it, then
@@ -42,6 +47,11 @@ performance.
 -   If you're running AIO you might be able to get some better
     performance by increasing `journal-max-io`. DO NOT change this
     parameter if you are running NIO.
+    
+-   If you are 100% sure you don't need power failure durability guarantees, 
+    disable `journal-data-sync` and use `NIO` or `MAPPED` journal: 
+    you'll benefit a huge performance boost on writes 
+    with process failure durability guarantees.    
 
 ## Tuning JMS
 
@@ -132,16 +142,6 @@ tuning:
     consumer-window-size. This effectively disables consumer flow
     control.
 
--   Socket NIO vs Socket Old IO. By default Apache ActiveMQ Artemis uses old (blocking)
-    on the server and the client side (see the chapter on configuring
-    transports for more information [Configuring the Transport](configuring-transports.md). NIO is much more scalable but
-    can give you some latency hit compared to old blocking IO. If you
-    need to be able to service many thousands of connections on the
-    server, then you should make sure you're using NIO on the server.
-    However, if don't expect many thousands of connections on the server
-    you can keep the server acceptors using old IO, and might get a
-    small performance advantage.
-
 -   Use the core API not JMS. Using the JMS API you will have slightly
     lower performance than using the core API, since all JMS operations
     need to be translated into core operations before the server can
@@ -150,6 +150,11 @@ tuning:
     java.lang.String does not require copying before it is written to
     the wire, so if you re-use `SimpleString` instances between calls
     then you can avoid some unnecessary copying.
+    
+-   If using frameworks like Spring, configure destinations permanently broker side
+    and enable `destinationCache` on the client side. 
+    See the [Setting The Destination Cache](using-jms.md)
+                                                          for more information on this.
 
 ## Tuning Transport Settings
 
@@ -206,6 +211,14 @@ tunings won't apply to JDKs from other providers (e.g. IBM or JRockit)
     of your queues and the size and number of your messages. Use the JVM
     arguments `-Xms` and `-Xmx` to set server available RAM. We
     recommend setting them to the same high value.
+    
+    When under periods of high load, it is likely that Artemis will be generating 
+    and destroying lots of objects. This can result in a build up of stale objects. 
+    To reduce the chance of running out of memory and causing a full GC 
+    (which may introduce pauses and unintentional behaviour), it is recommended that the 
+    max heap size (`-Xmx`) for the JVM is set at least to 5 x the `global-max-size` of the broker.
+    As an example, in a situation where the broker is under high load and running 
+    with a `global-max-size` of 1GB, it is recommended the the max heap size is set to 5GB.  
 
 -   Aggressive options. Different JVMs provide different sets of JVM
     tuning parameters, for the Sun Hotspot JVM the full list of options

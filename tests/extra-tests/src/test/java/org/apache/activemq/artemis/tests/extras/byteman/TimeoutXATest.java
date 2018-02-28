@@ -6,7 +6,7 @@
  * (the "License"); you may not use this file except in compliance with
  * the License. You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -31,6 +31,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.jms.client.ActiveMQConnectionFactory;
 import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.jboss.byteman.contrib.bmunit.BMRule;
@@ -44,7 +45,6 @@ import org.junit.runner.RunWith;
 @RunWith(BMUnitRunner.class)
 public class TimeoutXATest extends ActiveMQTestBase {
 
-
    protected ActiveMQServer server = null;
 
    @Override
@@ -56,7 +56,7 @@ public class TimeoutXATest extends ActiveMQTestBase {
       server.getConfiguration().setTransactionTimeoutScanPeriod(1100);
       server.getConfiguration().setJournalSyncNonTransactional(false);
       server.start();
-      server.createQueue(SimpleString.toSimpleString("jms.queue.Queue1"), SimpleString.toSimpleString("jms.queue.Queue1"), null, true, false);
+      server.createQueue(SimpleString.toSimpleString("Queue1"), RoutingType.ANYCAST, SimpleString.toSimpleString("Queue1"), null, true, false);
 
       removingTXEntered0 = new CountDownLatch(1);
       removingTXAwait0 = new CountDownLatch(1);
@@ -79,7 +79,6 @@ public class TimeoutXATest extends ActiveMQTestBase {
    static CountDownLatch enteredRollbackLatch;
    static CountDownLatch waitingRollbackLatch;
 
-
    @Test
    @BMRules(
       rules = {@BMRule(
@@ -88,14 +87,13 @@ public class TimeoutXATest extends ActiveMQTestBase {
          targetMethod = "removeTransaction(javax.transaction.xa.Xid)",
          targetLocation = "ENTRY",
          helper = "org.apache.activemq.artemis.tests.extras.byteman.TimeoutXATest",
-         action = "removingTX()"),
-         @BMRule(
-            name = "afterRollback TX",
-            targetClass = "org.apache.activemq.artemis.core.transaction.impl.TransactionImpl",
-            targetMethod = "afterRollback",
-            targetLocation = "ENTRY",
-            helper = "org.apache.activemq.artemis.tests.extras.byteman.TimeoutXATest",
-            action = "afterRollback()")})
+         action = "removingTX()"), @BMRule(
+         name = "afterRollback TX",
+         targetClass = "org.apache.activemq.artemis.core.transaction.impl.TransactionImpl",
+         targetMethod = "afterRollback",
+         targetLocation = "ENTRY",
+         helper = "org.apache.activemq.artemis.tests.extras.byteman.TimeoutXATest",
+         action = "afterRollback()")})
    public void testTimeoutOnTX2() throws Exception {
       ActiveMQConnectionFactory connectionFactory = new ActiveMQConnectionFactory();
       XAConnection connection = connectionFactory.createXAConnection();
@@ -132,8 +130,7 @@ public class TimeoutXATest extends ActiveMQTestBase {
                   latchStore.countDown();
                   server.getStorageManager().storeDuplicateID(SimpleString.toSimpleString("crebis"), new byte[]{1}, server.getStorageManager().generateID());
                }
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                e.printStackTrace();
             }
          }
@@ -146,8 +143,7 @@ public class TimeoutXATest extends ActiveMQTestBase {
          public void run() {
             try {
                xaSession.getXAResource().rollback(xid);
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                e.printStackTrace();
             }
 
@@ -155,7 +151,6 @@ public class TimeoutXATest extends ActiveMQTestBase {
       };
 
       t.start();
-
 
       removingTXEntered1.await();
 
@@ -191,8 +186,7 @@ public class TimeoutXATest extends ActiveMQTestBase {
          enteredRollbackLatch.countDown();
          try {
             waitingRollbackLatch.await();
-         }
-         catch (Throwable e) {
+         } catch (Throwable e) {
 
          }
       }
@@ -206,17 +200,14 @@ public class TimeoutXATest extends ActiveMQTestBase {
          removingTXEntered0.countDown();
          try {
             removingTXAwait0.await();
-         }
-         catch (Throwable ignored) {
+         } catch (Throwable ignored) {
             ignored.printStackTrace();
          }
-      }
-      else if (xent == 1) {
+      } else if (xent == 1) {
          removingTXEntered1.countDown();
          try {
             removingTXAwait1.await();
-         }
-         catch (Throwable ignored) {
+         } catch (Throwable ignored) {
             ignored.printStackTrace();
          }
       }

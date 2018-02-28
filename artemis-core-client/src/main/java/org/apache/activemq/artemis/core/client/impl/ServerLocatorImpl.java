@@ -67,6 +67,7 @@ import org.apache.activemq.artemis.utils.ActiveMQThreadFactory;
 import org.apache.activemq.artemis.utils.ActiveMQThreadPoolExecutor;
 import org.apache.activemq.artemis.utils.ClassloadingUtil;
 import org.apache.activemq.artemis.utils.UUIDGenerator;
+import org.apache.activemq.artemis.utils.actors.Actor;
 import org.apache.activemq.artemis.utils.uri.FluentPropertyBeanIntrospectorWithIgnores;
 import org.jboss.logging.Logger;
 
@@ -199,6 +200,8 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
 
    private Executor startExecutor;
 
+   private Actor<Long> updateArrayActor;
+
    private AfterConnectInternalListener afterConnectListener;
 
    private String groupID;
@@ -206,6 +209,8 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
    private String nodeID;
 
    private TransportConfiguration clusterTransportConfiguration;
+
+   private boolean useTopologyForLoadBalancing;
 
    private final Exception traceException = new Exception();
 
@@ -220,13 +225,11 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
    private synchronized void setThreadPools() {
       if (threadPool != null) {
          return;
-      }
-      else if (useGlobalPools) {
+      } else if (useGlobalPools) {
          threadPool = ActiveMQClient.getGlobalThreadPool();
 
          scheduledThreadPool = ActiveMQClient.getGlobalScheduledThreadPool();
-      }
-      else {
+      } else {
          this.shutdownPool = true;
 
          ThreadFactory factory = AccessController.doPrivileged(new PrivilegedAction<ThreadFactory>() {
@@ -238,8 +241,7 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
 
          if (threadPoolMaxSize == -1) {
             threadPool = Executors.newCachedThreadPool(factory);
-         }
-         else {
+         } else {
             threadPool = new ActiveMQThreadPoolExecutor(0, threadPoolMaxSize, 60L, TimeUnit.SECONDS, factory);
          }
 
@@ -252,12 +254,16 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
 
          scheduledThreadPool = Executors.newScheduledThreadPool(scheduledThreadPoolMaxSize, factory);
       }
+
+      this.updateArrayActor = new Actor<>(threadPool, this::internalUpdateArray);
    }
 
    @Override
-   public synchronized boolean setThreadPools(ExecutorService threadPool, ScheduledExecutorService scheduledThreadPool) {
+   public synchronized boolean setThreadPools(ExecutorService threadPool,
+                                              ScheduledExecutorService scheduledThreadPool) {
 
-      if (threadPool == null || scheduledThreadPool == null) return false;
+      if (threadPool == null || scheduledThreadPool == null)
+         return false;
 
       if (this.threadPool == null && this.scheduledThreadPool == null) {
          useGlobalPools = false;
@@ -265,8 +271,7 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
          this.threadPool = threadPool;
          this.scheduledThreadPool = scheduledThreadPool;
          return true;
-      }
-      else {
+      } else {
          return false;
       }
    }
@@ -305,8 +310,7 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
 
                discoveryGroup.start();
             }
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             state = null;
             throw ActiveMQClientMessageBundle.BUNDLE.failedToInitialiseSessionFactory(e);
          }
@@ -396,13 +400,16 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
       compressLargeMessage = ActiveMQClient.DEFAULT_COMPRESS_LARGE_MESSAGES;
 
       clusterConnection = false;
+
+      useTopologyForLoadBalancing = ActiveMQClient.DEFAULT_USE_TOPOLOGY_FOR_LOADBALANCING;
    }
 
    public static ServerLocator newLocator(String uri) {
       try {
-         return newLocator(new URI(uri));
-      }
-      catch (Exception e) {
+         ServerLocatorParser parser = new ServerLocatorParser();
+         URI newURI = parser.expandURI(uri);
+         return parser.newObject(newURI, null);
+      } catch (Exception e) {
          throw new RuntimeException(e);
       }
    }
@@ -411,8 +418,7 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
       try {
          ServerLocatorParser parser = new ServerLocatorParser();
          return parser.newObject(uri, null);
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          throw new RuntimeException(e);
       }
    }
@@ -527,18 +533,20 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
       groupID = locator.groupID;
       nodeID = locator.nodeID;
       clusterTransportConfiguration = locator.clusterTransportConfiguration;
+      useTopologyForLoadBalancing = locator.useTopologyForLoadBalancing;
    }
 
    private TransportConfiguration selectConnector() {
       Pair<TransportConfiguration, TransportConfiguration>[] usedTopology;
+
+      flushTopology();
 
       synchronized (topologyArrayGuard) {
          usedTopology = topologyArray;
       }
 
       synchronized (this) {
-         // if the topologyArray is null, we will use the initialConnectors
-         if (usedTopology != null) {
+         if (usedTopology != null && useTopologyForLoadBalancing) {
             if (logger.isTraceEnabled()) {
                logger.trace("Selecting connector from topology.");
             }
@@ -546,9 +554,7 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
             Pair<TransportConfiguration, TransportConfiguration> pair = usedTopology[pos];
 
             return pair.getA();
-         }
-         else {
-            // Get from initialconnectors
+         } else {
             if (logger.isTraceEnabled()) {
                logger.trace("Selecting connector from initial connectors.");
             }
@@ -572,8 +578,7 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
             public void run() {
                try {
                   connect();
-               }
-               catch (Exception e) {
+               } catch (Exception e) {
                   if (!isClosed()) {
                      ActiveMQClientLogger.LOGGER.errorConnectingToNodes(e);
                   }
@@ -627,8 +632,7 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
       if (returnFactory != null) {
          addFactory(returnFactory);
          return returnFactory;
-      }
-      else {
+      } else {
          // wait for discovery group to get the list of initial connectors
          return (ClientSessionFactoryInternal) createSessionFactory();
       }
@@ -689,16 +693,14 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
       try {
          try {
             factory.connect(reconnectAttempts, failoverOnInitialConnection);
-         }
-         catch (ActiveMQException e1) {
+         } catch (ActiveMQException e1) {
             //we need to make sure is closed just for garbage collection
             factory.close();
             throw e1;
          }
          addFactory(factory);
          return factory;
-      }
-      finally {
+      } finally {
          removeFromConnecting(factory);
       }
    }
@@ -717,16 +719,14 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
       try {
          try {
             factory.connect(reconnectAttempts, failoverOnInitialConnection);
-         }
-         catch (ActiveMQException e1) {
+         } catch (ActiveMQException e1) {
             //we need to make sure is closed just for garbage collection
             factory.close();
             throw e1;
          }
          addFactory(factory);
          return factory;
-      }
-      finally {
+      } finally {
          removeFromConnecting(factory);
       }
    }
@@ -749,6 +749,8 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
       assertOpen();
 
       initialise();
+
+      flushTopology();
 
       if (this.getNumInitialConnectors() == 0 && discoveryGroup != null) {
          // Wait for an initial broadcast to give us at least one node in the cluster
@@ -780,12 +782,10 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
                try {
                   addToConnecting(factory);
                   factory.connect(initialConnectAttempts, failoverOnInitialConnection);
-               }
-               finally {
+               } finally {
                   removeFromConnecting(factory);
                }
-            }
-            catch (ActiveMQException e) {
+            } catch (ActiveMQException e) {
                factory.close();
                if (e.getType() == ActiveMQExceptionType.NOT_CONNECTED) {
                   attempts++;
@@ -800,12 +800,12 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
                      }
                   }
                   retry = true;
-               }
-               else {
+               } else {
                   throw e;
                }
             }
-         } while (retry);
+         }
+         while (retry);
       }
 
       // ATM topology is never != null. Checking here just to be consistent with
@@ -819,6 +819,12 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
       addFactory(factory);
 
       return factory;
+   }
+
+   public void flushTopology() {
+      if (updateArrayActor != null) {
+         updateArrayActor.flush(10, TimeUnit.SECONDS);
+      }
    }
 
    @Override
@@ -1344,13 +1350,11 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
          synchronized (this) {
             try {
                discoveryGroup.stop();
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                ActiveMQClientLogger.LOGGER.failedToStopDiscovery(e);
             }
          }
-      }
-      else {
+      } else {
          staticConnector.disconnect();
       }
 
@@ -1376,9 +1380,13 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
       }
       for (ClientSessionFactory factory : clonedFactory) {
          if (sendClose) {
-            factory.close();
-         }
-         else {
+            try {
+               factory.close();
+            } catch (Throwable e) {
+               logger.debug(e.getMessage(), e);
+               factory.cleanup();
+            }
+         } else {
             factory.cleanup();
          }
       }
@@ -1391,8 +1399,7 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
                if (!threadPool.awaitTermination(10000, TimeUnit.MILLISECONDS)) {
                   ActiveMQClientLogger.LOGGER.timedOutWaitingForTermination();
                }
-            }
-            catch (InterruptedException e) {
+            } catch (InterruptedException e) {
                throw new ActiveMQInterruptedException(e);
             }
          }
@@ -1404,8 +1411,7 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
                if (!scheduledThreadPool.awaitTermination(10000, TimeUnit.MILLISECONDS)) {
                   ActiveMQClientLogger.LOGGER.timedOutWaitingForScheduledPoolTermination();
                }
-            }
-            catch (InterruptedException e) {
+            } catch (InterruptedException e) {
                throw new ActiveMQInterruptedException(e);
             }
          }
@@ -1435,16 +1441,14 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
       topology.removeMember(eventTime, nodeID);
 
       if (clusterConnection) {
-         updateArraysAndPairs();
-      }
-      else {
+         updateArraysAndPairs(eventTime);
+      } else {
          if (topology.isEmpty()) {
             // Resetting the topology to its original condition as it was brand new
             receivedTopology = false;
             topologyArray = null;
-         }
-         else {
-            updateArraysAndPairs();
+         } else {
+            updateArraysAndPairs(eventTime);
 
             if (topology.nodes() == 1 && topology.getMember(this.nodeID) != null) {
                // Resetting the topology to its original condition as it was brand new
@@ -1483,7 +1487,7 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
          }
       }
 
-      updateArraysAndPairs();
+      updateArraysAndPairs(uniqueEventID);
 
       if (last) {
          receivedTopology = true;
@@ -1507,7 +1511,16 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
    }
 
    @SuppressWarnings("unchecked")
-   private void updateArraysAndPairs() {
+   private void updateArraysAndPairs(long time) {
+      if (updateArrayActor == null) {
+         // if for some reason we don't have an actor, just go straight
+         internalUpdateArray(time);
+      } else {
+         updateArrayActor.act(time);
+      }
+   }
+
+   private void internalUpdateArray(long time) {
       synchronized (topologyArrayGuard) {
          Collection<TopologyMemberImpl> membersCopy = topology.getMembers();
 
@@ -1515,7 +1528,9 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
 
          int count = 0;
          for (TopologyMemberImpl pair : membersCopy) {
-            topologyArrayLocal[count++] = pair.getConnector();
+            Pair<TransportConfiguration, TransportConfiguration> transportConfigs = pair.getConnector();
+            topologyArrayLocal[count++] = new Pair<>(protocolManagerFactory.adaptTransportConfiguration(transportConfigs.getA()),
+                                                     protocolManagerFactory.adaptTransportConfiguration(transportConfigs.getB()));
          }
 
          this.topologyArray = topologyArrayLocal;
@@ -1551,16 +1566,14 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
             public void run() {
                try {
                   connect();
-               }
-               catch (ActiveMQException e) {
+               } catch (ActiveMQException e) {
                   ActiveMQClientLogger.LOGGER.errorConnectingToNodes(e);
                }
             }
          };
          if (startExecutor != null) {
             startExecutor.execute(connectRunnable);
-         }
-         else {
+         } else {
             connectRunnable.run();
          }
       }
@@ -1578,6 +1591,17 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
          receivedTopology = false;
          topologyArray = null;
       }
+   }
+
+   @Override
+   public ServerLocator setUseTopologyForLoadBalancing(boolean useTopologyForLoadBalancing) {
+      this.useTopologyForLoadBalancing = useTopologyForLoadBalancing;
+      return this;
+   }
+
+   @Override
+   public boolean getUseTopologyForLoadBalancing() {
+      return useTopologyForLoadBalancing;
    }
 
    @Override
@@ -1667,8 +1691,7 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
                            if (clusterConnection && exception.getType() == ActiveMQExceptionType.DISCONNECTED) {
                               try {
                                  ServerLocatorImpl.this.start(startExecutor);
-                              }
-                              catch (Exception e) {
+                              } catch (Exception e) {
                                  // There isn't much to be done if this happens here
                                  ActiveMQClientLogger.LOGGER.errorStartingLocator(e);
                               }
@@ -1690,10 +1713,10 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
 
                      if (logger.isDebugEnabled()) {
                         logger.debug("Returning " + csf +
-                                                             " after " +
-                                                             retryNumber +
-                                                             " retries on StaticConnector " +
-                                                             ServerLocatorImpl.this);
+                                        " after " +
+                                        retryNumber +
+                                        " retries on StaticConnector " +
+                                        ServerLocatorImpl.this);
                      }
 
                      return csf;
@@ -1708,14 +1731,12 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
                   return null;
             }
 
-         }
-         catch (RejectedExecutionException e) {
+         } catch (RejectedExecutionException e) {
             if (isClosed() || skipWarnings)
                return null;
             logger.debug("Rejected execution", e);
             throw e;
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             if (isClosed() || skipWarnings)
                return null;
             ActiveMQClientLogger.LOGGER.errorConnectingToNodes(e);
@@ -1795,14 +1816,12 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
 
                   try {
                      factoryToUse.connect(1, false);
-                  }
-                  finally {
+                  } finally {
                      removeFromConnecting(factoryToUse);
                   }
                }
                return factoryToUse;
-            }
-            catch (ActiveMQException e) {
+            } catch (ActiveMQException e) {
                logger.debug(this + "::Exception on establish connector initial connection", e);
                return null;
             }
@@ -1882,6 +1901,5 @@ public final class ServerLocatorImpl implements ServerLocatorInternal, Discovery
       });
 
    }
-
 
 }

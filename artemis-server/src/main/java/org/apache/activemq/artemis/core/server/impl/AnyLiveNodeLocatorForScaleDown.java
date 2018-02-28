@@ -19,7 +19,6 @@ package org.apache.activemq.artemis.core.server.impl;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.TreeMap;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -29,6 +28,7 @@ import org.apache.activemq.artemis.api.core.Pair;
 import org.apache.activemq.artemis.api.core.TransportConfiguration;
 import org.apache.activemq.artemis.api.core.client.TopologyMember;
 import org.apache.activemq.artemis.core.server.LiveNodeLocator;
+import org.apache.activemq.artemis.utils.ConcurrentUtil;
 import org.jboss.logging.Logger;
 
 /**
@@ -65,20 +65,19 @@ public class AnyLiveNodeLocatorForScaleDown extends LiveNodeLocator {
          if (connectors.isEmpty()) {
             try {
                if (timeout != -1L) {
-                  if (!condition.await(timeout, TimeUnit.MILLISECONDS)) {
+                  if (!ConcurrentUtil.await(condition, timeout)) {
                      throw new ActiveMQException("Timeout elapsed while waiting for cluster node");
                   }
+               } else {
+                  while (connectors.isEmpty()) {
+                     condition.await();
+                  }
                }
-               else {
-                  condition.await();
-               }
-            }
-            catch (InterruptedException e) {
+            } catch (InterruptedException e) {
 
             }
          }
-      }
-      finally {
+      } finally {
          lock.unlock();
       }
    }
@@ -92,7 +91,7 @@ public class AnyLiveNodeLocatorForScaleDown extends LiveNodeLocator {
          if (topologyMember.getNodeId().equals(myNodeID)) {
             if (logger.isTraceEnabled()) {
                logger.trace(this + "::informing node about itself, nodeUUID=" +
-                                                    server.getNodeID() + ", connectorPair=" + topologyMember + ", this = " + this);
+                               server.getNodeID() + ", connectorPair=" + topologyMember + ", this = " + this);
             }
             return;
          }
@@ -101,8 +100,7 @@ public class AnyLiveNodeLocatorForScaleDown extends LiveNodeLocator {
             connectors.put(topologyMember.getNodeId(), connector);
             condition.signal();
          }
-      }
-      finally {
+      } finally {
          lock.unlock();
       }
    }
@@ -115,8 +113,7 @@ public class AnyLiveNodeLocatorForScaleDown extends LiveNodeLocator {
          if (connectors.size() > 0) {
             condition.signal();
          }
-      }
-      finally {
+      } finally {
          lock.unlock();
       }
    }
@@ -136,8 +133,7 @@ public class AnyLiveNodeLocatorForScaleDown extends LiveNodeLocator {
             nodeID = iterator.next();
          }
          return connectors.get(nodeID);
-      }
-      finally {
+      } finally {
          lock.unlock();
       }
    }
@@ -147,10 +143,8 @@ public class AnyLiveNodeLocatorForScaleDown extends LiveNodeLocator {
       try {
          lock.lock();
          connectors.remove(nodeID);
-      }
-      finally {
+      } finally {
          lock.unlock();
       }
    }
 }
-

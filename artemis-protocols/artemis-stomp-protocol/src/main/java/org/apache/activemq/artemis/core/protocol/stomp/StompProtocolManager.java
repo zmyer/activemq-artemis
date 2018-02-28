@@ -16,7 +16,6 @@
  */
 package org.apache.activemq.artemis.core.protocol.stomp;
 
-import javax.security.cert.X509Certificate;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -33,15 +32,15 @@ import org.apache.activemq.artemis.api.core.BaseInterceptor;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.api.core.client.ActiveMQClient;
 import org.apache.activemq.artemis.core.io.IOCallback;
+import org.apache.activemq.artemis.core.message.impl.CoreMessage;
+import org.apache.activemq.artemis.core.remoting.CertificateUtil;
 import org.apache.activemq.artemis.core.remoting.impl.netty.NettyServerConnection;
 import org.apache.activemq.artemis.core.remoting.impl.netty.TransportConstants;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.core.server.ActiveMQServerLogger;
 import org.apache.activemq.artemis.core.server.ServerSession;
-import org.apache.activemq.artemis.core.server.impl.ServerMessageImpl;
 import org.apache.activemq.artemis.spi.core.protocol.AbstractProtocolManager;
 import org.apache.activemq.artemis.spi.core.protocol.ConnectionEntry;
-import org.apache.activemq.artemis.spi.core.protocol.MessageConverter;
 import org.apache.activemq.artemis.spi.core.protocol.ProtocolManagerFactory;
 import org.apache.activemq.artemis.spi.core.protocol.RemotingConnection;
 import org.apache.activemq.artemis.spi.core.remoting.Acceptor;
@@ -56,7 +55,7 @@ import static org.apache.activemq.artemis.core.protocol.stomp.ActiveMQStompProto
 /**
  * StompProtocolManager
  */
-public class StompProtocolManager extends AbstractProtocolManager<StompFrame,StompFrameInterceptor,StompConnection> {
+public class StompProtocolManager extends AbstractProtocolManager<StompFrame, StompFrameInterceptor, StompConnection> {
 
    private static final List<String> websocketRegistryNames = Arrays.asList("v10.stomp", "v11.stomp", "v12.stomp");
 
@@ -109,15 +108,8 @@ public class StompProtocolManager extends AbstractProtocolManager<StompFrame,Sto
    }
 
    @Override
-   public MessageConverter getConverter() {
-      return null;
-   }
-
-   // ProtocolManager implementation --------------------------------
-
-   @Override
    public ConnectionEntry createConnectionEntry(final Acceptor acceptorUsed, final Connection connection) {
-      StompConnection conn = new StompConnection(acceptorUsed, connection, this);
+      StompConnection conn = new StompConnection(acceptorUsed, connection, this, server.getScheduledPool(), server.getExecutorFactory());
 
       // Note that STOMP 1.0 has no heartbeat, so if connection ttl is non zero, data must continue to be sent or connection
       // will be timed out and closed!
@@ -136,8 +128,7 @@ public class StompProtocolManager extends AbstractProtocolManager<StompFrame,Sto
 
       if (ttl != -1) {
          return new ConnectionEntry(conn, null, System.currentTimeMillis(), ttl);
-      }
-      else {
+      } else {
          // Default to 1 minute - which is same as core protocol
          return new ConnectionEntry(conn, null, System.currentTimeMillis(), 1 * 60 * 1000);
       }
@@ -157,8 +148,7 @@ public class StompProtocolManager extends AbstractProtocolManager<StompFrame,Sto
          StompFrame request;
          try {
             request = conn.decode(buffer);
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             ActiveMQServerLogger.LOGGER.errorDecodingPacket(e);
             return;
          }
@@ -170,11 +160,11 @@ public class StompProtocolManager extends AbstractProtocolManager<StompFrame,Sto
          try {
             invokeInterceptors(this.incomingInterceptors, request, conn);
             conn.handleFrame(request);
-         }
-         finally {
+         } finally {
             server.getStorageManager().clearContext();
          }
-      } while (conn.hasBytes());
+      }
+      while (conn.hasBytes());
    }
 
    @Override
@@ -214,8 +204,7 @@ public class StompProtocolManager extends AbstractProtocolManager<StompFrame,Sto
 
          try {
             connection.physicalSend(frame);
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             ActiveMQStompProtocolLogger.LOGGER.errorSendingFrame(e, frame);
             return false;
          }
@@ -234,7 +223,7 @@ public class StompProtocolManager extends AbstractProtocolManager<StompFrame,Sto
       if (stompSession == null) {
          stompSession = new StompSession(connection, this, server.getStorageManager().newContext(server.getExecutorFactory().getExecutor()));
          String name = UUIDGenerator.getInstance().generateStringUUID();
-         ServerSession session = server.createSession(name, connection.getLogin(), connection.getPasscode(), ActiveMQClient.DEFAULT_MIN_LARGE_MESSAGE_SIZE, connection, true, false, false, false, null, stompSession, true);
+         ServerSession session = server.createSession(name, connection.getLogin(), connection.getPasscode(), ActiveMQClient.DEFAULT_MIN_LARGE_MESSAGE_SIZE, connection, true, false, false, false, null, stompSession, true, server.newOperationContext(), getPrefixes());
          stompSession.setServerSession(session);
          sessions.put(connection.getID(), stompSession);
       }
@@ -247,7 +236,7 @@ public class StompProtocolManager extends AbstractProtocolManager<StompFrame,Sto
       if (stompSession == null) {
          stompSession = new StompSession(connection, this, server.getStorageManager().newContext(executor));
          String name = UUIDGenerator.getInstance().generateStringUUID();
-         ServerSession session = server.createSession(name, connection.getLogin(), connection.getPasscode(), ActiveMQClient.DEFAULT_MIN_LARGE_MESSAGE_SIZE, connection, false, false, false, false, null, stompSession, true);
+         ServerSession session = server.createSession(name, connection.getLogin(), connection.getPasscode(), ActiveMQClient.DEFAULT_MIN_LARGE_MESSAGE_SIZE, connection, false, false, false, false, null, stompSession, true, server.newOperationContext(), getPrefixes());
          stompSession.setServerSession(session);
          transactedSessions.put(txID, stompSession);
       }
@@ -265,11 +254,10 @@ public class StompProtocolManager extends AbstractProtocolManager<StompFrame,Sto
             StompSession session = sessions.remove(connection.getID());
             if (session != null) {
                try {
-                  session.getSession().stop();
-                  session.getSession().rollback(true);
-                  session.getSession().close(false);
-               }
-               catch (Exception e) {
+                  session.getCoreSession().stop();
+                  session.getCoreSession().rollback(true);
+                  session.getCoreSession().close(false);
+               } catch (Exception e) {
                   ActiveMQServerLogger.LOGGER.errorCleaningStompConn(e);
                }
             }
@@ -279,12 +267,11 @@ public class StompProtocolManager extends AbstractProtocolManager<StompFrame,Sto
             while (iterator.hasNext()) {
                Map.Entry<String, StompSession> entry = iterator.next();
                if (entry.getValue().getConnection() == connection) {
-                  ServerSession serverSession = entry.getValue().getSession();
+                  ServerSession serverSession = entry.getValue().getCoreSession();
                   try {
                      serverSession.rollback(true);
                      serverSession.close(false);
-                  }
-                  catch (Exception e) {
+                  } catch (Exception e) {
                      ActiveMQServerLogger.LOGGER.errorCleaningStompConn(e);
                   }
                   iterator.remove();
@@ -294,7 +281,7 @@ public class StompProtocolManager extends AbstractProtocolManager<StompFrame,Sto
       });
    }
 
-   public void sendReply(final StompConnection connection, final StompFrame frame) {
+   public void sendReply(final StompConnection connection, final StompFrame frame, final StompPostReceiptFunction function) {
       server.getStorageManager().afterCompleteOperations(new IOCallback() {
          @Override
          public void onError(final int errorCode, final String errorMessage) {
@@ -308,7 +295,13 @@ public class StompProtocolManager extends AbstractProtocolManager<StompFrame,Sto
 
          @Override
          public void done() {
-            send(connection, frame);
+            if (frame != null) {
+               send(connection, frame);
+            }
+
+            if (function != null) {
+               function.afterReceipt();
+            }
          }
       });
    }
@@ -333,19 +326,17 @@ public class StompProtocolManager extends AbstractProtocolManager<StompFrame,Sto
       return "activemq";
    }
 
-   public boolean validateUser(String login, String passcode, X509Certificate[] certificates) {
+   public boolean validateUser(String login, String passcode, RemotingConnection remotingConnection) {
       boolean validated = true;
 
       ActiveMQSecurityManager sm = server.getSecurityManager();
 
       if (sm != null && server.getConfiguration().isSecurityEnabled()) {
          if (sm instanceof ActiveMQSecurityManager3) {
-            validated = ((ActiveMQSecurityManager3) sm).validateUser(login, passcode, certificates) != null;
-         }
-         else if (sm instanceof ActiveMQSecurityManager2) {
-            validated = ((ActiveMQSecurityManager2) sm).validateUser(login, passcode, certificates);
-         }
-         else {
+            validated = ((ActiveMQSecurityManager3) sm).validateUser(login, passcode, remotingConnection) != null;
+         } else if (sm instanceof ActiveMQSecurityManager2) {
+            validated = ((ActiveMQSecurityManager2) sm).validateUser(login, passcode, CertificateUtil.getCertsFromConnection(remotingConnection));
+         } else {
             validated = sm.validateUser(login, passcode);
          }
       }
@@ -353,8 +344,8 @@ public class StompProtocolManager extends AbstractProtocolManager<StompFrame,Sto
       return validated;
    }
 
-   public ServerMessageImpl createServerMessage() {
-      return new ServerMessageImpl(server.getStorageManager().generateID(), 512);
+   public CoreMessage createServerMessage() {
+      return new CoreMessage(server.getStorageManager().generateID(), 512);
    }
 
    public void commitTransaction(StompConnection connection, String txID) throws Exception {
@@ -363,7 +354,7 @@ public class StompProtocolManager extends AbstractProtocolManager<StompFrame,Sto
          throw new ActiveMQStompException(connection, "No transaction started: " + txID);
       }
       transactedSessions.remove(txID);
-      session.getSession().commit();
+      session.getCoreSession().commit();
    }
 
    public void abortTransaction(StompConnection connection, String txID) throws Exception {
@@ -372,17 +363,17 @@ public class StompProtocolManager extends AbstractProtocolManager<StompFrame,Sto
          throw new ActiveMQStompException(connection, "No transaction started: " + txID);
       }
       transactedSessions.remove(txID);
-      session.getSession().rollback(false);
+      session.getCoreSession().rollback(false);
    }
    // Inner classes -------------------------------------------------
 
-   public void createSubscription(StompConnection connection,
-                                  String subscriptionID,
-                                  String durableSubscriptionName,
-                                  String destination,
-                                  String selector,
-                                  String ack,
-                                  boolean noLocal) throws Exception {
+   public StompPostReceiptFunction subscribe(StompConnection connection,
+                         String subscriptionID,
+                         String durableSubscriptionName,
+                         String destination,
+                         String selector,
+                         String ack,
+                         boolean noLocal) throws Exception {
       StompSession stompSession = getSession(connection);
       stompSession.setNoLocal(noLocal);
       if (stompSession.containsSubscription(subscriptionID)) {
@@ -390,7 +381,7 @@ public class StompProtocolManager extends AbstractProtocolManager<StompFrame,Sto
             ". Either use unique subscription IDs or do not create multiple subscriptions for the same destination");
       }
       long consumerID = server.getStorageManager().generateID();
-      stompSession.addSubscription(consumerID, subscriptionID, connection.getClientID(), durableSubscriptionName, destination, selector, ack);
+      return stompSession.addSubscription(consumerID, subscriptionID, connection.getClientID(), durableSubscriptionName, destination, selector, ack);
    }
 
    public void unsubscribe(StompConnection connection,
@@ -419,7 +410,10 @@ public class StompProtocolManager extends AbstractProtocolManager<StompFrame,Sto
    }
 
    public boolean destinationExists(String destination) {
-      return server.getPostOffice().getAddresses().contains(SimpleString.toSimpleString(destination));
+      if (server.getManagementService().getManagementAddress().toString().equals(destination)) {
+         return true;
+      }
+      return server.getPostOffice().getAddressInfo(SimpleString.toSimpleString(destination)) != null;
    }
 
    public ActiveMQServer getServer() {

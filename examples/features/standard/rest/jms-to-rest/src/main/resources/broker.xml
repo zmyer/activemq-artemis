@@ -1,4 +1,4 @@
-<?xml version='1.0'?>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!--
 Licensed to the Apache Software Foundation (ASF) under one
 or more contributor license agreements.  See the NOTICE file
@@ -17,16 +17,7 @@ KIND, either express or implied.  See the License for the
 specific language governing permissions and limitations
 under the License.
 -->
-
-<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-               xmlns="urn:activemq"
-               xsi:schemaLocation="urn:activemq /schema/artemis-server.xsd">
-
-   <jms xmlns="urn:activemq:jms">
-      <!--the queue used by the example-->
-      <queue name="orders"/>
-   </jms>
-
+<configuration xmlns="urn:activemq" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="urn:activemq /schema/artemis-configuration.xsd">
    <core xmlns="urn:activemq:core">
       <persistence-enabled>false</persistence-enabled>
       <security-enabled>false</security-enabled>
@@ -35,5 +26,12 @@ under the License.
          <acceptor name="in-vm">vm://0</acceptor>
          <acceptor name="netty">tcp://localhost:61616</acceptor>
       </acceptors>
+      <addresses>
+         <address name="orders">
+            <anycast>
+               <queue name="orders"/>
+            </anycast>
+         </address>
+      </addresses>
    </core>
 </configuration>

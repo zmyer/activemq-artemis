@@ -32,10 +32,10 @@ import org.apache.activemq.artemis.api.core.ActiveMQTransactionRolledBackExcepti
 import org.apache.activemq.artemis.api.core.ActiveMQUnBlockedException;
 import org.apache.activemq.artemis.core.cluster.DiscoveryGroup;
 import org.apache.activemq.artemis.spi.core.remoting.Connection;
+import org.jboss.logging.Messages;
 import org.jboss.logging.annotations.Cause;
 import org.jboss.logging.annotations.Message;
 import org.jboss.logging.annotations.MessageBundle;
-import org.jboss.logging.Messages;
 import org.w3c.dom.Node;
 
 /**
@@ -178,9 +178,6 @@ public interface ActiveMQClientMessageBundle {
    @Message(id = 119043, value = "Invalid argument null handler")
    IllegalArgumentException nullHandler();
 
-   @Message(id = 119044, value = "No available codec to decode password!")
-   IllegalArgumentException noCodec();
-
    @Message(id = 119045, value = "the first node to be compared is null")
    IllegalArgumentException firstNodeNull();
 
@@ -190,7 +187,7 @@ public interface ActiveMQClientMessageBundle {
    @Message(id = 119047, value = "nodes have different node names")
    IllegalArgumentException nodeHaveDifferentNames();
 
-   @Message(id = 119048, value = "nodes hava a different number of attributes")
+   @Message(id = 119048, value = "nodes have a different number of attributes")
    IllegalArgumentException nodeHaveDifferentAttNumber();
 
    @Message(id = 119049, value = "attribute {0}={1} does not match", format = Message.Format.MESSAGE_FORMAT)
@@ -199,7 +196,7 @@ public interface ActiveMQClientMessageBundle {
    @Message(id = 119050, value = "one node has children and the other does not")
    IllegalArgumentException oneNodeHasChildren();
 
-   @Message(id = 119051, value = "nodes hava a different number of children")
+   @Message(id = 119051, value = "nodes have a different number of children")
    IllegalArgumentException nodeHasDifferentChildNumber();
 
    @Message(id = 119052, value = "Element {0} requires a valid Boolean value, but ''{1}'' cannot be parsed as a Boolean", format = Message.Format.MESSAGE_FORMAT)
@@ -212,10 +209,7 @@ public interface ActiveMQClientMessageBundle {
    IllegalArgumentException mustBeInteger(Node elem, String value);
 
    @Message(id = 119055, value = "Element {0} requires a valid Long value, but ''{1}'' cannot be parsed as a Long", format = Message.Format.MESSAGE_FORMAT)
-   IllegalArgumentException mustBeLong(Node elem, String value);
-
-   @Message(id = 119056, value = "Failed to get decoder")
-   IllegalArgumentException failedToGetDecoder(@Cause Exception e);
+   IllegalArgumentException mustBeLong(Node element, String value);
 
    @Message(id = 119057, value = "Error decoding password")
    IllegalArgumentException errordecodingPassword(@Cause Exception e);

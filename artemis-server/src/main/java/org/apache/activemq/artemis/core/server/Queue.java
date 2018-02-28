@@ -22,15 +22,22 @@ import java.util.Map;
 import java.util.concurrent.Executor;
 
 import org.apache.activemq.artemis.api.core.ActiveMQException;
+import org.apache.activemq.artemis.api.core.Message;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.core.filter.Filter;
 import org.apache.activemq.artemis.core.paging.cursor.PageSubscription;
+import org.apache.activemq.artemis.core.persistence.OperationContext;
+import org.apache.activemq.artemis.core.postoffice.Binding;
 import org.apache.activemq.artemis.core.server.impl.AckReason;
 import org.apache.activemq.artemis.core.transaction.Transaction;
-import org.apache.activemq.artemis.utils.LinkedListIterator;
 import org.apache.activemq.artemis.utils.ReferenceCounter;
+import org.apache.activemq.artemis.utils.collections.LinkedListIterator;
+import org.apache.activemq.artemis.utils.critical.CriticalComponent;
 
-public interface Queue extends Bindable {
+public interface Queue extends Bindable,CriticalComponent {
+
+   int MAX_CONSUMERS_UNLIMITED = -1;
 
    SimpleString getName();
 
@@ -40,11 +47,36 @@ public interface Queue extends Bindable {
 
    PageSubscription getPageSubscription();
 
+   RoutingType getRoutingType();
+
+   void setRoutingType(RoutingType routingType);
+
    boolean isDurable();
+
+   /**
+    * The queue definition could be durable, but the messages could eventually be considered non durable.
+    * (e.g. purgeOnNoConsumers)
+    * @return
+    */
+   boolean isDurableMessage();
 
    boolean isTemporary();
 
    boolean isAutoCreated();
+
+   boolean isPurgeOnNoConsumers();
+
+   void setPurgeOnNoConsumers(boolean value);
+
+   boolean isExclusive();
+
+   void setExclusive(boolean value);
+
+   boolean isLastValue();
+
+   int getMaxConsumers();
+
+   void setMaxConsumer(int maxConsumers);
 
    void addConsumer(Consumer consumer) throws Exception;
 
@@ -71,15 +103,15 @@ public interface Queue extends Bindable {
 
    void addHead(MessageReference ref, boolean scheduling);
 
-   void addHead(final List<MessageReference> refs, boolean scheduling);
+   void addHead(List<MessageReference> refs, boolean scheduling);
 
    void acknowledge(MessageReference ref) throws Exception;
 
-   void acknowledge(final MessageReference ref, AckReason reason) throws Exception;
+   void acknowledge(MessageReference ref, AckReason reason) throws Exception;
 
    void acknowledge(Transaction tx, MessageReference ref) throws Exception;
 
-   void acknowledge(final Transaction tx, final MessageReference ref, AckReason reason) throws Exception;
+   void acknowledge(Transaction tx, MessageReference ref, AckReason reason) throws Exception;
 
    void reacknowledge(Transaction tx, MessageReference ref) throws Exception;
 
@@ -106,11 +138,41 @@ public interface Queue extends Bindable {
 
    long getMessageCount();
 
+   /**
+    * This is the size of the messages in the queue when persisted on disk which is used for metrics tracking
+    * to give an idea of the amount of data on the queue to be consumed
+    *
+    * Note that this includes all messages on the queue, even messages that are non-durable which may only be in memory
+    */
+   long getPersistentSize();
+
+   /**
+    * This is the number of the durable messages in the queue
+    */
+   long getDurableMessageCount();
+
+   /**
+    * This is the persistent size of all the durable messages in the queue
+    */
+   long getDurablePersistentSize();
+
    int getDeliveringCount();
 
-   void referenceHandled();
+   long getDeliveringSize();
+
+   int getDurableDeliveringCount();
+
+   long getDurableDeliveringSize();
+
+   void referenceHandled(MessageReference ref);
 
    int getScheduledCount();
+
+   long getScheduledSize();
+
+   int getDurableScheduledCount();
+
+   long getDurableScheduledSize();
 
    List<MessageReference> getScheduledMessages();
 
@@ -136,13 +198,17 @@ public interface Queue extends Bindable {
 
    int deleteAllReferences() throws Exception;
 
-   int deleteAllReferences(final int flushLimit) throws Exception;
+   int deleteAllReferences(int flushLimit) throws Exception;
 
    boolean deleteReference(long messageID) throws Exception;
 
    int deleteMatchingReferences(Filter filter) throws Exception;
 
-   int deleteMatchingReferences(int flushLImit, Filter filter) throws Exception;
+   default int deleteMatchingReferences(int flushLImit, Filter filter) throws Exception {
+      return deleteMatchingReferences(flushLImit, filter, AckReason.NORMAL);
+   }
+
+   int deleteMatchingReferences(int flushLImit, Filter filter, AckReason ackReason) throws Exception;
 
    boolean expireReference(long messageID) throws Exception;
 
@@ -159,22 +225,21 @@ public interface Queue extends Bindable {
 
    int sendMessagesToDeadLetterAddress(Filter filter) throws Exception;
 
-   void sendToDeadLetterAddress(final Transaction tx, final MessageReference ref) throws Exception;
+   void sendToDeadLetterAddress(Transaction tx, MessageReference ref) throws Exception;
 
    boolean changeReferencePriority(long messageID, byte newPriority) throws Exception;
 
    int changeReferencesPriority(Filter filter, byte newPriority) throws Exception;
 
-   boolean moveReference(long messageID, SimpleString toAddress) throws Exception;
+   boolean moveReference(long messageID, SimpleString toAddress, Binding binding, boolean rejectDuplicates) throws Exception;
 
-   boolean moveReference(long messageID, SimpleString toAddress, boolean rejectDuplicates) throws Exception;
+   int moveReferences(Filter filter, SimpleString toAddress, Binding binding) throws Exception;
 
-   int moveReferences(Filter filter, SimpleString toAddress) throws Exception;
-
-   int moveReferences(final int flushLimit,
+   int moveReferences(int flushLimit,
                       Filter filter,
                       SimpleString toAddress,
-                      boolean rejectDuplicates) throws Exception;
+                      boolean rejectDuplicates,
+                      Binding binding) throws Exception;
 
    int retryMessages(Filter filter) throws Exception;
 
@@ -182,7 +247,7 @@ public interface Queue extends Bindable {
 
    void cancelRedistributor() throws Exception;
 
-   boolean hasMatchingConsumer(ServerMessage message);
+   boolean hasMatchingConsumer(Message message);
 
    Collection<Consumer> getConsumers();
 
@@ -195,7 +260,7 @@ public interface Queue extends Bindable {
     */
    LinkedListIterator<MessageReference> iterator();
 
-   LinkedListIterator<MessageReference> totalIterator();
+   LinkedListIterator<MessageReference> browserIterator();
 
    SimpleString getExpiryAddress();
 
@@ -205,6 +270,15 @@ public interface Queue extends Bindable {
     * To check if a queue is paused, invoke <i>isPaused()</i>
     */
    void pause();
+
+   /**
+    * Pauses the queue. It will receive messages but won't give them to the consumers until resumed.
+    * If a queue is paused, pausing it again will only throw a warning.
+    * To check if a queue is paused, invoke <i>isPaused()</i>
+    */
+   void pause(boolean persist);
+
+   void reloadPause(long recordID);
 
    /**
     * Resumes the delivery of message for the queue.
@@ -217,6 +291,13 @@ public interface Queue extends Bindable {
     * @return true if paused, false otherwise.
     */
    boolean isPaused();
+
+   /**
+    * if the pause was persisted
+    *
+    * @return
+    */
+   boolean isPersistedPause();
 
    Executor getExecutor();
 
@@ -263,5 +344,7 @@ public interface Queue extends Bindable {
     */
    SimpleString getUser();
 
-   void decDelivering(int size);
+   /** This is to perform a check on the counter again */
+   void recheckRefCount(OperationContext context);
+
 }

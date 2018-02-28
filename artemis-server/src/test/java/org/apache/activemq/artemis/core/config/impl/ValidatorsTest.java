@@ -16,12 +16,10 @@
  */
 package org.apache.activemq.artemis.core.config.impl;
 
-import org.junit.Test;
-
-import org.junit.Assert;
-
 import org.apache.activemq.artemis.core.server.JournalType;
 import org.apache.activemq.artemis.utils.RandomUtil;
+import org.junit.Assert;
+import org.junit.Test;
 
 public class ValidatorsTest extends Assert {
 
@@ -33,8 +31,7 @@ public class ValidatorsTest extends Assert {
       try {
          validator.validate(RandomUtil.randomString(), value);
          Assert.fail(validator + " must not validate " + value);
-      }
-      catch (IllegalArgumentException e) {
+      } catch (IllegalArgumentException e) {
 
       }
    }
@@ -111,6 +108,16 @@ public class ValidatorsTest extends Assert {
       ValidatorsTest.failure(Validators.PERCENTAGE, -1);
       ValidatorsTest.failure(Validators.PERCENTAGE, 101);
       ValidatorsTest.failure(Validators.PERCENTAGE, null);
+   }
+
+   @Test
+   public void testPERCENTAGE_OR_MINUS_ONE() {
+      ValidatorsTest.success(Validators.PERCENTAGE_OR_MINUS_ONE, 99);
+      ValidatorsTest.success(Validators.PERCENTAGE_OR_MINUS_ONE, 100);
+      ValidatorsTest.success(Validators.PERCENTAGE_OR_MINUS_ONE, 0);
+      ValidatorsTest.success(Validators.PERCENTAGE_OR_MINUS_ONE, -1);
+      ValidatorsTest.failure(Validators.PERCENTAGE_OR_MINUS_ONE, 101);
+      ValidatorsTest.failure(Validators.PERCENTAGE_OR_MINUS_ONE, null);
    }
 
    // Package protected ---------------------------------------------

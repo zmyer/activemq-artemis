@@ -20,8 +20,10 @@ import java.io.File;
 import java.net.URL;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 
+import org.apache.activemq.artemis.utils.critical.CriticalAnalyzerPolicy;
 import org.apache.activemq.artemis.api.core.BroadcastGroupConfiguration;
 import org.apache.activemq.artemis.api.core.DiscoveryGroupConfiguration;
 import org.apache.activemq.artemis.api.core.SimpleString;
@@ -31,6 +33,7 @@ import org.apache.activemq.artemis.core.security.Role;
 import org.apache.activemq.artemis.core.server.JournalType;
 import org.apache.activemq.artemis.core.server.SecuritySettingPlugin;
 import org.apache.activemq.artemis.core.server.group.impl.GroupingHandlerConfiguration;
+import org.apache.activemq.artemis.core.server.plugin.ActiveMQServerPlugin;
 import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
 import org.apache.activemq.artemis.core.settings.impl.ResourceLimitSettings;
 
@@ -48,6 +51,47 @@ public interface Configuration {
     * To be used on dependency management on the application server
     */
    Configuration setName(String name);
+
+
+   /**
+    * We use Bean-utils to pass in System.properties that start with {@link #setSystemPropertyPrefix(String)}.
+    * The default should be 'brokerconfig.' (Including the ".").
+    * For example if you want to set clustered through a system property you must do:
+    *
+    * -Dbrokerconfig.clustered=true
+    *
+    * The prefix is configured here.
+    * @param systemPropertyPrefix
+    * @return
+    */
+   Configuration setSystemPropertyPrefix(String systemPropertyPrefix);
+
+   /**
+    * See doc at {@link #setSystemPropertyPrefix(String)}.
+    * @return
+    */
+   String getSystemPropertyPrefix();
+
+   Configuration parseSystemProperties() throws Exception;
+
+   Configuration parseSystemProperties(Properties properties) throws Exception;
+
+   boolean isCriticalAnalyzer();
+
+   Configuration setCriticalAnalyzer(boolean CriticalAnalyzer);
+
+   long getCriticalAnalyzerTimeout();
+
+   Configuration setCriticalAnalyzerTimeout(long timeout);
+
+   long getCriticalAnalyzerCheckPeriod();
+
+   Configuration setCriticalAnalyzerCheckPeriod(long checkPeriod);
+
+   CriticalAnalyzerPolicy getCriticalAnalyzerPolicy();
+
+   Configuration setCriticalAnalyzerPolicy(CriticalAnalyzerPolicy policy);
+
 
    /**
     * Returns whether this server is clustered. <br>
@@ -77,6 +121,23 @@ public interface Configuration {
     * Sets whether this server is using persistence and store data.
     */
    Configuration setPersistenceEnabled(boolean enable);
+
+   /**
+    * Should use fdatasync on journal files.
+    *
+    * @see <a href="http://man7.org/linux/man-pages/man2/fdatasync.2.html">fdatasync</a>
+    *
+    * @return a boolean
+    */
+   boolean isJournalDatasync();
+
+   /**
+    * documented at {@link #isJournalDatasync()} ()}
+    *
+    * @param enable
+    * @return this
+    */
+   Configuration setJournalDatasync(boolean enable);
 
    /**
     * @return usernames mapped to ResourceLimitSettings
@@ -150,7 +211,7 @@ public interface Configuration {
 
    /**
     * Returns whether graceful shutdown is enabled for this server. <br>
-    * Default value is {@link org.apache.activemq.artemis.api.config.ActiveMQDefaultConfiguration#DEFAULT_SECURITY_ENABLED}.
+    * Default value is {@link org.apache.activemq.artemis.api.config.ActiveMQDefaultConfiguration#DEFAULT_GRACEFUL_SHUTDOWN_ENABLED}.
     */
    boolean isGracefulShutdownEnabled();
 
@@ -196,14 +257,14 @@ public interface Configuration {
     */
    Configuration setJMXDomain(String domain);
 
-  /**
-   * whether or not to use the broker name in the JMX tree
-   * */
+   /**
+    * whether or not to use the broker name in the JMX tree
+    */
    boolean isJMXUseBrokerName();
 
    /**
     * whether or not to use the broker name in the JMX tree
-    * */
+    */
    ConfigurationImpl setJMXUseBrokerName(boolean jmxUseBrokerName);
 
    /**
@@ -247,6 +308,16 @@ public interface Configuration {
    Configuration setConnectionTTLOverride(long ttl);
 
    /**
+    * Returns if to use Core subscription naming for AMQP.
+    */
+   boolean isAmqpUseCoreSubscriptionNaming();
+
+   /**
+    * Sets if to use Core subscription naming for AMQP.
+    */
+   Configuration setAmqpUseCoreSubscriptionNaming(boolean amqpUseCoreSubscriptionNaming);
+
+   /**
     * Returns whether code coming from connection is executed asynchronously or not. <br>
     * Default value is
     * {@link org.apache.activemq.artemis.api.config.ActiveMQDefaultConfiguration#DEFAULT_ASYNC_CONNECTION_EXECUTION_ENABLED}.
@@ -268,7 +339,7 @@ public interface Configuration {
     */
    Configuration setAcceptorConfigurations(Set<TransportConfiguration> infos);
 
-   Configuration addAcceptorConfiguration(final TransportConfiguration infos);
+   Configuration addAcceptorConfiguration(TransportConfiguration infos);
 
    /**
     * Add an acceptor to the config
@@ -292,9 +363,9 @@ public interface Configuration {
     */
    Configuration setConnectorConfigurations(Map<String, TransportConfiguration> infos);
 
-   Configuration addConnectorConfiguration(final String key, final TransportConfiguration info);
+   Configuration addConnectorConfiguration(String key, TransportConfiguration info);
 
-   Configuration addConnectorConfiguration(final String name, final String uri) throws Exception;
+   Configuration addConnectorConfiguration(String name, String uri) throws Exception;
 
    Configuration clearConnectorConfigurations();
 
@@ -308,7 +379,7 @@ public interface Configuration {
     */
    Configuration setBroadcastGroupConfigurations(List<BroadcastGroupConfiguration> configs);
 
-   Configuration addBroadcastGroupConfiguration(final BroadcastGroupConfiguration config);
+   Configuration addBroadcastGroupConfiguration(BroadcastGroupConfiguration config);
 
    /**
     * Returns the discovery groups configured for this server.
@@ -320,7 +391,7 @@ public interface Configuration {
     */
    Configuration setDiscoveryGroupConfigurations(Map<String, DiscoveryGroupConfiguration> configs);
 
-   Configuration addDiscoveryGroupConfiguration(final String key,
+   Configuration addDiscoveryGroupConfiguration(String key,
                                                 DiscoveryGroupConfiguration discoveryGroupConfiguration);
 
    /**
@@ -341,7 +412,7 @@ public interface Configuration {
    /**
     * Sets the bridges configured for this server.
     */
-   Configuration setBridgeConfigurations(final List<BridgeConfiguration> configs);
+   Configuration setBridgeConfigurations(List<BridgeConfiguration> configs);
 
    /**
     * Returns the diverts configured for this server.
@@ -351,9 +422,9 @@ public interface Configuration {
    /**
     * Sets the diverts configured for this server.
     */
-   Configuration setDivertConfigurations(final List<DivertConfiguration> configs);
+   Configuration setDivertConfigurations(List<DivertConfiguration> configs);
 
-   Configuration addDivertConfiguration(final DivertConfiguration config);
+   Configuration addDivertConfiguration(DivertConfiguration config);
 
    /**
     * Returns the cluster connections configured for this server.
@@ -366,9 +437,9 @@ public interface Configuration {
    /**
     * Sets the cluster connections configured for this server.
     */
-   Configuration setClusterConfigurations(final List<ClusterConnectionConfiguration> configs);
+   Configuration setClusterConfigurations(List<ClusterConnectionConfiguration> configs);
 
-   Configuration addClusterConfiguration(final ClusterConnectionConfiguration config);
+   Configuration addClusterConfiguration(ClusterConnectionConfiguration config);
 
    ClusterConnectionConfiguration addClusterConfiguration(String name, String uri) throws Exception;
 
@@ -382,9 +453,24 @@ public interface Configuration {
    /**
     * Sets the queues configured for this server.
     */
-   Configuration setQueueConfigurations(final List<CoreQueueConfiguration> configs);
+   Configuration setQueueConfigurations(List<CoreQueueConfiguration> configs);
 
-   Configuration addQueueConfiguration(final CoreQueueConfiguration config);
+   Configuration addQueueConfiguration(CoreQueueConfiguration config);
+
+   /**
+    * Returns the addresses configured for this server.
+    */
+   List<CoreAddressConfiguration> getAddressConfigurations();
+
+   /**
+    * Sets the addresses configured for this server.
+    */
+   Configuration setAddressConfigurations(List<CoreAddressConfiguration> configs);
+
+   /**
+    * Adds an addresses configuration
+    */
+   Configuration addAddressConfiguration(CoreAddressConfiguration config);
 
    /**
     * Returns the management address of this server. <br>
@@ -506,7 +592,7 @@ public interface Configuration {
    Configuration setJournalDirectory(String dir);
 
    /**
-    * Returns the type of journal used by this server (either {@code NIO} or {@code ASYNCIO}).
+    * Returns the type of journal used by this server ({@code NIO}, {@code ASYNCIO} or {@code MAPPED}).
     * <br>
     * Default value is ASYNCIO.
     */
@@ -561,18 +647,31 @@ public interface Configuration {
     */
    Configuration setJournalCompactMinFiles(int minFiles);
 
-   /** Number of files that would be acceptable to keep on a pool. Default value is {@link org.apache.activemq.artemis.api.config.ActiveMQDefaultConfiguration#DEFAULT_JOURNAL_POOL_FILES}.*/
+   /**
+    * Number of files that would be acceptable to keep on a pool. Default value is {@link org.apache.activemq.artemis.api.config.ActiveMQDefaultConfiguration#DEFAULT_JOURNAL_POOL_FILES}.
+    */
    int getJournalPoolFiles();
 
-   /** Number of files that would be acceptable to keep on a pool. Default value is {@link org.apache.activemq.artemis.api.config.ActiveMQDefaultConfiguration#DEFAULT_JOURNAL_POOL_FILES}.*/
+   /**
+    * Number of files that would be acceptable to keep on a pool. Default value is {@link org.apache.activemq.artemis.api.config.ActiveMQDefaultConfiguration#DEFAULT_JOURNAL_POOL_FILES}.
+    */
    Configuration setJournalPoolFiles(int poolSize);
-
 
    /**
     * Returns the percentage of live data before compacting the journal. <br>
     * Default value is {@link org.apache.activemq.artemis.api.config.ActiveMQDefaultConfiguration#DEFAULT_JOURNAL_COMPACT_PERCENTAGE}.
     */
    int getJournalCompactPercentage();
+
+   /**
+    * @return How long to wait when opening a new Journal file before failing
+    */
+   int getJournalFileOpenTimeout();
+
+   /**
+   * Sets the journal file open timeout
+   */
+   Configuration setJournalFileOpenTimeout(int journalFileOpenTimeout);
 
    /**
     * Sets the percentage of live data before compacting the journal.
@@ -690,10 +789,6 @@ public interface Configuration {
 
    Configuration setLogJournalWriteRate(boolean rate);
 
-   int getJournalPerfBlastPages();
-
-   Configuration setJournalPerfBlastPages(int pages);
-
    long getServerDumpInterval();
 
    Configuration setServerDumpInterval(long interval);
@@ -705,10 +800,6 @@ public interface Configuration {
    long getMemoryMeasureInterval();
 
    Configuration setMemoryMeasureInterval(long memoryMeasureInterval);
-
-   boolean isRunSyncSpeedTest();
-
-   Configuration setRunSyncSpeedTest(boolean run);
 
    // Paging Properties --------------------------------------------------------------------
 
@@ -758,6 +849,10 @@ public interface Configuration {
     * Sets whether wildcard routing is supported by this server.
     */
    Configuration setWildcardRoutingEnabled(boolean enabled);
+
+   WildcardConfiguration getWildcardConfiguration();
+
+   Configuration setWildCardConfiguration(WildcardConfiguration wildcardConfiguration);
 
    /**
     * Returns the timeout (in milliseconds) after which transactions is removed from the resource
@@ -871,15 +966,19 @@ public interface Configuration {
     */
    Map<String, Set<Role>> getSecurityRoles();
 
+   Configuration addSecurityRoleNameMapping(String internalRole, Set<String> externalRoles);
+
+   Map<String, Set<String>> getSecurityRoleNameMappings();
+
    Configuration putSecurityRoles(String match, Set<Role> roles);
 
    Configuration setConnectorServiceConfigurations(List<ConnectorServiceConfiguration> configs);
 
    Configuration addConnectorServiceConfiguration(ConnectorServiceConfiguration config);
 
-   Configuration setSecuritySettingPlugins(final List<SecuritySettingPlugin> plugins);
+   Configuration setSecuritySettingPlugins(List<SecuritySettingPlugin> plugins);
 
-   Configuration addSecuritySettingPlugin(final SecuritySettingPlugin plugin);
+   Configuration addSecuritySettingPlugin(SecuritySettingPlugin plugin);
 
    /**
     * @return list of {@link ConnectorServiceConfiguration}
@@ -901,12 +1000,12 @@ public interface Configuration {
    /**
     * Sets if passwords should be masked or not. True means the passwords should be masked.
     */
-   Configuration setMaskPassword(boolean maskPassword);
+   Configuration setMaskPassword(Boolean maskPassword);
 
    /**
     * If passwords are masked. True means the passwords are masked.
     */
-   boolean isMaskPassword();
+   Boolean isMaskPassword();
 
    /*
    * Whether or not that ActiveMQ Artemis should use all protocols available on the classpath. If false only the core protocol will
@@ -914,7 +1013,7 @@ public interface Configuration {
    * */
    Configuration setResolveProtocols(boolean resolveProtocols);
 
-   TransportConfiguration[] getTransportConfigurations(String ...connectorNames);
+   TransportConfiguration[] getTransportConfigurations(String... connectorNames);
 
    TransportConfiguration[] getTransportConfigurations(List<String> connectorNames);
 
@@ -945,6 +1044,11 @@ public interface Configuration {
     */
    File getBrokerInstance();
 
+   default boolean isJDBC() {
+      StoreConfiguration configuration = getStoreConfiguration();
+      return (configuration != null && configuration.getStoreType() == StoreConfiguration.StoreType.DATABASE);
+   }
+
    StoreConfiguration getStoreConfiguration();
 
    Configuration setStoreConfiguration(StoreConfiguration storeConfiguration);
@@ -953,7 +1057,9 @@ public interface Configuration {
 
    Configuration setPopulateValidatedUser(boolean populateValidatedUser);
 
-   /** It will return all the connectors in a toString manner for debug purposes. */
+   /**
+    * It will return all the connectors in a toString manner for debug purposes.
+    */
    String debugConnectors();
 
    Configuration setConnectionTtlCheckInterval(long connectionTtlCheckInterval);
@@ -976,8 +1082,67 @@ public interface Configuration {
 
    Configuration setMaxDiskUsage(int maxDiskUsage);
 
+   ConfigurationImpl setInternalNamingPrefix(String internalNamingPrefix);
+
    Configuration setDiskScanPeriod(int diskScanPeriod);
 
    int getDiskScanPeriod();
 
+   /** A comma separated list of IPs we could use to validate if the network is UP.
+    *  In case of none of these Ips are reached (if configured) the server will be shutdown. */
+   Configuration setNetworkCheckList(String list);
+
+   String getNetworkCheckList();
+
+   /** A comma separated list of URIs we could use to validate if the network is UP.
+    *  In case of none of these Ips are reached (if configured) the server will be shutdown.
+    *  The difference from networkCheckList is that we will use HTTP to make this validation. */
+   Configuration setNetworkCheckURLList(String uris);
+
+   String getNetworkCheckURLList();
+
+   /** The interval on which we will perform network checks. */
+   Configuration setNetworkCheckPeriod(long period);
+
+   long getNetworkCheckPeriod();
+
+   /** Time in ms for how long we should wait for a ping to finish. */
+   Configuration setNetworkCheckTimeout(int timeout);
+
+   int getNetworkCheckTimeout();
+
+   /** The NIC name to be used on network checks */
+   Configuration setNetworCheckNIC(String nic);
+
+   String getNetworkCheckNIC();
+
+   String getNetworkCheckPingCommand();
+
+   Configuration setNetworkCheckPingCommand(String command);
+
+   String getNetworkCheckPing6Command();
+
+   Configuration setNetworkCheckPing6Command(String command);
+
+   String getInternalNamingPrefix();
+
+   /**
+    * @param plugins
+    */
+   void registerBrokerPlugins(List<ActiveMQServerPlugin> plugins);
+
+   /**
+    * @param plugin
+    */
+   void registerBrokerPlugin(ActiveMQServerPlugin plugin);
+
+   /**
+    * @param plugin
+    */
+   void unRegisterBrokerPlugin(ActiveMQServerPlugin plugin);
+
+   /**
+    * @return
+    */
+   List<ActiveMQServerPlugin> getBrokerPlugins();
 }

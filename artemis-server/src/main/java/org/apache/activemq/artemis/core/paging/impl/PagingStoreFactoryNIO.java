@@ -46,6 +46,7 @@ import org.apache.activemq.artemis.core.settings.HierarchicalRepository;
 import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
 import org.apache.activemq.artemis.utils.ExecutorFactory;
 import org.apache.activemq.artemis.utils.UUIDGenerator;
+import org.apache.activemq.artemis.utils.actors.ArtemisExecutor;
 
 /**
  * Integration point between Paging and NIO
@@ -70,7 +71,7 @@ public class PagingStoreFactoryNIO implements PagingStoreFactory {
 
    private final long syncTimeout;
 
-   private final StorageManager storageManager;
+   protected final StorageManager storageManager;
 
    private final IOCriticalErrorListener critialErrorListener;
 
@@ -93,6 +94,16 @@ public class PagingStoreFactoryNIO implements PagingStoreFactory {
    // Public --------------------------------------------------------
 
    @Override
+   public ScheduledExecutorService getScheduledExecutor() {
+      return scheduledExecutor;
+   }
+
+   @Override
+   public Executor newExecutor() {
+      return executorFactory.getExecutor();
+   }
+
+   @Override
    public void stop() {
    }
 
@@ -102,7 +113,10 @@ public class PagingStoreFactoryNIO implements PagingStoreFactory {
    }
 
    @Override
-   public PageCursorProvider newCursorProvider(PagingStore store, StorageManager storageManager, AddressSettings addressSettings, Executor executor) {
+   public PageCursorProvider newCursorProvider(PagingStore store,
+                                               StorageManager storageManager,
+                                               AddressSettings addressSettings,
+                                               ArtemisExecutor executor) {
       return new PageCursorProviderImpl(store, storageManager, executor, addressSettings.getPageCacheMaxSize());
    }
 
@@ -144,8 +158,7 @@ public class PagingStoreFactoryNIO implements PagingStoreFactory {
 
       if (files == null) {
          return Collections.<PagingStore>emptyList();
-      }
-      else {
+      } else {
          ArrayList<PagingStore> storesReturn = new ArrayList<>(files.length);
 
          for (File file : files) {
@@ -185,6 +198,7 @@ public class PagingStoreFactoryNIO implements PagingStoreFactory {
    }
 
    private SequentialFileFactory newFileFactory(final String directoryName) {
+
       return new NIOSequentialFileFactory(new File(directory, directoryName), false, critialErrorListener, 1);
    }
 }

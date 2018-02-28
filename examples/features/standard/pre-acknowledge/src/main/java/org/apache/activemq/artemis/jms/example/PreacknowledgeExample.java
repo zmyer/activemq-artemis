@@ -31,13 +31,14 @@ import javax.jms.TextMessage;
 import org.apache.activemq.artemis.api.jms.ActiveMQJMSClient;
 import org.apache.activemq.artemis.api.jms.ActiveMQJMSConstants;
 import org.apache.activemq.artemis.api.jms.management.JMSManagementHelper;
+import org.apache.activemq.artemis.api.core.management.ResourceNames;
 import org.apache.activemq.artemis.jms.client.ActiveMQConnectionFactory;
 
 /**
  * This example demonstrates the use of ActiveMQ Artemis "pre-acknowledge" functionality where
  * messages are acknowledged before they are delivered to the consumer.
  *
- * Please see the readme.html for more details.
+ * Please see the readme for more details.
  */
 public class PreacknowledgeExample {
 
@@ -92,8 +93,7 @@ public class PreacknowledgeExample {
          TextMessage messageReceived = (TextMessage) messageConsumer.receive(5000);
 
          System.out.println("Received message: " + messageReceived.getText());
-      }
-      finally {
+      } finally {
          // Step 9. Be sure to close our resources!
          if (connection != null) {
             connection.close();
@@ -114,7 +114,7 @@ public class PreacknowledgeExample {
 
       Message m = session.createMessage();
 
-      JMSManagementHelper.putAttribute(m, "jms.queue.exampleQueue", "messageCount");
+      JMSManagementHelper.putAttribute(m, ResourceNames.QUEUE + "exampleQueue", "messageCount");
 
       Message response = requestor.request(m);
 

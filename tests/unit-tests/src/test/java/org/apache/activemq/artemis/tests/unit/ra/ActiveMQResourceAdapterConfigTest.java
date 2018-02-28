@@ -253,8 +253,14 @@ public class ActiveMQResourceAdapterConfigTest extends ActiveMQTestBase {
       "         <config-property-type>boolean</config-property-type>\n" +
       "         <config-property-value></config-property-value>\n" +
       "      </config-property>\n" +
+      "      <config-property>" +
+      "         <description>Cache destinations per session</description>" +
+      "         <config-property-name>CacheDestinations</config-property-name>" +
+      "         <config-property-type>boolean</config-property-type>" +
+      "         <config-property-value></config-property-value>" +
+      "      </config-property>" +
       "      <config-property>\n" +
-      "         <description>max number of threads for scheduled threrad pool</description>\n" +
+      "         <description>max number of threads for scheduled thread pool</description>\n" +
       "         <config-property-name>ScheduledThreadPoolMaxSize</config-property-name>\n" +
       "         <config-property-type>int</config-property-type>\n" +
       "         <config-property-value></config-property-value>\n" +
@@ -392,13 +398,13 @@ public class ActiveMQResourceAdapterConfigTest extends ActiveMQTestBase {
       "         <config-property-value></config-property-value>" +
       "      </config-property>" +
       "      <config-property>" +
-      "         <description>List of package/class names against which matching objects are permitted to be deserilized</description>" +
+      "         <description>List of package/class names against which matching objects are permitted to be deserialized</description>" +
       "         <config-property-name>DeserializationWhiteList</config-property-name>" +
       "         <config-property-type>java.lang.String</config-property-type>" +
       "         <config-property-value></config-property-value>" +
       "      </config-property>" +
       "      <config-property>" +
-      "         <description>List of package/classe names against which matching objects are forbidden to be deserialized</description>" +
+      "         <description>List of package/class names against which matching objects are forbidden to be deserialized</description>" +
       "         <config-property-name>DeserializationBlackList</config-property-name>" +
       "         <config-property-type>java.lang.String</config-property-type>" +
       "         <config-property-value></config-property-value>" +
@@ -430,7 +436,6 @@ public class ActiveMQResourceAdapterConfigTest extends ActiveMQTestBase {
          assertEquals(el.toString(), elementsByTagName.getLength(), 1);
          Node configPropertyNameNode = elementsByTagName.item(0);
          String configPropertyName = configPropertyNameNode.getTextContent();
-         System.out.println("configPropertyName = " + configPropertyName);
          Method setter = methodList.remove("set" + configPropertyName);
          assertNotNull("setter " + configPropertyName + " does not exist", setter);
          Class c = lookupType(setter);
@@ -454,9 +459,6 @@ public class ActiveMQResourceAdapterConfigTest extends ActiveMQTestBase {
          System.out.println(newConfig);
          fail("methods not shown please see previous and add");
       }
-      else {
-         System.out.println(commentedOutConfigs);
-      }
    }
 
    /**
@@ -468,14 +470,11 @@ public class ActiveMQResourceAdapterConfigTest extends ActiveMQTestBase {
 
       if (clzz == Boolean.class) {
          return Boolean.TYPE;
-      }
-      else if (clzz == Long.class) {
+      } else if (clzz == Long.class) {
          return Long.TYPE;
-      }
-      else if (clzz == Integer.class) {
+      } else if (clzz == Integer.class) {
          return Integer.TYPE;
-      }
-      else {
+      } else {
          return clzz;
       }
    }

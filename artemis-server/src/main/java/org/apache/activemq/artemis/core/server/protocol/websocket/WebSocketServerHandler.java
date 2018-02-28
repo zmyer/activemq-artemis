@@ -29,7 +29,7 @@ import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.http.DefaultFullHttpResponse;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.FullHttpResponse;
-import io.netty.handler.codec.http.HttpHeaders;
+import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.websocketx.BinaryWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.CloseWebSocketFrame;
@@ -41,8 +41,8 @@ import io.netty.handler.codec.http.websocketx.WebSocketServerHandshaker;
 import io.netty.handler.codec.http.websocketx.WebSocketServerHandshakerFactory;
 import org.apache.activemq.artemis.utils.StringUtil;
 
-import static io.netty.handler.codec.http.HttpHeaders.isKeepAlive;
-import static io.netty.handler.codec.http.HttpHeaders.setContentLength;
+import static io.netty.handler.codec.http.HttpUtil.isKeepAlive;
+import static io.netty.handler.codec.http.HttpUtil.setContentLength;
 import static io.netty.handler.codec.http.HttpMethod.GET;
 import static io.netty.handler.codec.http.HttpResponseStatus.FORBIDDEN;
 import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
@@ -54,18 +54,19 @@ public class WebSocketServerHandler extends SimpleChannelInboundHandler<Object> 
    private HttpRequest httpRequest;
    private WebSocketServerHandshaker handshaker;
    private List<String> supportedProtocols;
+   private int maxFramePayloadLength;
    private static final BinaryWebSocketEncoder BINARY_WEBSOCKET_ENCODER = new BinaryWebSocketEncoder();
 
-   public WebSocketServerHandler(List<String> supportedProtocols) {
+   public WebSocketServerHandler(List<String> supportedProtocols, int maxFramePayloadLength) {
       this.supportedProtocols = supportedProtocols;
+      this.maxFramePayloadLength = maxFramePayloadLength;
    }
 
    @Override
    public void channelRead0(ChannelHandlerContext ctx, Object msg) throws Exception {
       if (msg instanceof FullHttpRequest) {
          handleHttpRequest(ctx, (FullHttpRequest) msg);
-      }
-      else if (msg instanceof WebSocketFrame) {
+      } else if (msg instanceof WebSocketFrame) {
          WebSocketFrame frame = (WebSocketFrame) msg;
          boolean handle = handleWebSocketFrame(ctx, frame);
          if (handle) {
@@ -76,20 +77,19 @@ public class WebSocketServerHandler extends SimpleChannelInboundHandler<Object> 
 
    private void handleHttpRequest(ChannelHandlerContext ctx, FullHttpRequest req) throws Exception {
       // Allow only GET methods.
-      if (req.getMethod() != GET) {
+      if (req.method() != GET) {
          sendHttpResponse(ctx, req, new DefaultFullHttpResponse(HTTP_1_1, FORBIDDEN));
          return;
       }
 
       // Handshake
       String supportedProtocolsCSV = StringUtil.joinStringList(supportedProtocols, ",");
-      WebSocketServerHandshakerFactory wsFactory = new WebSocketServerHandshakerFactory(this.getWebSocketLocation(req), supportedProtocolsCSV,false);
+      WebSocketServerHandshakerFactory wsFactory = new WebSocketServerHandshakerFactory(this.getWebSocketLocation(req), supportedProtocolsCSV, false, maxFramePayloadLength);
       this.httpRequest = req;
       this.handshaker = wsFactory.newHandshaker(req);
       if (this.handshaker == null) {
          WebSocketServerHandshakerFactory.sendUnsupportedVersionResponse(ctx.channel());
-      }
-      else {
+      } else {
          ChannelFuture handshake = this.handshaker.handshake(ctx.channel(), req);
          handshake.addListener(new ChannelFutureListener() {
 
@@ -99,8 +99,7 @@ public class WebSocketServerHandler extends SimpleChannelInboundHandler<Object> 
                   // we need to insert an encoder that takes the underlying ChannelBuffer of a StompFrame.toActiveMQBuffer and
                   // wrap it in a binary web socket frame before letting the wsencoder send it on the wire
                   future.channel().pipeline().addAfter("wsencoder", "binary-websocket-encoder", BINARY_WEBSOCKET_ENCODER);
-               }
-               else {
+               } else {
                   // Handshake failed, fire an exceptionCaught event
                   future.channel().pipeline().fireExceptionCaught(future.cause());
                }
@@ -115,12 +114,10 @@ public class WebSocketServerHandler extends SimpleChannelInboundHandler<Object> 
       if (frame instanceof CloseWebSocketFrame) {
          this.handshaker.close(ctx.channel(), ((CloseWebSocketFrame) frame).retain());
          return false;
-      }
-      else if (frame instanceof PingWebSocketFrame) {
+      } else if (frame instanceof PingWebSocketFrame) {
          ctx.writeAndFlush(new PongWebSocketFrame(frame.content().retain()));
          return false;
-      }
-      else if (!(frame instanceof TextWebSocketFrame) && !(frame instanceof BinaryWebSocketFrame)) {
+      } else if (!(frame instanceof TextWebSocketFrame) && !(frame instanceof BinaryWebSocketFrame)) {
          throw new UnsupportedOperationException(String.format("%s frame types not supported", frame.getClass().getName()));
       }
       return true;
@@ -128,14 +125,14 @@ public class WebSocketServerHandler extends SimpleChannelInboundHandler<Object> 
 
    private void sendHttpResponse(ChannelHandlerContext ctx, HttpRequest req, FullHttpResponse res) {
       // Generate an error page if response status code is not OK (200).
-      if (res.getStatus().code() != 200) {
-         res.content().writeBytes(res.getStatus().toString().getBytes(StandardCharsets.UTF_8));
+      if (res.status().code() != 200) {
+         res.content().writeBytes(res.status().toString().getBytes(StandardCharsets.UTF_8));
          setContentLength(res, res.content().readableBytes());
       }
 
       // Send the response and close the connection if necessary.
       ChannelFuture f = ctx.writeAndFlush(res);
-      if (!isKeepAlive(req) || res.getStatus().code() != 200) {
+      if (!isKeepAlive(req) || res.status().code() != 200) {
          f.addListener(ChannelFutureListener.CLOSE);
       }
    }
@@ -147,7 +144,7 @@ public class WebSocketServerHandler extends SimpleChannelInboundHandler<Object> 
    }
 
    private String getWebSocketLocation(HttpRequest req) {
-      return "ws://" + req.headers().get(HttpHeaders.Names.HOST) + WEBSOCKET_PATH;
+      return "ws://" + req.headers().get(HttpHeaderNames.HOST) + WEBSOCKET_PATH;
    }
 
    public HttpRequest getHttpRequest() {

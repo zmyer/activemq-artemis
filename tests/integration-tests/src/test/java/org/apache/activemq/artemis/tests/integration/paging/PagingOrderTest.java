@@ -16,6 +16,17 @@
  */
 package org.apache.activemq.artemis.tests.integration.paging;
 
+import javax.jms.BytesMessage;
+import javax.jms.Connection;
+import javax.jms.DeliveryMode;
+import javax.jms.MessageProducer;
+import javax.jms.Session;
+import javax.jms.TextMessage;
+import javax.jms.Topic;
+import java.nio.ByteBuffer;
+import java.util.HashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.api.core.TransportConfiguration;
@@ -35,6 +46,8 @@ import org.apache.activemq.artemis.core.postoffice.impl.LocalQueueBinding;
 import org.apache.activemq.artemis.core.registry.JndiBindingRegistry;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.core.server.Queue;
+import org.apache.activemq.artemis.api.core.RoutingType;
+import org.apache.activemq.artemis.core.server.impl.AddressInfo;
 import org.apache.activemq.artemis.core.server.impl.QueueImpl;
 import org.apache.activemq.artemis.core.settings.impl.AddressFullMessagePolicy;
 import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
@@ -43,17 +56,6 @@ import org.apache.activemq.artemis.jms.server.impl.JMSServerManagerImpl;
 import org.apache.activemq.artemis.tests.unit.util.InVMNamingContext;
 import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.junit.Test;
-
-import javax.jms.BytesMessage;
-import javax.jms.Connection;
-import javax.jms.DeliveryMode;
-import javax.jms.MessageProducer;
-import javax.jms.Session;
-import javax.jms.TextMessage;
-import javax.jms.Topic;
-import java.nio.ByteBuffer;
-import java.util.HashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * A PagingOrderTest. PagingTest has a lot of tests already. I decided to create a newer one more
@@ -93,7 +95,8 @@ public class PagingOrderTest extends ActiveMQTestBase {
 
       ClientSession session = sf.createSession(false, false, false);
 
-      server.createQueue(ADDRESS, ADDRESS, null, true, false);
+      server.addAddressInfo(new AddressInfo(ADDRESS, RoutingType.ANYCAST));
+      server.createQueue(ADDRESS, RoutingType.ANYCAST, ADDRESS, null, true, false);
 
       ClientProducer producer = session.createProducer(PagingTest.ADDRESS);
 
@@ -182,9 +185,10 @@ public class PagingOrderTest extends ActiveMQTestBase {
 
       ClientSession session = sf.createSession(false, false, false);
 
-      Queue q1 = server.createQueue(ADDRESS, ADDRESS, null, true, false);
+      server.addAddressInfo(new AddressInfo(ADDRESS, RoutingType.ANYCAST));
+      Queue q1 = server.createQueue(ADDRESS, RoutingType.MULTICAST, ADDRESS, null, true, false);
 
-      Queue q2 = server.createQueue(ADDRESS, new SimpleString("inactive"), null, true, false);
+      Queue q2 = server.createQueue(ADDRESS, RoutingType.MULTICAST, new SimpleString("inactive"), null, true, false);
 
       ClientProducer producer = session.createProducer(PagingTest.ADDRESS);
 
@@ -217,8 +221,7 @@ public class PagingOrderTest extends ActiveMQTestBase {
                assertNull(cons.receiveImmediate());
                sess.close();
                sl.close();
-            }
-            catch (Throwable e) {
+            } catch (Throwable e) {
                e.printStackTrace();
                errors.incrementAndGet();
             }
@@ -312,9 +315,10 @@ public class PagingOrderTest extends ActiveMQTestBase {
 
       ClientSession session = sf.createSession(false, false, false);
 
-      Queue q1 = server.createQueue(ADDRESS, ADDRESS, null, true, false);
+      server.addAddressInfo(new AddressInfo(ADDRESS, RoutingType.ANYCAST));
+      Queue q1 = server.createQueue(ADDRESS, RoutingType.MULTICAST, ADDRESS, null, true, false);
 
-      Queue q2 = server.createQueue(ADDRESS, new SimpleString("inactive"), null, true, false);
+      Queue q2 = server.createQueue(ADDRESS, RoutingType.MULTICAST, new SimpleString("inactive"), null, true, false);
 
       ClientProducer producer = session.createProducer(PagingTest.ADDRESS);
 
@@ -345,8 +349,7 @@ public class PagingOrderTest extends ActiveMQTestBase {
                }
                sess.close();
                sl.close();
-            }
-            catch (Throwable e) {
+            } catch (Throwable e) {
                e.printStackTrace();
                errors.incrementAndGet();
             }
@@ -406,7 +409,8 @@ public class PagingOrderTest extends ActiveMQTestBase {
 
       ClientSession session = sf.createSession(false, false, false);
 
-      server.createQueue(ADDRESS, ADDRESS, null, true, false);
+      server.addAddressInfo(new AddressInfo(ADDRESS, RoutingType.ANYCAST));
+      server.createQueue(ADDRESS, RoutingType.ANYCAST, ADDRESS, null, true, false);
 
       ClientProducer producer = session.createProducer(PagingTest.ADDRESS);
 
@@ -490,7 +494,8 @@ public class PagingOrderTest extends ActiveMQTestBase {
 
       ClientSession session = sf.createSession(false, false, false);
 
-      QueueImpl queue = (QueueImpl) server.createQueue(ADDRESS, ADDRESS, null, true, false);
+      server.addAddressInfo(new AddressInfo(ADDRESS, RoutingType.ANYCAST));
+      QueueImpl queue = (QueueImpl) server.createQueue(ADDRESS, RoutingType.ANYCAST, ADDRESS, null, true, false);
 
       ClientProducer producer = session.createProducer(PagingTest.ADDRESS);
 
@@ -607,7 +612,7 @@ public class PagingOrderTest extends ActiveMQTestBase {
 
       jmsServer.createTopic(true, "tt", "/topic/TT");
 
-      server.getActiveMQServerControl().addAddressSettings("jms.topic.TT", "DLQ", "DLQ", -1, false, 5, 1024 * 1024, 1024 * 10, 5, 5, 1, 1000, 0, false, "PAGE", -1, 10, "KILL", true, true, true, true);
+      server.getActiveMQServerControl().addAddressSettings("TT", "DLQ", "DLQ", -1, false, 5, 1024 * 1024, 1024 * 10, 5, 5, 1, 1000, 0, false, "PAGE", -1, 10, "KILL", true, true, true, true);
 
       ActiveMQJMSConnectionFactory cf = (ActiveMQJMSConnectionFactory) ActiveMQJMSClient.createConnectionFactoryWithoutHA(JMSFactoryType.CF, new TransportConfiguration(INVM_CONNECTOR_FACTORY));
 
@@ -622,7 +627,7 @@ public class PagingOrderTest extends ActiveMQTestBase {
       TextMessage txt = sess.createTextMessage("TST");
       prod.send(txt);
 
-      PagingStore store = server.getPagingManager().getPageStore(new SimpleString("jms.topic.TT"));
+      PagingStore store = server.getPagingManager().getPageStore(new SimpleString("TT"));
 
       assertEquals(1024 * 1024, store.getMaxSize());
       assertEquals(10 * 1024, store.getPageSizeBytes());
@@ -636,7 +641,7 @@ public class PagingOrderTest extends ActiveMQTestBase {
       jmsServer.setRegistry(new JndiBindingRegistry(context));
       jmsServer.start();
 
-      AddressSettings settings = server.getAddressSettingsRepository().getMatch("jms.topic.TT");
+      AddressSettings settings = server.getAddressSettingsRepository().getMatch("TT");
 
       assertEquals(1024 * 1024, settings.getMaxSizeBytes());
       assertEquals(10 * 1024, settings.getPageSizeBytes());
@@ -663,7 +668,7 @@ public class PagingOrderTest extends ActiveMQTestBase {
       jmsServer.setRegistry(new JndiBindingRegistry(context));
       jmsServer.start();
 
-      server.getActiveMQServerControl().addAddressSettings("jms.queue.Q1", "DLQ", "DLQ", -1, false, 5, 100 * 1024, 10 * 1024, 5, 5, 1, 1000, 0, false, "PAGE", -1, 10, "KILL", true, true, true, true);
+      server.getActiveMQServerControl().addAddressSettings("Q1", "DLQ", "DLQ", -1, false, 5, 100 * 1024, 10 * 1024, 5, 5, 1, 1000, 0, false, "PAGE", -1, 10, "KILL", true, true, true, true);
 
       jmsServer.createQueue(true, "Q1", null, true, "/queue/Q1");
 
@@ -684,7 +689,7 @@ public class PagingOrderTest extends ActiveMQTestBase {
          prod.send(bmt);
       }
 
-      PagingStore store = server.getPagingManager().getPageStore(new SimpleString("jms.queue.Q1"));
+      PagingStore store = server.getPagingManager().getPageStore(new SimpleString("Q1"));
 
       assertEquals(100 * 1024, store.getMaxSize());
       assertEquals(10 * 1024, store.getPageSizeBytes());
@@ -700,13 +705,13 @@ public class PagingOrderTest extends ActiveMQTestBase {
       jmsServer.setRegistry(new JndiBindingRegistry(context));
       jmsServer.start();
 
-      AddressSettings settings = server.getAddressSettingsRepository().getMatch("jms.queue.Q1");
+      AddressSettings settings = server.getAddressSettingsRepository().getMatch("Q1");
 
       assertEquals(100 * 1024, settings.getMaxSizeBytes());
       assertEquals(10 * 1024, settings.getPageSizeBytes());
       assertEquals(AddressFullMessagePolicy.PAGE, settings.getAddressFullMessagePolicy());
 
-      store = server.getPagingManager().getPageStore(new SimpleString("jms.queue.Q1"));
+      store = server.getPagingManager().getPageStore(new SimpleString("Q1"));
       assertEquals(100 * 1024, store.getMaxSize());
       assertEquals(10 * 1024, store.getPageSizeBytes());
       assertEquals(AddressFullMessagePolicy.PAGE, store.getAddressFullMessagePolicy());

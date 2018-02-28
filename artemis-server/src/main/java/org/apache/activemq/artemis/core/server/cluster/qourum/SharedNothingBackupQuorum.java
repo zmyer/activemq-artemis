@@ -21,7 +21,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.activemq.artemis.api.core.ActiveMQException;
-import org.apache.activemq.artemis.api.core.ActiveMQExceptionType;
+import org.apache.activemq.artemis.api.core.TransportConfiguration;
 import org.apache.activemq.artemis.api.core.client.SessionFailureListener;
 import org.apache.activemq.artemis.core.client.impl.ClientSessionFactoryInternal;
 import org.apache.activemq.artemis.core.client.impl.Topology;
@@ -29,9 +29,12 @@ import org.apache.activemq.artemis.core.persistence.StorageManager;
 import org.apache.activemq.artemis.core.protocol.core.CoreRemotingConnection;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationLiveIsStoppingMessage;
 import org.apache.activemq.artemis.core.server.ActiveMQServerLogger;
+import org.apache.activemq.artemis.core.server.NetworkHealthCheck;
 import org.apache.activemq.artemis.core.server.NodeManager;
 
 public class SharedNothingBackupQuorum implements Quorum, SessionFailureListener {
+
+   private TransportConfiguration liveTransportConfiguration;
 
    public enum BACKUP_ACTIVATION {
       FAIL_OVER, FAILURE_REPLICATING, ALREADY_REPLICATING, STOP;
@@ -45,12 +48,21 @@ public class SharedNothingBackupQuorum implements Quorum, SessionFailureListener
 
    private final StorageManager storageManager;
    private final ScheduledExecutorService scheduledPool;
+   private final int quorumSize;
+
+   private final int voteRetries;
+
+   private final long voteRetryWait;
+
+   private final Object voteGuard = new Object();
 
    private CountDownLatch latch;
 
    private ClientSessionFactoryInternal sessionFactory;
 
    private CoreRemotingConnection connection;
+
+   private final NetworkHealthCheck networkHealthCheck;
 
    /**
     * This is a safety net in case the live sends the first {@link ReplicationLiveIsStoppingMessage}
@@ -63,11 +75,19 @@ public class SharedNothingBackupQuorum implements Quorum, SessionFailureListener
 
    public SharedNothingBackupQuorum(StorageManager storageManager,
                                     NodeManager nodeManager,
-                                    ScheduledExecutorService scheduledPool) {
+                                    ScheduledExecutorService scheduledPool,
+                                    NetworkHealthCheck networkHealthCheck,
+                                    int quorumSize,
+                                    int voteRetries,
+                                    long voteRetryWait) {
       this.storageManager = storageManager;
       this.scheduledPool = scheduledPool;
+      this.quorumSize = quorumSize;
       this.latch = new CountDownLatch(1);
       this.nodeManager = nodeManager;
+      this.networkHealthCheck = networkHealthCheck;
+      this.voteRetries = voteRetries;
+      this.voteRetryWait = voteRetryWait;
    }
 
    private volatile BACKUP_ACTIVATION signal;
@@ -76,8 +96,6 @@ public class SharedNothingBackupQuorum implements Quorum, SessionFailureListener
     * safety parameter to make _sure_ we get out of await()
     */
    private static final int LATCH_TIMEOUT = 30;
-
-   private static final int RECONNECT_ATTEMPTS = 5;
 
    private final Object decisionGuard = new Object();
 
@@ -90,21 +108,33 @@ public class SharedNothingBackupQuorum implements Quorum, SessionFailureListener
       //we may get called via multiple paths so need to guard
       synchronized (decisionGuard) {
          if (signal == BACKUP_ACTIVATION.FAIL_OVER) {
+            if (networkHealthCheck != null && !networkHealthCheck.check()) {
+               signal = BACKUP_ACTIVATION.FAILURE_REPLICATING;
+            }
             return;
          }
          if (!isLiveDown()) {
-            try {
-               // no point in repeating all the reconnection logic
-               sessionFactory.connect(RECONNECT_ATTEMPTS, false);
-               return;
-            }
-            catch (ActiveMQException e) {
-               if (e.getType() != ActiveMQExceptionType.NOT_CONNECTED)
-                  ActiveMQServerLogger.LOGGER.errorReConnecting(e);
+            //lost connection but don't know if live is down so restart as backup as we can't replicate any more
+            ActiveMQServerLogger.LOGGER.restartingAsBackupBasedOnQuorumVoteResults();
+            signal = BACKUP_ACTIVATION.FAILURE_REPLICATING;
+         } else {
+            // live is assumed to be down, backup fails-over
+            ActiveMQServerLogger.LOGGER.failingOverBasedOnQuorumVoteResults();
+            signal = BACKUP_ACTIVATION.FAIL_OVER;
+         }
+
+         /* use NetworkHealthCheck to determine if node is isolated
+          * if there are no addresses/urls configured then ignore and rely on quorum vote only
+          */
+         if (networkHealthCheck != null && !networkHealthCheck.isEmpty()) {
+            if (networkHealthCheck.check()) {
+               // live is assumed to be down, backup fails-over
+               signal = BACKUP_ACTIVATION.FAIL_OVER;
+            } else {
+               ActiveMQServerLogger.LOGGER.serverIsolatedOnNetwork();
+               signal = BACKUP_ACTIVATION.FAILURE_REPLICATING;
             }
          }
-         // live is assumed to be down, backup fails-over
-         signal = BACKUP_ACTIVATION.FAIL_OVER;
       }
       latch.countDown();
    }
@@ -112,6 +142,7 @@ public class SharedNothingBackupQuorum implements Quorum, SessionFailureListener
    public void liveIDSet(String liveID) {
       targetServerID = liveID;
       nodeManager.setNodeID(liveID);
+      liveTransportConfiguration = quorumManager.getLiveTransportConfiguration(targetServerID);
       //now we are replicating we can start waiting for disconnect notifications so we can fail over
       // sessionFactory.addFailureListener(this);
    }
@@ -223,8 +254,7 @@ public class SharedNothingBackupQuorum implements Quorum, SessionFailureListener
    public BACKUP_ACTIVATION waitForStatusChange() {
       try {
          latch.await();
-      }
-      catch (InterruptedException e) {
+      } catch (InterruptedException e) {
          return BACKUP_ACTIVATION.STOP;
       }
       return signal;
@@ -251,22 +281,44 @@ public class SharedNothingBackupQuorum implements Quorum, SessionFailureListener
     * @return the voting decision
     */
    private boolean isLiveDown() {
-      // we use 1 less than the max cluste size as we arent bothered about the replicated live node
-      int size = quorumManager.getMaxClusterSize();
+      //lets assume live is not down
+      Boolean decision = false;
+      int voteAttempts = 0;
+      int size = quorumSize == -1 ? quorumManager.getMaxClusterSize() : quorumSize;
 
-      QuorumVoteServerConnect quorumVote = new QuorumVoteServerConnect(size, storageManager);
+      synchronized (voteGuard) {
+         while (!decision && voteAttempts++ < voteRetries) {
+            // a quick check to see if the live actually is dead
+            if (quorumManager.checkLive(liveTransportConfiguration)) {
+               //the live is still alive so we best not failover
+               return false;
+            }
+            //the live is dead so lets vote for quorum
+            QuorumVoteServerConnect quorumVote = new QuorumVoteServerConnect(size, targetServerID);
 
-      quorumManager.vote(quorumVote);
+            quorumManager.vote(quorumVote);
 
-      try {
-         quorumVote.await(LATCH_TIMEOUT, TimeUnit.SECONDS);
+            try {
+               quorumVote.await(LATCH_TIMEOUT, TimeUnit.SECONDS);
+            } catch (InterruptedException interruption) {
+               // No-op. The best the quorum can do now is to return the latest number it has
+            }
+
+            quorumManager.voteComplete(quorumVote);
+
+            decision = quorumVote.getDecision();
+
+            if (decision) {
+               return decision;
+            }
+            try {
+               voteGuard.wait(voteRetryWait);
+            } catch (InterruptedException e) {
+               //nothing to do here
+            }
+         }
       }
-      catch (InterruptedException interruption) {
-         // No-op. The best the quorum can do now is to return the latest number it has
-      }
 
-      quorumManager.voteComplete(quorumVote);
-
-      return quorumVote.getDecision();
+      return decision;
    }
 }

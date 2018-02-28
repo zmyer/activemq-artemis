@@ -36,12 +36,21 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
+import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 
+import org.apache.activemq.artemis.api.config.ActiveMQDefaultConfiguration;
+import org.apache.activemq.artemis.api.core.ActiveMQAddressDoesNotExistException;
+import org.apache.activemq.artemis.api.core.ActiveMQException;
+import org.apache.activemq.artemis.api.core.JsonUtil;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.api.core.TransportConfiguration;
 import org.apache.activemq.artemis.api.core.management.ActiveMQServerControl;
@@ -49,16 +58,29 @@ import org.apache.activemq.artemis.api.core.management.AddressControl;
 import org.apache.activemq.artemis.api.core.management.BridgeControl;
 import org.apache.activemq.artemis.api.core.management.CoreNotificationType;
 import org.apache.activemq.artemis.api.core.management.DivertControl;
+import org.apache.activemq.artemis.api.core.management.Parameter;
 import org.apache.activemq.artemis.api.core.management.QueueControl;
+import org.apache.activemq.artemis.core.client.impl.Topology;
+import org.apache.activemq.artemis.core.client.impl.TopologyMemberImpl;
 import org.apache.activemq.artemis.core.config.BridgeConfiguration;
 import org.apache.activemq.artemis.core.config.Configuration;
+import org.apache.activemq.artemis.core.config.ConnectorServiceConfiguration;
 import org.apache.activemq.artemis.core.config.DivertConfiguration;
+import org.apache.activemq.artemis.core.config.TransformerConfiguration;
+import org.apache.activemq.artemis.core.filter.Filter;
+import org.apache.activemq.artemis.core.management.impl.view.AddressView;
+import org.apache.activemq.artemis.core.management.impl.view.ConnectionView;
+import org.apache.activemq.artemis.core.management.impl.view.ConsumerView;
+import org.apache.activemq.artemis.core.management.impl.view.ProducerView;
+import org.apache.activemq.artemis.core.management.impl.view.QueueView;
+import org.apache.activemq.artemis.core.management.impl.view.SessionView;
 import org.apache.activemq.artemis.core.messagecounter.MessageCounterManager;
 import org.apache.activemq.artemis.core.messagecounter.impl.MessageCounterManagerImpl;
 import org.apache.activemq.artemis.core.persistence.StorageManager;
 import org.apache.activemq.artemis.core.persistence.config.PersistedAddressSetting;
 import org.apache.activemq.artemis.core.persistence.config.PersistedRoles;
 import org.apache.activemq.artemis.core.postoffice.Binding;
+import org.apache.activemq.artemis.core.postoffice.Bindings;
 import org.apache.activemq.artemis.core.postoffice.DuplicateIDCache;
 import org.apache.activemq.artemis.core.postoffice.PostOffice;
 import org.apache.activemq.artemis.core.postoffice.impl.LocalQueueBinding;
@@ -68,31 +90,43 @@ import org.apache.activemq.artemis.core.security.Role;
 import org.apache.activemq.artemis.core.server.ActiveMQMessageBundle;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.core.server.ActiveMQServerLogger;
+import org.apache.activemq.artemis.core.server.ConnectorServiceFactory;
 import org.apache.activemq.artemis.core.server.Consumer;
+import org.apache.activemq.artemis.core.server.DivertConfigurationRoutingType;
 import org.apache.activemq.artemis.core.server.JournalType;
 import org.apache.activemq.artemis.core.server.Queue;
 import org.apache.activemq.artemis.core.server.ServerConsumer;
+import org.apache.activemq.artemis.core.server.ServerProducer;
 import org.apache.activemq.artemis.core.server.ServerSession;
+import org.apache.activemq.artemis.core.server.cluster.ClusterConnection;
+import org.apache.activemq.artemis.core.server.cluster.ClusterManager;
 import org.apache.activemq.artemis.core.server.cluster.ha.HAPolicy;
 import org.apache.activemq.artemis.core.server.cluster.ha.LiveOnlyPolicy;
 import org.apache.activemq.artemis.core.server.cluster.ha.ScaleDownPolicy;
 import org.apache.activemq.artemis.core.server.cluster.ha.SharedStoreSlavePolicy;
 import org.apache.activemq.artemis.core.server.group.GroupingHandler;
+import org.apache.activemq.artemis.core.server.impl.Activation;
+import org.apache.activemq.artemis.core.server.impl.AddressInfo;
+import org.apache.activemq.artemis.core.server.impl.SharedNothingLiveActivation;
 import org.apache.activemq.artemis.core.settings.impl.AddressFullMessagePolicy;
 import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
 import org.apache.activemq.artemis.core.settings.impl.SlowConsumerPolicy;
 import org.apache.activemq.artemis.core.transaction.ResourceManager;
 import org.apache.activemq.artemis.core.transaction.Transaction;
 import org.apache.activemq.artemis.core.transaction.TransactionDetail;
+import org.apache.activemq.artemis.core.transaction.TransactionDetailFactory;
 import org.apache.activemq.artemis.core.transaction.impl.CoreTransactionDetail;
 import org.apache.activemq.artemis.core.transaction.impl.XidImpl;
 import org.apache.activemq.artemis.spi.core.protocol.RemotingConnection;
 import org.apache.activemq.artemis.utils.JsonLoader;
+import org.apache.activemq.artemis.utils.ListUtil;
 import org.apache.activemq.artemis.utils.SecurityFormatter;
-import org.apache.activemq.artemis.utils.TypedProperties;
+import org.apache.activemq.artemis.utils.collections.TypedProperties;
+import org.jboss.logging.Logger;
 
 public class ActiveMQServerControlImpl extends AbstractControl implements ActiveMQServerControl, NotificationEmitter, org.apache.activemq.artemis.core.server.management.NotificationListener {
    // Constants -----------------------------------------------------
+   private static final Logger logger = Logger.getLogger(ActiveMQServerControlImpl.class);
 
    // Attributes ----------------------------------------------------
 
@@ -141,8 +175,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return server.isStarted();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -154,8 +187,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return server.getVersion().getFullVersion();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -167,8 +199,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return server.getHAPolicy().isBackup();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -180,8 +211,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return server.getHAPolicy().isSharedStore();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -193,8 +223,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return configuration.getBindingsDirectory();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -205,8 +234,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return configuration.getIncomingInterceptorClassNames().toArray(new String[configuration.getIncomingInterceptorClassNames().size()]);
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -218,8 +246,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return configuration.getIncomingInterceptorClassNames().toArray(new String[configuration.getIncomingInterceptorClassNames().size()]);
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -231,8 +258,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return configuration.getOutgoingInterceptorClassNames().toArray(new String[configuration.getOutgoingInterceptorClassNames().size()]);
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -244,8 +270,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return configuration.getJournalType() == JournalType.ASYNCIO ? configuration.getJournalBufferSize_AIO() : configuration.getJournalBufferSize_NIO();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -257,8 +282,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return configuration.getJournalType() == JournalType.ASYNCIO ? configuration.getJournalBufferTimeout_AIO() : configuration.getJournalBufferTimeout_NIO();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -273,8 +297,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
          if (haPolicy instanceof SharedStoreSlavePolicy) {
             ((SharedStoreSlavePolicy) haPolicy).setFailoverOnServerShutdown(failoverOnServerShutdown);
          }
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -288,12 +311,10 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
          HAPolicy haPolicy = server.getHAPolicy();
          if (haPolicy instanceof SharedStoreSlavePolicy) {
             return ((SharedStoreSlavePolicy) haPolicy).isFailoverOnServerShutdown();
-         }
-         else {
+         } else {
             return false;
          }
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -305,8 +326,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return configuration.getJournalType() == JournalType.ASYNCIO ? configuration.getJournalMaxIO_AIO() : configuration.getJournalMaxIO_NIO();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -318,8 +338,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return configuration.getJournalDirectory();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -331,8 +350,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return configuration.getJournalFileSize();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -344,8 +362,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return configuration.getJournalMinFiles();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -357,8 +374,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return configuration.getJournalCompactMinFiles();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -370,8 +386,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return configuration.getJournalCompactPercentage();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -383,8 +398,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return configuration.isPersistenceEnabled();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -396,8 +410,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return configuration.getJournalType().toString();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -409,8 +422,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return configuration.getPagingDirectory();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -422,8 +434,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return configuration.getScheduledThreadPoolMaxSize();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -435,8 +446,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return configuration.getThreadPoolMaxSize();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -448,8 +458,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return configuration.getSecurityInvalidationInterval();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -461,8 +470,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return configuration.isClustered();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -474,8 +482,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return configuration.isCreateBindingsDir();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -487,8 +494,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return configuration.isCreateJournalDir();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -500,8 +506,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return configuration.isJournalSyncNonTransactional();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -513,8 +518,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return configuration.isJournalSyncTransactional();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -526,8 +530,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return configuration.isSecurityEnabled();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -539,25 +542,213 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return configuration.isAsyncConnectionExecutionEnabled();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
 
    @Override
-   public void deployQueue(final String address, final String name, final String filterString) throws Exception {
+   public int getDiskScanPeriod() {
       checkStarted();
 
       clearIO();
       try {
-         server.deployQueue(SimpleString.toSimpleString(address), new SimpleString(name), new SimpleString(filterString), true, false);
-      }
-      finally {
+         return configuration.getDiskScanPeriod();
+      } finally {
          blockOnIO();
       }
    }
 
+   @Override
+   public int getMaxDiskUsage() {
+      checkStarted();
+
+      clearIO();
+      try {
+         return configuration.getMaxDiskUsage();
+      } finally {
+         blockOnIO();
+      }
+   }
+
+   @Override
+   public long getGlobalMaxSize() {
+      checkStarted();
+
+      clearIO();
+      try {
+         return configuration.getGlobalMaxSize();
+      } finally {
+         blockOnIO();
+      }
+   }
+
+   @Override
+   public long getAddressMemoryUsage() {
+      checkStarted();
+      clearIO();
+      try {
+         //this should not happen but if it does, return -1 to highlight it is not working
+         if (server.getPagingManager() == null) {
+            return -1L;
+         }
+         return server.getPagingManager().getGlobalSize();
+      } finally {
+         blockOnIO();
+      }
+   }
+
+   @Override
+   public int getAddressMemoryUsagePercentage() {
+      long globalMaxSize = getGlobalMaxSize();
+      // no max size set implies 0% used
+      if (globalMaxSize <= 0) {
+         return 0;
+      }
+
+      long memoryUsed = getAddressMemoryUsage();
+      if (memoryUsed <= 0) {
+         return 0;
+      }
+
+      double result = (100D * memoryUsed) / globalMaxSize;
+      return (int) result;
+   }
+
+   @Override
+   public boolean freezeReplication() {
+      Activation activation = server.getActivation();
+      if (activation instanceof SharedNothingLiveActivation) {
+         SharedNothingLiveActivation liveActivation = (SharedNothingLiveActivation) activation;
+         liveActivation.freezeReplication();
+         return true;
+      }
+      return false;
+   }
+
+   private enum AddressInfoTextFormatter {
+      Long {
+         @Override
+         public StringBuilder format(AddressInfo addressInfo, StringBuilder output) {
+            output.append("Address [name=").append(addressInfo.getName());
+            output.append(", routingTypes={");
+            final EnumSet<RoutingType> routingTypes = addressInfo.getRoutingTypes();
+            if (!routingTypes.isEmpty()) {
+               for (RoutingType routingType : routingTypes) {
+                  output.append(routingType).append(',');
+               }
+               // delete hanging comma
+               output.deleteCharAt(output.length() - 1);
+            }
+            output.append('}');
+            output.append(", autoCreated=").append(addressInfo.isAutoCreated());
+            output.append(']');
+            return output;
+         }
+      };
+
+      public abstract StringBuilder format(AddressInfo addressInfo, StringBuilder output);
+   }
+
+   public enum QueueTextFormatter {
+      Long {
+         @Override
+         StringBuilder format(Queue queue, StringBuilder output) {
+            output.append("Queue [name=").append(queue.getName());
+            output.append(", address=").append(queue.getAddress());
+            output.append(", routingType=").append(queue.getRoutingType());
+            final Filter filter = queue.getFilter();
+            if (filter != null) {
+               output.append(", filter=").append(filter.getFilterString());
+            }
+            output.append(", durable=").append(queue.isDurable());
+            final int maxConsumers = queue.getMaxConsumers();
+            if (maxConsumers != Queue.MAX_CONSUMERS_UNLIMITED) {
+               output.append(", maxConsumers=").append(queue.getMaxConsumers());
+            }
+            output.append(", purgeOnNoConsumers=").append(queue.isPurgeOnNoConsumers());
+            output.append(", autoCreateAddress=").append(queue.isAutoCreated());
+            output.append(']');
+            return output;
+         }
+      };
+
+      abstract StringBuilder format(Queue queue, StringBuilder output);
+   }
+
+   @Override
+   public String createAddress(String name, String routingTypes) throws Exception {
+      checkStarted();
+
+      clearIO();
+      try {
+         EnumSet<RoutingType> set = EnumSet.noneOf(RoutingType.class);
+         for (String routingType : ListUtil.toList(routingTypes)) {
+            set.add(RoutingType.valueOf(routingType));
+         }
+         final AddressInfo addressInfo = new AddressInfo(new SimpleString(name), set);
+         if (server.addAddressInfo(addressInfo)) {
+            return AddressInfoTextFormatter.Long.format(addressInfo, new StringBuilder()).toString();
+         } else {
+            throw ActiveMQMessageBundle.BUNDLE.addressAlreadyExists(addressInfo.getName());
+         }
+      } finally {
+         blockOnIO();
+      }
+   }
+
+   @Override
+   public String updateAddress(String name, String routingTypes) throws Exception {
+      checkStarted();
+
+      clearIO();
+      try {
+         final EnumSet<RoutingType> routingTypeSet;
+         if (routingTypes == null) {
+            routingTypeSet = null;
+         } else {
+            routingTypeSet = EnumSet.noneOf(RoutingType.class);
+            final String[] routingTypeNames = routingTypes.split(",");
+            for (String routingTypeName : routingTypeNames) {
+               routingTypeSet.add(RoutingType.valueOf(routingTypeName));
+            }
+         }
+         if (!server.updateAddressInfo(SimpleString.toSimpleString(name), routingTypeSet)) {
+            throw ActiveMQMessageBundle.BUNDLE.addressDoesNotExist(SimpleString.toSimpleString(name));
+         }
+         return AddressInfoTextFormatter.Long.format(server.getAddressInfo(SimpleString.toSimpleString(name)), new StringBuilder()).toString();
+      } finally {
+         blockOnIO();
+      }
+   }
+
+
+   @Override
+   public void deleteAddress(String name) throws Exception {
+      deleteAddress(name, false);
+   }
+
+   @Override
+   public void deleteAddress(String name, boolean force) throws Exception {
+      checkStarted();
+
+      clearIO();
+      try {
+         server.removeAddressInfo(new SimpleString(name), null, force);
+      } catch (ActiveMQException e) {
+         throw new IllegalStateException(e.getMessage());
+      } finally {
+         blockOnIO();
+      }
+   }
+
+   @Deprecated
+   @Override
+   public void deployQueue(final String address, final String name, final String filterString) throws Exception {
+      deployQueue(address, name, filterString, true);
+   }
+
+   @Deprecated
    @Override
    public void deployQueue(final String address,
                            final String name,
@@ -568,77 +759,126 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       SimpleString filter = filterStr == null ? null : new SimpleString(filterStr);
       clearIO();
       try {
-
-         server.deployQueue(SimpleString.toSimpleString(address), new SimpleString(name), filter, durable, false);
-      }
-      finally {
+         server.createQueue(SimpleString.toSimpleString(address), server.getAddressSettingsRepository().getMatch(address).getDefaultQueueRoutingType(), new SimpleString(name), filter, durable, false);
+      } finally {
          blockOnIO();
       }
    }
 
    @Override
    public void createQueue(final String address, final String name) throws Exception {
-      checkStarted();
+      createQueue(address, name, true);
+   }
 
-      clearIO();
-      try {
-         server.createQueue(SimpleString.toSimpleString(address), new SimpleString(name), null, true, false);
-      }
-      finally {
-         blockOnIO();
-      }
+   @Override
+   public void createQueue(final String address, final String name, final String routingType) throws Exception {
+      createQueue(address, name, true, routingType);
    }
 
    @Override
    public void createQueue(final String address, final String name, final boolean durable) throws Exception {
+      createQueue(address, name, null, durable);
+   }
+
+   @Override
+   public void createQueue(final String address, final String name, final boolean durable, final String routingType) throws Exception {
+      createQueue(address, name, null, durable, routingType);
+   }
+
+   @Override
+   public void createQueue(final String address, final String name, final String filterStr, final boolean durable) throws Exception {
+      createQueue(address, name, filterStr, durable, server.getAddressSettingsRepository().getMatch(address == null ? name : address).getDefaultQueueRoutingType().toString());
+   }
+
+
+   @Override
+   public void createQueue(final String address, final String name, final String filterStr, final boolean durable, final String routingType) throws Exception {
+      AddressSettings addressSettings = server.getAddressSettingsRepository().getMatch(address == null ? name : address);
+      createQueue(address, routingType, name, filterStr, durable, addressSettings.getDefaultMaxConsumers(), addressSettings.isDefaultPurgeOnNoConsumers(), addressSettings.isAutoCreateAddresses());
+   }
+
+   @Override
+   public String createQueue(String address,
+                             String routingType,
+                             String name,
+                             String filterStr,
+                             boolean durable,
+                             int maxConsumers,
+                             boolean purgeOnNoConsumers,
+                             boolean autoCreateAddress) throws Exception {
       checkStarted();
 
       clearIO();
+
+      SimpleString filter = filterStr == null ? null : new SimpleString(filterStr);
       try {
-         server.createQueue(SimpleString.toSimpleString(address), new SimpleString(name), null, durable, false);
-      }
-      finally {
+         if (filterStr != null && !filterStr.trim().equals("")) {
+            filter = new SimpleString(filterStr);
+         }
+
+         final Queue queue = server.createQueue(SimpleString.toSimpleString(address), RoutingType.valueOf(routingType.toUpperCase()), new SimpleString(name), filter, durable, false, maxConsumers, purgeOnNoConsumers, autoCreateAddress);
+         return QueueTextFormatter.Long.format(queue, new StringBuilder()).toString();
+      } catch (ActiveMQException e) {
+         throw new IllegalStateException(e.getMessage());
+      } finally {
          blockOnIO();
       }
    }
 
    @Override
-   public void createQueue(final String address,
-                           final String name,
-                           final String filterStr,
-                           final boolean durable) throws Exception {
+   public String updateQueue(String name,
+                             String routingType,
+                             Integer maxConsumers,
+                             Boolean purgeOnNoConsumers) throws Exception {
+      return updateQueue(name, routingType, maxConsumers, purgeOnNoConsumers, null);
+   }
+
+   @Override
+   public String updateQueue(String name,
+                             String routingType,
+                             Integer maxConsumers,
+                             Boolean purgeOnNoConsumers,
+                             Boolean exclusive) throws Exception {
       checkStarted();
 
       clearIO();
-      try {
-         SimpleString filter = null;
-         if (filterStr != null && !filterStr.trim().equals("")) {
-            filter = new SimpleString(filterStr);
-         }
 
-         server.createQueue(SimpleString.toSimpleString(address), new SimpleString(name), filter, durable, false);
-      }
-      finally {
+      try {
+         final Queue queue = server.updateQueue(name, routingType != null ? RoutingType.valueOf(routingType) : null, maxConsumers, purgeOnNoConsumers, exclusive);
+         if (queue == null) {
+            throw ActiveMQMessageBundle.BUNDLE.noSuchQueue(new SimpleString(name));
+         }
+         return QueueTextFormatter.Long.format(queue, new StringBuilder()).toString();
+      } finally {
          blockOnIO();
       }
    }
 
    @Override
    public String[] getQueueNames() {
+      return getQueueNames(null);
+   }
+
+   @Override
+   public String[] getQueueNames(String routingType) {
       checkStarted();
 
       clearIO();
       try {
-         Object[] queues = server.getManagementService().getResources(QueueControl.class);
-         String[] names = new String[queues.length];
-         for (int i = 0; i < queues.length; i++) {
-            QueueControl queue = (QueueControl) queues[i];
-            names[i] = queue.getName();
+         Object[] queueControls = server.getManagementService().getResources(QueueControl.class);
+         List<String> names = new ArrayList<>();
+         for (int i = 0; i < queueControls.length; i++) {
+            QueueControl queueControl = (QueueControl) queueControls[i];
+            if (routingType != null && queueControl.getRoutingType().equals(routingType.toUpperCase())) {
+               names.add(queueControl.getName());
+            } else if (routingType == null) {
+               names.add(queueControl.getName());
+            }
          }
 
-         return names;
-      }
-      finally {
+         String[] result = new String[names.size()];
+         return names.toArray(result);
+      } finally {
          blockOnIO();
       }
    }
@@ -650,8 +890,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return server.getUptime();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -663,8 +902,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return server.getUptimeMillis();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -676,8 +914,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return server.isReplicaSync();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -696,23 +933,91 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
          }
 
          return names;
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
 
    @Override
-   public void destroyQueue(final String name) throws Exception {
+   public void destroyQueue(final String name, final boolean removeConsumers, final boolean autoDeleteAddress) throws Exception {
       checkStarted();
 
       clearIO();
       try {
          SimpleString queueName = new SimpleString(name);
-
-         server.destroyQueue(queueName, null, true);
+         server.destroyQueue(queueName, null, !removeConsumers, removeConsumers, autoDeleteAddress);
+      } finally {
+         blockOnIO();
       }
-      finally {
+   }
+
+   @Override
+   public void destroyQueue(final String name, final boolean removeConsumers) throws Exception {
+      destroyQueue(name, removeConsumers, false);
+   }
+
+   @Override
+   public void destroyQueue(final String name) throws Exception {
+      destroyQueue(name, false);
+   }
+
+   @Override
+   public String getAddressInfo(String address) throws ActiveMQAddressDoesNotExistException {
+      checkStarted();
+
+      clearIO();
+      try {
+         final AddressInfo addressInfo = server.getAddressInfo(SimpleString.toSimpleString(address));
+         if (addressInfo == null) {
+            throw ActiveMQMessageBundle.BUNDLE.addressDoesNotExist(SimpleString.toSimpleString(address));
+         } else {
+            return AddressInfoTextFormatter.Long.format(addressInfo, new StringBuilder()).toString();
+         }
+      } finally {
+         blockOnIO();
+      }
+   }
+
+   @Override
+   public String listBindingsForAddress(String address) throws Exception {
+      checkStarted();
+
+      clearIO();
+      try {
+         final Bindings bindings = server.getPostOffice().getBindingsForAddress(new SimpleString(address));
+         return bindings.getBindings().stream().map(Binding::toManagementString).collect(Collectors.joining(","));
+      } finally {
+         blockOnIO();
+      }
+   }
+
+
+   @Override
+   public String listAddresses(String separator) throws Exception {
+      checkStarted();
+
+      clearIO();
+      try {
+         final Set<SimpleString> addresses = server.getPostOffice().getAddresses();
+         TreeSet<SimpleString> sortAddress = new TreeSet<>(new Comparator<SimpleString>() {
+            @Override
+            public int compare(SimpleString o1, SimpleString o2) {
+               return o1.toString().compareToIgnoreCase(o2.toString());
+            }
+         });
+
+         sortAddress.addAll(addresses);
+
+         StringBuilder result = new StringBuilder();
+         for (SimpleString string : sortAddress) {
+            if (result.length() > 0) {
+               result.append(separator);
+            }
+            result.append(string);
+         }
+
+         return result.toString();
+      } finally {
          blockOnIO();
       }
    }
@@ -724,8 +1029,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return server.getConnectionCount();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -737,8 +1041,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return server.getTotalConnectionCount();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -750,8 +1053,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return server.getTotalMessageCount();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -763,8 +1065,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return server.getTotalMessagesAdded();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -776,8 +1077,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return server.getTotalMessagesAcknowledged();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -789,8 +1089,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return server.getTotalConsumerCount();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -802,8 +1101,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          setMessageCounterEnabled(true);
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -815,8 +1113,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          setMessageCounterEnabled(false);
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -828,8 +1125,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          messageCounterManager.resetAllCounters();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -841,8 +1137,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          messageCounterManager.resetAllCounterHistories();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -854,8 +1149,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return configuration.isMessageCounterEnabled();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -867,8 +1161,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return messageCounterManager.getSamplePeriod();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -882,14 +1175,16 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          if (newPeriod < MessageCounterManagerImpl.MIN_SAMPLE_PERIOD) {
-            throw ActiveMQMessageBundle.BUNDLE.invalidMessageCounterPeriod(MessageCounterManagerImpl.MIN_SAMPLE_PERIOD);
+            if (newPeriod <= 0) {
+               throw ActiveMQMessageBundle.BUNDLE.periodMustGreaterThanZero(newPeriod);
+            }
+            ActiveMQServerLogger.LOGGER.invalidMessageCounterPeriod(newPeriod);
          }
 
          if (messageCounterManager != null && newPeriod != messageCounterManager.getSamplePeriod()) {
             messageCounterManager.reschedule(newPeriod);
          }
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -901,8 +1196,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          return messageCounterManager.getMaxDayCount();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -917,8 +1211,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
             throw ActiveMQMessageBundle.BUNDLE.greaterThanZero(count);
          }
          messageCounterManager.setMaxDayCount(count);
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -948,14 +1241,17 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
             s[i++] = dateFormat.format(creation) + " base64: " + XidImpl.toBase64String(xid) + " " + xid.toString();
          }
          return s;
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
 
    @Override
    public String listPreparedTransactionDetailsAsJSON() throws Exception {
+      return listPreparedTransactionDetailsAsJSON((xid, tx, creation) -> new CoreTransactionDetail(xid, tx, creation));
+   }
+
+   public String listPreparedTransactionDetailsAsJSON(TransactionDetailFactory factory) throws Exception {
       checkStarted();
 
       clearIO();
@@ -984,19 +1280,22 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
                continue;
             }
 
-            TransactionDetail detail = new CoreTransactionDetail(xid, tx, entry.getValue());
+            TransactionDetail detail = factory.createTransactionDetail(xid, tx, entry.getValue());
 
             txDetailListJson.add(detail.toJSON());
          }
          return txDetailListJson.build().toString();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
 
    @Override
    public String listPreparedTransactionDetailsAsHTML() throws Exception {
+      return listPreparedTransactionDetailsAsHTML((xid, tx, creation) -> new CoreTransactionDetail(xid, tx, creation));
+   }
+
+   public String listPreparedTransactionDetailsAsHTML(TransactionDetailFactory factory) throws Exception {
       checkStarted();
 
       clearIO();
@@ -1027,7 +1326,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
                continue;
             }
 
-            TransactionDetail detail = new CoreTransactionDetail(xid, tx, entry.getValue());
+            TransactionDetail detail = factory.createTransactionDetail(xid, tx, entry.getValue());
 
             JsonObject txJson = detail.toJSON();
 
@@ -1072,8 +1371,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
          }
 
          return html.toString();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -1091,8 +1389,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
             s[i++] = XidImpl.toBase64String(xid);
          }
          return s;
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -1110,8 +1407,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
             s[i++] = XidImpl.toBase64String(xid);
          }
          return s;
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -1135,8 +1431,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
             }
          }
          return false;
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -1161,8 +1456,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
             }
          }
          return false;
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -1181,8 +1475,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
             remoteAddresses[i++] = connection.getRemoteAddress();
          }
          return remoteAddresses;
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
 
@@ -1203,15 +1496,14 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
             }
          }
          return remoteConnections.toArray(new String[remoteConnections.size()]);
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
 
    }
 
    @Override
-   public synchronized boolean closeConnectionsForAddress(final String ipAddress) {
+   public boolean closeConnectionsForAddress(final String ipAddress) {
       checkStarted();
 
       clearIO();
@@ -1228,15 +1520,14 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
          }
 
          return closed;
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
 
    }
 
    @Override
-   public synchronized boolean closeConsumerConnectionsForAddress(final String address) {
+   public boolean closeConsumerConnectionsForAddress(final String address) {
       boolean closed = false;
       checkStarted();
 
@@ -1265,18 +1556,16 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
                }
             }
          }
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          ActiveMQServerLogger.LOGGER.failedToCloseConsumerConnectionsForAddress(address, e);
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
       return closed;
    }
 
    @Override
-   public synchronized boolean closeConnectionsForUser(final String userName) {
+   public boolean closeConnectionsForUser(final String userName) {
       boolean closed = false;
       checkStarted();
 
@@ -1299,11 +1588,74 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
                }
             }
          }
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
       return closed;
+   }
+
+   @Override
+   public boolean closeConnectionWithID(final String ID) {
+      checkStarted();
+
+      clearIO();
+      try {
+         for (RemotingConnection connection : remotingService.getConnections()) {
+            if (connection.getID().toString().equals(ID)) {
+               remotingService.removeConnection(connection.getID());
+               connection.fail(ActiveMQMessageBundle.BUNDLE.connectionWithIDClosedByManagement(ID));
+               return true;
+            }
+         }
+      } finally {
+         blockOnIO();
+      }
+      return false;
+   }
+
+   @Override
+   public boolean closeSessionWithID(final String connectionID, final String ID) throws Exception {
+      checkStarted();
+
+      clearIO();
+      try {
+         List<ServerSession> sessions = server.getSessions(connectionID);
+         for (ServerSession session : sessions) {
+            if (session.getName().equals(ID.toString())) {
+               session.close(true);
+               return true;
+            }
+         }
+
+      } finally {
+         blockOnIO();
+      }
+      return false;
+   }
+
+   @Override
+   public boolean closeConsumerWithID(final String sessionID, final String ID) throws Exception {
+      checkStarted();
+
+      clearIO();
+      try {
+         Set<ServerSession> sessions = server.getSessions();
+         for (ServerSession session : sessions) {
+            if (session.getName().equals(sessionID.toString())) {
+               Set<ServerConsumer> serverConsumers = session.getServerConsumers();
+               for (ServerConsumer serverConsumer : serverConsumers) {
+                  if (serverConsumer.sequentialID() == Long.valueOf(ID)) {
+                     serverConsumer.disconnect();
+                     return true;
+                  }
+               }
+            }
+         }
+
+      } finally {
+         blockOnIO();
+      }
+      return false;
    }
 
    @Override
@@ -1319,8 +1671,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
             connectionIDs[i++] = connection.getID().toString();
          }
          return connectionIDs;
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -1338,8 +1689,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
             sessionIDs[i++] = serverSession.getName();
          }
          return sessionIDs;
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -1359,6 +1709,116 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
    }
 
    @Override
+   public String listConnections(String options, int page, int pageSize) throws Exception {
+      checkStarted();
+      clearIO();
+      try {
+         server.getPostOffice().getAddresses();
+         ConnectionView view = new ConnectionView(server);
+         view.setCollection(server.getRemotingService().getConnections());
+         view.setOptions(options);
+         return view.getResultsAsJson(page, pageSize);
+      } finally {
+         blockOnIO();
+      }
+   }
+
+   @Override
+   public String listSessions(String options, int page, int pageSize) throws Exception {
+      checkStarted();
+      clearIO();
+      try {
+         SessionView view = new SessionView();
+         view.setCollection(server.getSessions());
+         view.setOptions(options);
+         return view.getResultsAsJson(page, pageSize);
+      } finally {
+         blockOnIO();
+      }
+   }
+
+   @Override
+   public String listConsumers(String options, int page, int pageSize) throws Exception {
+      checkStarted();
+      clearIO();
+      try {
+         Set<ServerConsumer> consumers = new HashSet();
+         for (ServerSession session : server.getSessions()) {
+            consumers.addAll(session.getServerConsumers());
+         }
+         ConsumerView view = new ConsumerView(server);
+         view.setCollection(consumers);
+         view.setOptions(options);
+         return view.getResultsAsJson(page, pageSize);
+      } finally {
+         blockOnIO();
+      }
+   }
+
+   @Override
+   public String listAddresses(String options, int page, int pageSize) throws Exception {
+      checkStarted();
+      clearIO();
+      try {
+         final Set<SimpleString> addresses = server.getPostOffice().getAddresses();
+         List<AddressInfo> addressInfo = new ArrayList<>();
+         for (SimpleString address : addresses) {
+            AddressInfo info = server.getPostOffice().getAddressInfo(address);
+            //ignore if no longer available
+            if (info != null) {
+               addressInfo.add(info);
+            }
+         }
+         AddressView view = new AddressView(server);
+         view.setCollection(addressInfo);
+         view.setOptions(options);
+         return view.getResultsAsJson(page, pageSize);
+      } finally {
+         blockOnIO();
+      }
+   }
+
+   @Override
+   public String listQueues(String options, int page, int pageSize) throws Exception {
+      checkStarted();
+
+      clearIO();
+      try {
+         List<QueueControl> queues = new ArrayList<>();
+         Object[] qs = server.getManagementService().getResources(QueueControl.class);
+         for (int i = 0; i < qs.length; i++) {
+            queues.add((QueueControl) qs[i]);
+         }
+         QueueView view = new QueueView(server);
+         view.setCollection(queues);
+         view.setOptions(options);
+         return view.getResultsAsJson(page, pageSize);
+      } finally {
+         blockOnIO();
+      }
+   }
+
+   @Override
+   public String listProducers(@Parameter(name = "Options") String options,
+                               @Parameter(name = "Page Number") int page,
+                               @Parameter(name = "Page Size") int pageSize) throws Exception {
+      checkStarted();
+      clearIO();
+      try {
+         Set<ServerProducer> producers = new HashSet<>();
+         for (ServerSession session : server.getSessions()) {
+            producers.addAll(session.getServerProducers().values());
+         }
+         ProducerView view = new ProducerView(server);
+         view.setCollection(producers);
+         view.setOptions(options);
+         return view.getResultsAsJson(page, pageSize);
+      } finally {
+         blockOnIO();
+      }
+   }
+
+   @Override
    public String listConnectionsAsJSON() throws Exception {
       checkStarted();
 
@@ -1370,17 +1830,11 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
          Set<RemotingConnection> connections = server.getRemotingService().getConnections();
 
          for (RemotingConnection connection : connections) {
-            JsonObjectBuilder obj = JsonLoader.createObjectBuilder()
-               .add("connectionID", connection.getID().toString())
-               .add("clientAddress", connection.getRemoteAddress())
-               .add("creationTime", connection.getCreationTime())
-               .add("implementation", connection.getClass().getSimpleName())
-               .add("sessionCount", server.getSessions(connection.getID().toString()).size());
+            JsonObjectBuilder obj = JsonLoader.createObjectBuilder().add("connectionID", connection.getID().toString()).add("clientAddress", connection.getRemoteAddress()).add("creationTime", connection.getCreationTime()).add("implementation", connection.getClass().getSimpleName()).add("sessionCount", server.getSessions(connection.getID().toString()).size());
             array.add(obj);
          }
          return array.build().toString();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -1395,10 +1849,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       try {
          List<ServerSession> sessions = server.getSessions(connectionID);
          for (ServerSession sess : sessions) {
-            JsonObjectBuilder obj = JsonLoader.createObjectBuilder()
-               .add("sessionID", sess.getName())
-               .add("creationTime", sess.getCreationTime())
-               .add("consumerCount", sess.getServerConsumers().size());
+            JsonObjectBuilder obj = JsonLoader.createObjectBuilder().add("sessionID", sess.getName()).add("creationTime", sess.getCreationTime()).add("consumerCount", sess.getServerConsumers().size());
 
             if (sess.getValidatedUser() != null) {
                obj.add("principal", sess.getValidatedUser());
@@ -1406,8 +1857,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
 
             array.add(obj);
          }
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
       return array.build().toString();
@@ -1438,8 +1888,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
             }
          }
          return array.build().toString();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -1464,21 +1913,13 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
             }
          }
          return array.build().toString();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
 
    private JsonObject toJSONObject(ServerConsumer consumer) throws Exception {
-      JsonObjectBuilder obj = JsonLoader.createObjectBuilder()
-         .add("consumerID", consumer.getID())
-         .add("connectionID", consumer.getConnectionID().toString())
-         .add("sessionID", consumer.getSessionID())
-         .add("queueName", consumer.getQueue().getName().toString())
-         .add("browseOnly", consumer.isBrowseOnly())
-         .add("creationTime", consumer.getCreationTime())
-         .add("deliveringCount", consumer.getDeliveringMessages().size());
+      JsonObjectBuilder obj = JsonLoader.createObjectBuilder().add("consumerID", consumer.getID()).add("connectionID", consumer.getConnectionID().toString()).add("sessionID", consumer.getSessionID()).add("queueName", consumer.getQueue().getName().toString()).add("browseOnly", consumer.isBrowseOnly()).add("creationTime", consumer.getCreationTime()).add("deliveringCount", consumer.getDeliveringMessages().size());
       if (consumer.getFilter() != null) {
          obj.add("filter", consumer.getFilter().getFilterString().toString());
       }
@@ -1508,8 +1949,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
          }
 
          return ret;
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -1527,8 +1967,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
          }
 
          return array.build().toString();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -1555,19 +1994,33 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
                                    final String deleteNonDurableQueueRoles,
                                    final String manageRoles,
                                    final String browseRoles) throws Exception {
+      addSecuritySettings(addressMatch, sendRoles, consumeRoles, createDurableQueueRoles, deleteDurableQueueRoles, createNonDurableQueueRoles, deleteNonDurableQueueRoles, manageRoles, browseRoles, "", "");
+   }
+
+   @Override
+   public void addSecuritySettings(final String addressMatch,
+                                   final String sendRoles,
+                                   final String consumeRoles,
+                                   final String createDurableQueueRoles,
+                                   final String deleteDurableQueueRoles,
+                                   final String createNonDurableQueueRoles,
+                                   final String deleteNonDurableQueueRoles,
+                                   final String manageRoles,
+                                   final String browseRoles,
+                                   final String createAddressRoles,
+                                   final String deleteAddressRoles) throws Exception {
       checkStarted();
 
       clearIO();
       try {
-         Set<Role> roles = SecurityFormatter.createSecurity(sendRoles, consumeRoles, createDurableQueueRoles, deleteDurableQueueRoles, createNonDurableQueueRoles, deleteNonDurableQueueRoles, manageRoles, browseRoles);
+         Set<Role> roles = SecurityFormatter.createSecurity(sendRoles, consumeRoles, createDurableQueueRoles, deleteDurableQueueRoles, createNonDurableQueueRoles, deleteNonDurableQueueRoles, manageRoles, browseRoles, createAddressRoles, deleteAddressRoles);
 
          server.getSecurityRepository().addMatch(addressMatch, roles);
 
-         PersistedRoles persistedRoles = new PersistedRoles(addressMatch, sendRoles, consumeRoles, createDurableQueueRoles, deleteDurableQueueRoles, createNonDurableQueueRoles, deleteNonDurableQueueRoles, manageRoles, browseRoles);
+         PersistedRoles persistedRoles = new PersistedRoles(addressMatch, sendRoles, consumeRoles, createDurableQueueRoles, deleteDurableQueueRoles, createNonDurableQueueRoles, deleteNonDurableQueueRoles, manageRoles, browseRoles, createAddressRoles, deleteAddressRoles);
 
          storageManager.storeSecurityRoles(persistedRoles);
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -1580,8 +2033,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       try {
          server.getSecurityRepository().removeMatch(addressMatch);
          storageManager.deleteSecurityRoles(new SimpleString(addressMatch));
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -1603,8 +2055,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
             objRoles[i++] = new Object[]{role.getName(), CheckType.SEND.hasRole(role), CheckType.CONSUME.hasRole(role), CheckType.CREATE_DURABLE_QUEUE.hasRole(role), CheckType.DELETE_DURABLE_QUEUE.hasRole(role), CheckType.CREATE_NON_DURABLE_QUEUE.hasRole(role), CheckType.DELETE_NON_DURABLE_QUEUE.hasRole(role), CheckType.MANAGE.hasRole(role)};
          }
          return objRoles;
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -1622,8 +2073,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
             json.add(role.toJson());
          }
          return json.build().toString();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -1642,27 +2092,31 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       if (addressSettings.getExpiryAddress() != null) {
          settings.add("expiryAddress", addressSettings.getExpiryAddress().toString());
       }
-      return settings
-         .add("expiryDelay", addressSettings.getExpiryDelay())
-         .add("maxDeliveryAttempts", addressSettings.getMaxDeliveryAttempts())
-         .add("pageCacheMaxSize", addressSettings.getPageCacheMaxSize())
-         .add("maxSizeBytes", addressSettings.getMaxSizeBytes())
-         .add("pageSizeBytes", addressSettings.getPageSizeBytes())
-         .add("redeliveryDelay", addressSettings.getRedeliveryDelay())
-         .add("redeliveryMultiplier", addressSettings.getRedeliveryMultiplier())
-         .add("maxRedeliveryDelay", addressSettings.getMaxRedeliveryDelay())
-         .add("redistributionDelay", addressSettings.getRedistributionDelay())
-         .add("lastValueQueue", addressSettings.isLastValueQueue())
-         .add("sendToDLAOnNoRoute", addressSettings.isSendToDLAOnNoRoute())
-         .add("addressFullMessagePolicy", policy)
-         .add("slowConsumerThreshold", addressSettings.getSlowConsumerThreshold())
-         .add("slowConsumerCheckPeriod", addressSettings.getSlowConsumerCheckPeriod())
-         .add("slowConsumerPolicy", consumerPolicy)
-         .add("autoCreateJmsQueues", addressSettings.isAutoCreateJmsQueues())
-         .add("autoDeleteJmsQueues", addressSettings.isAutoDeleteJmsQueues())
-         .add("autoCreateJmsTopics", addressSettings.isAutoCreateJmsTopics())
-         .add("autoDeleteJmsTopics", addressSettings.isAutoDeleteJmsTopics())
-         .build().toString();
+      return settings.add("expiryDelay", addressSettings.getExpiryDelay())
+            .add("maxDeliveryAttempts", addressSettings.getMaxDeliveryAttempts())
+            .add("pageCacheMaxSize", addressSettings.getPageCacheMaxSize())
+            .add("maxSizeBytes", addressSettings.getMaxSizeBytes())
+            .add("pageSizeBytes", addressSettings.getPageSizeBytes())
+            .add("redeliveryDelay", addressSettings.getRedeliveryDelay())
+            .add("redeliveryMultiplier", addressSettings.getRedeliveryMultiplier())
+            .add("maxRedeliveryDelay", addressSettings.getMaxRedeliveryDelay())
+            .add("redistributionDelay", addressSettings.getRedistributionDelay())
+            .add("lastValueQueue", addressSettings.isDefaultLastValueQueue())
+            .add("sendToDLAOnNoRoute", addressSettings.isSendToDLAOnNoRoute())
+            .add("addressFullMessagePolicy", policy)
+            .add("slowConsumerThreshold", addressSettings.getSlowConsumerThreshold())
+            .add("slowConsumerCheckPeriod", addressSettings.getSlowConsumerCheckPeriod())
+            .add("slowConsumerPolicy", consumerPolicy)
+            .add("autoCreateJmsQueues", addressSettings.isAutoCreateJmsQueues())
+            .add("autoCreateJmsTopics", addressSettings.isAutoCreateJmsTopics())
+            .add("autoDeleteJmsQueues", addressSettings.isAutoDeleteJmsQueues())
+            .add("autoDeleteJmsTopics", addressSettings.isAutoDeleteJmsQueues())
+            .add("autoCreateQueues", addressSettings.isAutoCreateQueues())
+            .add("autoDeleteQueues", addressSettings.isAutoDeleteQueues())
+            .add("autoCreateAddress", addressSettings.isAutoCreateAddresses())
+            .add("autoDeleteAddress", addressSettings.isAutoDeleteAddresses())
+            .build()
+            .toString();
    }
 
    @Override
@@ -1688,6 +2142,36 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
                                   final boolean autoDeleteJmsQueues,
                                   final boolean autoCreateJmsTopics,
                                   final boolean autoDeleteJmsTopics) throws Exception {
+      addAddressSettings(address, DLA, expiryAddress, expiryDelay, lastValueQueue, deliveryAttempts, maxSizeBytes, pageSizeBytes, pageMaxCacheSize, redeliveryDelay, redeliveryMultiplier, maxRedeliveryDelay, redistributionDelay, sendToDLAOnNoRoute, addressFullMessagePolicy, slowConsumerThreshold, slowConsumerCheckPeriod, slowConsumerPolicy, autoCreateJmsQueues, autoDeleteJmsQueues, autoCreateJmsTopics, autoDeleteJmsTopics, AddressSettings.DEFAULT_AUTO_CREATE_QUEUES, AddressSettings.DEFAULT_AUTO_DELETE_QUEUES, AddressSettings.DEFAULT_AUTO_CREATE_ADDRESSES, AddressSettings.DEFAULT_AUTO_DELETE_ADDRESSES);
+   }
+
+   @Override
+   public void addAddressSettings(final String address,
+                                  final String DLA,
+                                  final String expiryAddress,
+                                  final long expiryDelay,
+                                  final boolean lastValueQueue,
+                                  final int deliveryAttempts,
+                                  final long maxSizeBytes,
+                                  final int pageSizeBytes,
+                                  final int pageMaxCacheSize,
+                                  final long redeliveryDelay,
+                                  final double redeliveryMultiplier,
+                                  final long maxRedeliveryDelay,
+                                  final long redistributionDelay,
+                                  final boolean sendToDLAOnNoRoute,
+                                  final String addressFullMessagePolicy,
+                                  final long slowConsumerThreshold,
+                                  final long slowConsumerCheckPeriod,
+                                  final String slowConsumerPolicy,
+                                  final boolean autoCreateJmsQueues,
+                                  final boolean autoDeleteJmsQueues,
+                                  final boolean autoCreateJmsTopics,
+                                  final boolean autoDeleteJmsTopics,
+                                  final boolean autoCreateQueues,
+                                  final boolean autoDeleteQueues,
+                                  final boolean autoCreateAddresses,
+                                  final boolean autoDeleteAddresses) throws Exception {
       checkStarted();
 
       // JBPAPP-6334 requested this to be pageSizeBytes > maxSizeBytes
@@ -1703,7 +2187,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       addressSettings.setDeadLetterAddress(DLA == null ? null : new SimpleString(DLA));
       addressSettings.setExpiryAddress(expiryAddress == null ? null : new SimpleString(expiryAddress));
       addressSettings.setExpiryDelay(expiryDelay);
-      addressSettings.setLastValueQueue(lastValueQueue);
+      addressSettings.setDefaultLastValueQueue(lastValueQueue);
       addressSettings.setMaxDeliveryAttempts(deliveryAttempts);
       addressSettings.setPageCacheMaxSize(pageMaxCacheSize);
       addressSettings.setMaxSizeBytes(maxSizeBytes);
@@ -1715,34 +2199,32 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       addressSettings.setSendToDLAOnNoRoute(sendToDLAOnNoRoute);
       if (addressFullMessagePolicy == null) {
          addressSettings.setAddressFullMessagePolicy(AddressFullMessagePolicy.PAGE);
-      }
-      else if (addressFullMessagePolicy.equalsIgnoreCase("PAGE")) {
+      } else if (addressFullMessagePolicy.equalsIgnoreCase("PAGE")) {
          addressSettings.setAddressFullMessagePolicy(AddressFullMessagePolicy.PAGE);
-      }
-      else if (addressFullMessagePolicy.equalsIgnoreCase("DROP")) {
+      } else if (addressFullMessagePolicy.equalsIgnoreCase("DROP")) {
          addressSettings.setAddressFullMessagePolicy(AddressFullMessagePolicy.DROP);
-      }
-      else if (addressFullMessagePolicy.equalsIgnoreCase("BLOCK")) {
+      } else if (addressFullMessagePolicy.equalsIgnoreCase("BLOCK")) {
          addressSettings.setAddressFullMessagePolicy(AddressFullMessagePolicy.BLOCK);
-      }
-      else if (addressFullMessagePolicy.equalsIgnoreCase("FAIL")) {
+      } else if (addressFullMessagePolicy.equalsIgnoreCase("FAIL")) {
          addressSettings.setAddressFullMessagePolicy(AddressFullMessagePolicy.FAIL);
       }
       addressSettings.setSlowConsumerThreshold(slowConsumerThreshold);
       addressSettings.setSlowConsumerCheckPeriod(slowConsumerCheckPeriod);
       if (slowConsumerPolicy == null) {
          addressSettings.setSlowConsumerPolicy(SlowConsumerPolicy.NOTIFY);
-      }
-      else if (slowConsumerPolicy.equalsIgnoreCase("NOTIFY")) {
+      } else if (slowConsumerPolicy.equalsIgnoreCase("NOTIFY")) {
          addressSettings.setSlowConsumerPolicy(SlowConsumerPolicy.NOTIFY);
-      }
-      else if (slowConsumerPolicy.equalsIgnoreCase("KILL")) {
+      } else if (slowConsumerPolicy.equalsIgnoreCase("KILL")) {
          addressSettings.setSlowConsumerPolicy(SlowConsumerPolicy.KILL);
       }
       addressSettings.setAutoCreateJmsQueues(autoCreateJmsQueues);
       addressSettings.setAutoDeleteJmsQueues(autoDeleteJmsQueues);
       addressSettings.setAutoCreateJmsTopics(autoCreateJmsTopics);
       addressSettings.setAutoDeleteJmsTopics(autoDeleteJmsTopics);
+      addressSettings.setAutoCreateQueues(autoCreateQueues);
+      addressSettings.setAutoDeleteQueues(autoDeleteQueues);
+      addressSettings.setAutoCreateAddresses(autoCreateAddresses);
+      addressSettings.setAutoDeleteAddresses(autoDeleteAddresses);
       server.getAddressSettingsRepository().addMatch(address, addressSettings);
 
       storageManager.storeAddressSetting(new PersistedAddressSetting(new SimpleString(address), addressSettings));
@@ -1762,7 +2244,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
 
       clearIO();
       try {
-         postOffice.sendQueueInfoToQueue(new SimpleString(queueName), new SimpleString(address));
+         postOffice.sendQueueInfoToQueue(new SimpleString(queueName), new SimpleString(address == null ? "" : address));
 
          GroupingHandler handler = server.getGroupingHandler();
          if (handler != null) {
@@ -1770,8 +2252,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
             // on that case we ask the groupinghandler to replay its send in case it's waiting for the information
             handler.resendPending();
          }
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -1790,8 +2271,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
          }
 
          return names;
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -1804,14 +2284,52 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
                             final boolean exclusive,
                             final String filterString,
                             final String transformerClassName) throws Exception {
+      createDivert(name, routingName, address, forwardingAddress, exclusive, filterString, transformerClassName, ActiveMQDefaultConfiguration.getDefaultDivertRoutingType());
+   }
+
+   @Override
+   public void createDivert(final String name,
+                            final String routingName,
+                            final String address,
+                            final String forwardingAddress,
+                            final boolean exclusive,
+                            final String filterString,
+                            final String transformerClassName,
+                            final String routingType) throws Exception {
+      createDivert(name, routingName, address, forwardingAddress, exclusive, filterString, transformerClassName, (String) null, routingType);
+   }
+
+   @Override
+   public void createDivert(final String name,
+                            final String routingName,
+                            final String address,
+                            final String forwardingAddress,
+                            final boolean exclusive,
+                            final String filterString,
+                            final String transformerClassName,
+                            final String transformerPropertiesAsJSON,
+                            final String routingType) throws Exception {
+      createDivert(name, routingName, address, forwardingAddress, exclusive, filterString, transformerClassName, JsonUtil.readJsonProperties(transformerPropertiesAsJSON), routingType);
+   }
+
+   @Override
+   public void createDivert(final String name,
+                            final String routingName,
+                            final String address,
+                            final String forwardingAddress,
+                            final boolean exclusive,
+                            final String filterString,
+                            final String transformerClassName,
+                            final Map<String, String> transformerProperties,
+                            final String routingType) throws Exception {
       checkStarted();
 
       clearIO();
       try {
-         DivertConfiguration config = new DivertConfiguration().setName(name).setRoutingName(routingName).setAddress(address).setForwardingAddress(forwardingAddress).setExclusive(exclusive).setFilterString(filterString).setTransformerClassName(transformerClassName);
+         TransformerConfiguration transformerConfiguration = transformerClassName == null ? null : new TransformerConfiguration(transformerClassName).setProperties(transformerProperties);
+         DivertConfiguration config = new DivertConfiguration().setName(name).setRoutingName(routingName).setAddress(address).setForwardingAddress(forwardingAddress).setExclusive(exclusive).setFilterString(filterString).setTransformerConfiguration(transformerConfiguration).setRoutingType(DivertConfigurationRoutingType.valueOf(routingType));
          server.deployDivert(config);
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -1823,8 +2341,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          server.destroyDivert(SimpleString.toSimpleString(name));
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -1843,8 +2360,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
          }
 
          return names;
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -1868,43 +2384,107 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
                             final boolean ha,
                             final String user,
                             final String password) throws Exception {
+      createBridge(name,
+                   queueName,
+                   forwardingAddress,
+                   filterString,
+                   transformerClassName,
+                   (String) null,
+                   retryInterval,
+                   retryIntervalMultiplier,
+                   initialConnectAttempts,
+                   reconnectAttempts,
+                   useDuplicateDetection,
+                   confirmationWindowSize,
+                   producerWindowSize,
+                   clientFailureCheckPeriod,
+                   staticConnectorsOrDiscoveryGroup,
+                   useDiscoveryGroup,
+                   ha,
+                   user,
+                   password);
+   }
+
+   @Override
+   public void createBridge(final String name,
+                            final String queueName,
+                            final String forwardingAddress,
+                            final String filterString,
+                            final String transformerClassName,
+                            final String transformerPropertiesAsJSON,
+                            final long retryInterval,
+                            final double retryIntervalMultiplier,
+                            final int initialConnectAttempts,
+                            final int reconnectAttempts,
+                            final boolean useDuplicateDetection,
+                            final int confirmationWindowSize,
+                            final int producerWindowSize,
+                            final long clientFailureCheckPeriod,
+                            final String staticConnectorsOrDiscoveryGroup,
+                            boolean useDiscoveryGroup,
+                            final boolean ha,
+                            final String user,
+                            final String password) throws Exception {
+      createBridge(name,
+                   queueName,
+                   forwardingAddress,
+                   filterString,
+                   transformerClassName,
+                   JsonUtil.readJsonProperties(transformerPropertiesAsJSON),
+                   retryInterval,
+                   retryIntervalMultiplier,
+                   initialConnectAttempts,
+                   reconnectAttempts,
+                   useDuplicateDetection,
+                   confirmationWindowSize,
+                   producerWindowSize,
+                   clientFailureCheckPeriod,
+                   staticConnectorsOrDiscoveryGroup,
+                   useDiscoveryGroup,
+                   ha,
+                   user,
+                   password);
+   }
+
+   @Override
+   public void createBridge(final String name,
+                            final String queueName,
+                            final String forwardingAddress,
+                            final String filterString,
+                            final String transformerClassName,
+                            final Map<String, String> transformerProperties,
+                            final long retryInterval,
+                            final double retryIntervalMultiplier,
+                            final int initialConnectAttempts,
+                            final int reconnectAttempts,
+                            final boolean useDuplicateDetection,
+                            final int confirmationWindowSize,
+                            final int producerWindowSize,
+                            final long clientFailureCheckPeriod,
+                            final String staticConnectorsOrDiscoveryGroup,
+                            boolean useDiscoveryGroup,
+                            final boolean ha,
+                            final String user,
+                            final String password) throws Exception {
       checkStarted();
 
       clearIO();
 
       try {
-         BridgeConfiguration config = new BridgeConfiguration()
-            .setName(name)
-            .setQueueName(queueName)
-            .setForwardingAddress(forwardingAddress)
-            .setFilterString(filterString)
-            .setTransformerClassName(transformerClassName)
-            .setClientFailureCheckPeriod(clientFailureCheckPeriod)
-            .setRetryInterval(retryInterval)
-            .setRetryIntervalMultiplier(retryIntervalMultiplier)
-            .setInitialConnectAttempts(initialConnectAttempts)
-            .setReconnectAttempts(reconnectAttempts)
-            .setUseDuplicateDetection(useDuplicateDetection)
-            .setConfirmationWindowSize(confirmationWindowSize)
-            .setProducerWindowSize(producerWindowSize)
-            .setHA(ha)
-            .setUser(user)
-            .setPassword(password);
+         TransformerConfiguration transformerConfiguration = transformerClassName == null ? null : new TransformerConfiguration(transformerClassName).setProperties(transformerProperties);
+         BridgeConfiguration config = new BridgeConfiguration().setName(name).setQueueName(queueName).setForwardingAddress(forwardingAddress).setFilterString(filterString).setTransformerConfiguration(transformerConfiguration).setClientFailureCheckPeriod(clientFailureCheckPeriod).setRetryInterval(retryInterval).setRetryIntervalMultiplier(retryIntervalMultiplier).setInitialConnectAttempts(initialConnectAttempts).setReconnectAttempts(reconnectAttempts).setUseDuplicateDetection(useDuplicateDetection).setConfirmationWindowSize(confirmationWindowSize).setProducerWindowSize(producerWindowSize).setHA(ha).setUser(user).setPassword(password);
 
          if (useDiscoveryGroup) {
             config.setDiscoveryGroupName(staticConnectorsOrDiscoveryGroup);
-         }
-         else {
-            config.setStaticConnectors(toList(staticConnectorsOrDiscoveryGroup));
+         } else {
+            config.setStaticConnectors(ListUtil.toList(staticConnectorsOrDiscoveryGroup));
          }
 
          server.deployBridge(config);
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
-
 
    @Override
    public void createBridge(final String name,
@@ -1929,33 +2509,17 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
 
       try {
-         BridgeConfiguration config = new BridgeConfiguration()
-            .setName(name)
-            .setQueueName(queueName)
-            .setForwardingAddress(forwardingAddress)
-            .setFilterString(filterString)
-            .setTransformerClassName(transformerClassName)
-            .setClientFailureCheckPeriod(clientFailureCheckPeriod)
-            .setRetryInterval(retryInterval)
-            .setRetryIntervalMultiplier(retryIntervalMultiplier)
-            .setInitialConnectAttempts(initialConnectAttempts)
-            .setReconnectAttempts(reconnectAttempts)
-            .setUseDuplicateDetection(useDuplicateDetection)
-            .setConfirmationWindowSize(confirmationWindowSize)
-            .setHA(ha)
-            .setUser(user)
-            .setPassword(password);
+         TransformerConfiguration transformerConfiguration = transformerClassName == null ? null : new TransformerConfiguration(transformerClassName);
+         BridgeConfiguration config = new BridgeConfiguration().setName(name).setQueueName(queueName).setForwardingAddress(forwardingAddress).setFilterString(filterString).setTransformerConfiguration(transformerConfiguration).setClientFailureCheckPeriod(clientFailureCheckPeriod).setRetryInterval(retryInterval).setRetryIntervalMultiplier(retryIntervalMultiplier).setInitialConnectAttempts(initialConnectAttempts).setReconnectAttempts(reconnectAttempts).setUseDuplicateDetection(useDuplicateDetection).setConfirmationWindowSize(confirmationWindowSize).setHA(ha).setUser(user).setPassword(password);
 
          if (useDiscoveryGroup) {
             config.setDiscoveryGroupName(staticConnectorsOrDiscoveryGroup);
-         }
-         else {
-            config.setStaticConnectors(toList(staticConnectorsOrDiscoveryGroup));
+         } else {
+            config.setStaticConnectors(ListUtil.toList(staticConnectorsOrDiscoveryGroup));
          }
 
          server.deployBridge(config);
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -1967,8 +2531,48 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          server.destroyBridge(name);
+      } finally {
+         blockOnIO();
       }
-      finally {
+   }
+
+   @Override
+   public void createConnectorService(final String name, final String factoryClass, final Map<String, Object> parameters) throws Exception {
+      checkStarted();
+
+      clearIO();
+
+      try {
+         final ConnectorServiceConfiguration config = new ConnectorServiceConfiguration().setName(name).setFactoryClassName(factoryClass).setParams(parameters);
+         ConnectorServiceFactory factory = server.getServiceRegistry().getConnectorService(config);
+         server.getConnectorsService().createService(config, factory);
+      } finally {
+         blockOnIO();
+      }
+   }
+
+   @Override
+   public void destroyConnectorService(final String name) throws Exception {
+      checkStarted();
+
+      clearIO();
+
+      try {
+         server.getConnectorsService().destroyService(name);
+      } finally {
+         blockOnIO();
+      }
+   }
+
+   @Override
+   public String[] getConnectorServices() {
+      checkStarted();
+
+      clearIO();
+
+      try {
+         return server.getConnectorsService().getConnectors().keySet().toArray(new String[0]);
+      } finally {
          blockOnIO();
       }
    }
@@ -1979,7 +2583,17 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
 
       clearIO();
 
-      server.stop(true);
+      Thread t = new Thread() {
+         @Override
+         public void run() {
+            try {
+               server.fail(true);
+            } catch (Throwable e) {
+               logger.warn(e.getMessage(), e);
+            }
+         }
+      };
+      t.start();
    }
 
    @Override
@@ -1990,8 +2604,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
          for (Object id : ids) {
             duplicateIDCache.addToCache(((String) id).getBytes(), null);
          }
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -2015,10 +2628,46 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
             liveOnlyPolicy.getScaleDownPolicy().getConnectors().add(0, connector);
          }
 
-         server.stop(true);
+         server.fail(true);
       }
 
    }
+
+
+   @Override
+   public String listNetworkTopology() throws Exception {
+      checkStarted();
+
+      clearIO();
+      try {
+         JsonArrayBuilder brokers = JsonLoader.createArrayBuilder();
+         ClusterManager clusterManager = server.getClusterManager();
+         if (clusterManager != null) {
+            Set<ClusterConnection> clusterConnections = clusterManager.getClusterConnections();
+            for (ClusterConnection clusterConnection : clusterConnections) {
+               Topology topology = clusterConnection.getTopology();
+               Collection<TopologyMemberImpl> members = topology.getMembers();
+               for (TopologyMemberImpl member : members) {
+
+                  JsonObjectBuilder obj = JsonLoader.createObjectBuilder();
+                  TransportConfiguration live = member.getLive();
+                  if (live != null) {
+                     obj.add("nodeID", member.getNodeId()).add("live", live.getParams().get("host") + ":" + live.getParams().get("port"));
+                     TransportConfiguration backup = member.getBackup();
+                     if (backup != null) {
+                        obj.add("backup", backup.getParams().get("host") + ":" + backup.getParams().get("port"));
+                     }
+                  }
+                  brokers.add(obj);
+               }
+            }
+         }
+         return brokers.build().toString();
+      } finally {
+         blockOnIO();
+      }
+   }
+
 
    // NotificationEmitter implementation ----------------------------
 
@@ -2029,8 +2678,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          broadcaster.removeNotificationListener(listener, filter, handback);
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -2040,8 +2688,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          broadcaster.removeNotificationListener(listener);
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -2053,8 +2700,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       clearIO();
       try {
          broadcaster.addNotificationListener(listener, filter, handback);
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -2079,8 +2725,7 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
       if (isStarted()) {
          if (configuration.isMessageCounterEnabled() && !enable) {
             stopMessageCounters();
-         }
-         else if (!configuration.isMessageCounterEnabled() && enable) {
+         } else if (!configuration.isMessageCounterEnabled() && enable) {
             startMessageCounters();
          }
       }
@@ -2117,6 +2762,11 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
    @Override
    public String getManagementAddress() {
       return configuration.getManagementAddress().toString();
+   }
+
+   @Override
+   public String getNodeID() {
+      return server.getNodeID().toString();
    }
 
    @Override
@@ -2181,18 +2831,6 @@ public class ActiveMQServerControlImpl extends AbstractControl implements Active
          return session.getTargetAddresses();
       }
       return new String[0];
-   }
-
-   private static List<String> toList(final String commaSeparatedString) {
-      List<String> list = new ArrayList<>();
-      if (commaSeparatedString == null || commaSeparatedString.trim().length() == 0) {
-         return list;
-      }
-      String[] values = commaSeparatedString.split(",");
-      for (String value : values) {
-         list.add(value.trim());
-      }
-      return list;
    }
 
    @Override

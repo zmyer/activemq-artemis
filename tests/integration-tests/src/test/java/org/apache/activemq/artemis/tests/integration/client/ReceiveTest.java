@@ -27,17 +27,21 @@ import org.apache.activemq.artemis.api.core.client.ClientSession;
 import org.apache.activemq.artemis.api.core.client.ClientSessionFactory;
 import org.apache.activemq.artemis.api.core.client.MessageHandler;
 import org.apache.activemq.artemis.api.core.client.ServerLocator;
-import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
+import org.apache.activemq.artemis.core.server.Queue;
+import org.apache.activemq.artemis.api.core.RoutingType;
+import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
+import org.apache.activemq.artemis.tests.util.RandomUtil;
+import org.apache.activemq.artemis.tests.util.Wait;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
 public class ReceiveTest extends ActiveMQTestBase {
 
-   SimpleString addressA = new SimpleString("addressA");
+   SimpleString addressA;
 
-   SimpleString queueA = new SimpleString("queueA");
+   SimpleString queueA;
 
    private ServerLocator locator;
 
@@ -47,6 +51,9 @@ public class ReceiveTest extends ActiveMQTestBase {
    @Before
    public void setUp() throws Exception {
       super.setUp();
+
+      addressA = RandomUtil.randomSimpleString();
+      queueA = RandomUtil.randomSimpleString();
 
       locator = createInVMNonHALocator();
       server = createServer(false);
@@ -94,11 +101,9 @@ public class ReceiveTest extends ActiveMQTestBase {
       try {
          cc.receive();
          Assert.fail("should throw exception");
-      }
-      catch (ActiveMQObjectClosedException oce) {
+      } catch (ActiveMQObjectClosedException oce) {
          //ok
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          Assert.fail("Invalid Exception type:" + e.getType());
       }
       session.close();
@@ -120,11 +125,9 @@ public class ReceiveTest extends ActiveMQTestBase {
       try {
          cc.receive();
          Assert.fail("should throw exception");
-      }
-      catch (ActiveMQIllegalStateException ise) {
+      } catch (ActiveMQIllegalStateException ise) {
          //ok
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          Assert.fail("Invalid Exception type:" + e.getType());
       }
       session.close();
@@ -132,14 +135,13 @@ public class ReceiveTest extends ActiveMQTestBase {
 
    @Test
    public void testReceiveImmediate() throws Exception {
-
       // forces perfect round robin
-      locator.setConsumerWindowSize(1);
+      locator.setConsumerWindowSize(0);
       ClientSessionFactory cf = createSessionFactory(locator);
       ClientSession sendSession = cf.createSession(false, true, true);
       ClientProducer cp = sendSession.createProducer(addressA);
       ClientSession session = cf.createSession(false, true, true);
-      session.createQueue(addressA, queueA, false);
+      session.createQueue(addressA, RoutingType.ANYCAST, queueA, false);
       ClientConsumer cc = session.createConsumer(queueA);
       ClientConsumer cc2 = session.createConsumer(queueA);
       session.start();
@@ -148,8 +150,12 @@ public class ReceiveTest extends ActiveMQTestBase {
       cp.send(sendSession.createMessage(false));
       sendSession.commit();
 
-      Assert.assertNotNull(cc2.receive(5000));
-      Assert.assertNotNull(cc.receive(5000));
+      final Queue queue = server.locateQueue(queueA);
+
+      Wait.waitFor(() -> queue.getMessageCount() == 3, 500, 100);
+
+      Assert.assertNotNull(cc2.receiveImmediate());
+      Assert.assertNotNull(cc.receiveImmediate());
       if (cc.receiveImmediate() == null) {
          Assert.assertNotNull(cc2.receiveImmediate());
       }

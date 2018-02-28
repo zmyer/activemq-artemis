@@ -25,37 +25,23 @@ import javax.jms.JMSException;
 import javax.jms.JMSProducer;
 import javax.jms.JMSRuntimeException;
 import javax.jms.MessageProducer;
-import javax.jms.Queue;
 import javax.jms.Session;
-import java.util.Random;
 
 import org.apache.activemq.artemis.api.core.TransportConfiguration;
 import org.apache.activemq.artemis.api.jms.ActiveMQJMSClient;
 import org.apache.activemq.artemis.api.jms.JMSFactoryType;
+import org.apache.activemq.artemis.core.remoting.impl.invm.InVMConnectorFactory;
 import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
 import org.apache.activemq.artemis.tests.util.JMSTestBase;
-import org.apache.activemq.artemis.core.remoting.impl.invm.InVMConnectorFactory;
 import org.junit.Assert;
-import org.junit.Before;
 import org.junit.Test;
 
 public class NonExistentQueueTest extends JMSTestBase {
 
-   private JMSContext context;
-   private final Random random = new Random();
-   private Queue queue;
-
-   @Override
-   @Before
-   public void setUp() throws Exception {
-      super.setUp();
-      context = createContext();
-      queue = createQueue(JmsContextTest.class.getSimpleName() + "Queue1");
-   }
-
    @Test
    public void sendToNonExistentDestination() throws Exception {
-      server.getAddressSettingsRepository().addMatch("#", new AddressSettings().setAutoCreateJmsTopics(false));
+      server.getAddressSettingsRepository().addMatch("#", new AddressSettings().setAutoCreateQueues(false));
+      server.getAddressSettingsRepository().addMatch("#", new AddressSettings().setAutoCreateAddresses(false));
       Destination destination = ActiveMQJMSClient.createTopic("DoesNotExist");
       TransportConfiguration transportConfiguration = new TransportConfiguration(InVMConnectorFactory.class.getName());
       ConnectionFactory localConnectionFactory = ActiveMQJMSClient.createConnectionFactoryWithoutHA(JMSFactoryType.CF, transportConfiguration);
@@ -66,8 +52,7 @@ public class NonExistentQueueTest extends JMSTestBase {
          MessageProducer messageProducer = session.createProducer(null);
          messageProducer.send(destination, session.createMessage());
          Assert.fail("Succeeded in sending message to a non-existent destination using JMS 1 API!");
-      }
-      catch (JMSException e) { // Expected }
+      } catch (JMSException e) { // Expected }
 
       }
 
@@ -78,8 +63,7 @@ public class NonExistentQueueTest extends JMSTestBase {
       try {
          jmsProducer.send(destination, context.createMessage());
          Assert.fail("Succeeded in sending message to a non-existent destination using JMS 2 API!");
-      }
-      catch (JMSRuntimeException e) { // Expected }
+      } catch (JMSRuntimeException e) { // Expected }
       }
 
    }

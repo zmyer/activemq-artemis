@@ -16,28 +16,35 @@
  */
 package org.apache.activemq.artemis.tests.integration.management;
 
-import javax.management.openmbean.CompositeData;
 import java.util.HashMap;
 import java.util.Map;
+
+import javax.management.openmbean.CompositeData;
 
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.api.core.management.QueueControl;
 import org.apache.activemq.artemis.api.core.management.ResourceNames;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 
+@RunWith(value = Parameterized.class)
 public class QueueControlUsingCoreTest extends QueueControlTest {
+
+   public QueueControlUsingCoreTest(boolean durable) {
+      super(durable);
+   }
 
    @Override
    protected QueueControl createManagementControl(final SimpleString address,
                                                   final SimpleString queue) throws Exception {
       return new QueueControl() {
-         private final CoreMessagingProxy proxy = new CoreMessagingProxy(addServerLocator(createInVMNonHALocator()), ResourceNames.CORE_QUEUE + queue);
+         private final CoreMessagingProxy proxy = new CoreMessagingProxy(addServerLocator(createInVMNonHALocator()), ResourceNames.QUEUE + queue);
 
          @Override
          public void flushExecutor() {
             try {
                proxy.invokeOperation("flushExecutor");
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                throw new RuntimeException(e.getMessage(), e);
             }
          }
@@ -58,6 +65,11 @@ public class QueueControlUsingCoreTest extends QueueControlTest {
          }
 
          @Override
+         public long countMessages() throws Exception {
+            return (Long) proxy.invokeOperation(Long.class, "countMessages");
+         }
+
+         @Override
          public boolean expireMessage(final long messageID) throws Exception {
             return (Boolean) proxy.invokeOperation("expireMessage", messageID);
          }
@@ -73,6 +85,11 @@ public class QueueControlUsingCoreTest extends QueueControlTest {
          }
 
          @Override
+         public String getUser() {
+            return (String) proxy.retrieveAttributeValue("user");
+         }
+
+         @Override
          public int getConsumerCount() {
             return (Integer) proxy.retrieveAttributeValue("consumerCount", Integer.class);
          }
@@ -83,8 +100,43 @@ public class QueueControlUsingCoreTest extends QueueControlTest {
          }
 
          @Override
+         public int getMaxConsumers() {
+            return (Integer) proxy.retrieveAttributeValue("maxConsumers");
+         }
+
+         @Override
+         public boolean isPurgeOnNoConsumers() {
+            return (Boolean) proxy.retrieveAttributeValue("purgeOnNoConsumers");
+         }
+
+         @Override
+         public boolean isExclusive() {
+            return (Boolean) proxy.retrieveAttributeValue("exclusive");
+         }
+
+         @Override
+         public boolean isLastValue() {
+            return (Boolean) proxy.retrieveAttributeValue("lastValue");
+         }
+
+         @Override
          public int getDeliveringCount() {
             return (Integer) proxy.retrieveAttributeValue("deliveringCount", Integer.class);
+         }
+
+         @Override
+         public long getDeliveringSize() {
+            return (Long) proxy.retrieveAttributeValue("deliveringSize", Long.class);
+         }
+
+         @Override
+         public int getDurableDeliveringCount() {
+            return (Integer) proxy.retrieveAttributeValue("durableDeliveringCount", Integer.class);
+         }
+
+         @Override
+         public long getDurableDeliveringSize() {
+            return (Long) proxy.retrieveAttributeValue("durableDeliveringSize", Long.class);
          }
 
          @Override
@@ -158,8 +210,28 @@ public class QueueControlUsingCoreTest extends QueueControlTest {
          }
 
          @Override
+         public long getScheduledSize() {
+            return (Long) proxy.retrieveAttributeValue("scheduledSize", Long.class);
+         }
+
+         @Override
+         public long getDurableScheduledCount() {
+            return (Long) proxy.retrieveAttributeValue("durableScheduledCount", Long.class);
+         }
+
+         @Override
+         public long getDurableScheduledSize() {
+            return (Long) proxy.retrieveAttributeValue("durableScheduledSize", Long.class);
+         }
+
+         @Override
          public boolean isDurable() {
             return (Boolean) proxy.retrieveAttributeValue("durable");
+         }
+
+         @Override
+         public String getRoutingType() {
+            return (String) proxy.retrieveAttributeValue("routingType");
          }
 
          @Override
@@ -294,6 +366,11 @@ public class QueueControlUsingCoreTest extends QueueControlTest {
          }
 
          @Override
+         public int removeAllMessages() throws Exception {
+            return (Integer) proxy.invokeOperation(Integer.class, "removeAllMessages");
+         }
+
+         @Override
          public boolean removeMessage(final long messageID) throws Exception {
             return (Boolean) proxy.invokeOperation("removeMessage", messageID);
          }
@@ -314,8 +391,13 @@ public class QueueControlUsingCoreTest extends QueueControlTest {
          }
 
          @Override
-         public String sendMessage(Map<String, String> headers, int type, String body, String userID, boolean durable, String user, String password) throws Exception {
-            return (String) proxy.invokeOperation("sendMessage", headers, type, body, userID, durable, user, password);
+         public String sendMessage(Map<String, String> headers,
+                                   int type,
+                                   String body,
+                                   boolean durable,
+                                   String user,
+                                   String password) throws Exception {
+            return (String) proxy.invokeOperation("sendMessage", headers, type, body, durable, user, password);
          }
 
          public void setDeadLetterAddress(final String deadLetterAddress) throws Exception {
@@ -332,6 +414,11 @@ public class QueueControlUsingCoreTest extends QueueControlTest {
          }
 
          @Override
+         public void pause(boolean persist) throws Exception {
+            proxy.invokeOperation("pause", persist);
+         }
+
+         @Override
          public void resume() throws Exception {
             proxy.invokeOperation("resume");
          }
@@ -340,6 +427,27 @@ public class QueueControlUsingCoreTest extends QueueControlTest {
          public boolean isPaused() throws Exception {
             return (Boolean) proxy.invokeOperation("isPaused");
          }
+
+         @Override
+         public CompositeData[] browse() throws Exception {
+            Map map = (Map) proxy.invokeOperation("browse");
+            CompositeData[] compositeDatas = (CompositeData[]) map.get(CompositeData.class.getName());
+            if (compositeDatas == null) {
+               compositeDatas = new CompositeData[0];
+            }
+            return compositeDatas;
+         }
+
+         @Override
+         public CompositeData[] browse(int page, int pageSize) throws Exception {
+            Map map = (Map) proxy.invokeOperation("browse", page, pageSize);
+            CompositeData[] compositeDatas = (CompositeData[]) map.get(CompositeData.class.getName());
+            if (compositeDatas == null) {
+               compositeDatas = new CompositeData[0];
+            }
+            return compositeDatas;
+         }
+
 
          @Override
          public CompositeData[] browse(String filter) throws Exception {
@@ -384,6 +492,21 @@ public class QueueControlUsingCoreTest extends QueueControlTest {
          @Override
          public String listDeliveringMessagesAsJSON() throws Exception {
             return (String) proxy.invokeOperation("listDeliveringMessagesAsJSON");
+         }
+
+         @Override
+         public long getPersistentSize() {
+            return (Long) proxy.retrieveAttributeValue("persistentSize", Long.class);
+         }
+
+         @Override
+         public long getDurableMessageCount() {
+            return (Long) proxy.retrieveAttributeValue("durableMessageCount", Long.class);
+         }
+
+         @Override
+         public long getDurablePersistentSize() {
+            return (Long) proxy.retrieveAttributeValue("durablePersistentSize", Long.class);
          }
       };
    }

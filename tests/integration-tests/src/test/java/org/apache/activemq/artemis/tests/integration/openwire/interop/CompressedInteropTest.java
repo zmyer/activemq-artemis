@@ -16,16 +16,9 @@
  */
 package org.apache.activemq.artemis.tests.integration.openwire.interop;
 
-import org.apache.activemq.ActiveMQMessageProducer;
-import org.apache.activemq.artemis.tests.integration.openwire.BasicOpenWireTest;
-import org.apache.activemq.command.ActiveMQDestination;
-import org.junit.Before;
-import org.junit.Test;
-
-import java.nio.charset.StandardCharsets;
-
 import javax.jms.BytesMessage;
 import javax.jms.Connection;
+import javax.jms.ConnectionFactory;
 import javax.jms.MapMessage;
 import javax.jms.Message;
 import javax.jms.MessageConsumer;
@@ -34,10 +27,18 @@ import javax.jms.Queue;
 import javax.jms.Session;
 import javax.jms.StreamMessage;
 import javax.jms.TextMessage;
+import java.nio.charset.StandardCharsets;
+
+import org.apache.activemq.ActiveMQMessageProducer;
+import org.apache.activemq.artemis.tests.integration.openwire.BasicOpenWireTest;
+import org.apache.activemq.command.ActiveMQDestination;
+import org.junit.Before;
+import org.junit.Test;
 
 public class CompressedInteropTest extends BasicOpenWireTest {
 
    private static final String TEXT;
+
    static {
       StringBuilder builder = new StringBuilder();
 
@@ -50,29 +51,45 @@ public class CompressedInteropTest extends BasicOpenWireTest {
    @Before
    @Override
    public void setUp() throws Exception {
-      factory.setUseCompression(true);
       super.setUp();
       connection.start();
       assertTrue(connection.isUseCompression());
    }
 
+
+   @Override
+   protected void createFactories() {
+      super.createFactories();
+      factory.setUseCompression(true);
+      xaFactory.setUseCompression(true);
+   }
+
    @Test
    public void testCoreReceiveOpenWireCompressedMessages() throws Exception {
+      testCompressedMessageSendReceive(true);
+   }
+
+   @Test
+   public void testOpenWireReceiveOpenWireCompressedMessages() throws Exception {
+      testCompressedMessageSendReceive(false);
+   }
+
+   private void testCompressedMessageSendReceive(boolean useCore) throws Exception {
       //TextMessage
       sendCompressedTextMessageUsingOpenWire();
-      receiveTextMessageUsingCore();
+      receiveTextMessage(useCore);
       //BytesMessage
       sendCompressedBytesMessageUsingOpenWire();
-      receiveBytesMessageUsingCore();
+      receiveBytesMessage(useCore);
       //MapMessage
       sendCompressedMapMessageUsingOpenWire();
-      receiveMapMessageUsingCore();
+      receiveMapMessage(useCore);
       //StreamMessage
       sendCompressedStreamMessageUsingOpenWire();
-      receiveStreamMessageUsingCore();
+      receiveStreamMessage(useCore);
       //ObjectMessage
       sendCompressedObjectMessageUsingOpenWire();
-      receiveObjectMessageUsingCore();
+      receiveObjectMessage(useCore);
    }
 
    private void sendCompressedStreamMessageUsingOpenWire() throws Exception {
@@ -98,12 +115,12 @@ public class CompressedInteropTest extends BasicOpenWireTest {
       producer.send(streamMessage);
    }
 
-   private void receiveStreamMessageUsingCore() throws Exception {
-      StreamMessage streamMessage = (StreamMessage) receiveMessageUsingCore();
+   private void receiveStreamMessage(boolean useCore) throws Exception {
+      StreamMessage streamMessage = (StreamMessage) receiveMessage(useCore);
       boolean booleanVal = streamMessage.readBoolean();
       assertTrue(booleanVal);
       byte byteVal = streamMessage.readByte();
-      assertEquals((byte)10, byteVal);
+      assertEquals((byte) 10, byteVal);
       byte[] originVal = TEXT.getBytes();
       byte[] bytesVal = new byte[originVal.length];
       streamMessage.readBytes(bytesVal);
@@ -141,8 +158,8 @@ public class CompressedInteropTest extends BasicOpenWireTest {
       producer.send(objectMessage);
    }
 
-   private void receiveObjectMessageUsingCore() throws Exception {
-      ObjectMessage objectMessage = (ObjectMessage) receiveMessageUsingCore();
+   private void receiveObjectMessage(boolean useCore) throws Exception {
+      ObjectMessage objectMessage = (ObjectMessage) receiveMessage(useCore);
       Object objectVal = objectMessage.getObject();
       assertEquals(TEXT, objectVal);
    }
@@ -170,13 +187,13 @@ public class CompressedInteropTest extends BasicOpenWireTest {
       producer.send(mapMessage);
    }
 
-   private void receiveMapMessageUsingCore() throws Exception {
-      MapMessage mapMessage = (MapMessage) receiveMessageUsingCore();
+   private void receiveMapMessage(boolean useCore) throws Exception {
+      MapMessage mapMessage = (MapMessage) receiveMessage(useCore);
 
       boolean booleanVal = mapMessage.getBoolean("boolean-type");
       assertTrue(booleanVal);
       byte byteVal = mapMessage.getByte("byte-type");
-      assertEquals((byte)10, byteVal);
+      assertEquals((byte) 10, byteVal);
       byte[] bytesVal = mapMessage.getBytes("bytes-type");
       byte[] originVal = TEXT.getBytes();
       assertEquals(originVal.length, bytesVal.length);
@@ -214,8 +231,8 @@ public class CompressedInteropTest extends BasicOpenWireTest {
       producer.send(bytesMessage);
    }
 
-   private void receiveBytesMessageUsingCore() throws Exception {
-      BytesMessage bytesMessage = (BytesMessage) receiveMessageUsingCore();
+   private void receiveBytesMessage(boolean useCore) throws Exception {
+      BytesMessage bytesMessage = (BytesMessage) receiveMessage(useCore);
 
       byte[] bytes = new byte[TEXT.getBytes(StandardCharsets.UTF_8).length];
       bytesMessage.readBytes(bytes);
@@ -225,30 +242,9 @@ public class CompressedInteropTest extends BasicOpenWireTest {
       assertEquals(TEXT, rcvString);
    }
 
-   private void receiveTextMessageUsingCore() throws Exception {
-      TextMessage txtMessage = (TextMessage) receiveMessageUsingCore();
+   private void receiveTextMessage(boolean useCore) throws Exception {
+      TextMessage txtMessage = (TextMessage) receiveMessage(useCore);
       assertEquals(TEXT, txtMessage.getText());
-   }
-
-   private Message receiveMessageUsingCore() throws Exception {
-      Connection jmsConn = null;
-      Message message = null;
-      try {
-         jmsConn = coreCf.createConnection();
-         jmsConn.start();
-
-         Session session = jmsConn.createSession(false, Session.AUTO_ACKNOWLEDGE);
-         Queue queue = session.createQueue(this.queueName);
-         MessageConsumer coreConsumer = session.createConsumer(queue);
-
-         message = coreConsumer.receive(5000);
-      }
-      finally {
-         if (jmsConn != null) {
-            jmsConn.close();
-         }
-      }
-      return message;
    }
 
    private void sendCompressedTextMessageUsingOpenWire() throws Exception {
@@ -262,4 +258,24 @@ public class CompressedInteropTest extends BasicOpenWireTest {
       producer.send(textMessage);
    }
 
+   private Message receiveMessage(boolean useCore) throws Exception {
+      ConnectionFactory factoryToUse = useCore ? coreCf : factory;
+      Connection jmsConn = null;
+      Message message = null;
+      try {
+         jmsConn = factoryToUse.createConnection();
+         jmsConn.start();
+
+         Session session = jmsConn.createSession(false, Session.AUTO_ACKNOWLEDGE);
+         Queue queue = session.createQueue(this.queueName);
+         MessageConsumer coreConsumer = session.createConsumer(queue);
+
+         message = coreConsumer.receive(5000);
+      } finally {
+         if (jmsConn != null) {
+            jmsConn.close();
+         }
+      }
+      return message;
+   }
 }

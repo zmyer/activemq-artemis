@@ -48,6 +48,7 @@ import org.apache.activemq.artemis.core.remoting.impl.invm.InVMAcceptorFactory;
 import org.apache.activemq.artemis.core.remoting.impl.invm.InVMConnectorFactory;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.core.server.ActiveMQServers;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.core.server.impl.LegacyLDAPSecuritySettingPlugin;
 import org.apache.activemq.artemis.spi.core.security.ActiveMQJAASSecurityManager;
 import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
@@ -87,7 +88,6 @@ public class LegacyLDAPSecuritySettingPluginListenerTest extends AbstractLdapTes
    private static final String PRINCIPAL = "uid=admin,ou=system";
    private static final String CREDENTIALS = "secret";
 
-
    public LegacyLDAPSecuritySettingPluginListenerTest() {
       File parent = new File(TARGET_TMP);
       parent.mkdirs();
@@ -115,15 +115,7 @@ public class LegacyLDAPSecuritySettingPluginListenerTest extends AbstractLdapTes
       legacyLDAPSecuritySettingPlugin.init(map);
 
       ActiveMQJAASSecurityManager securityManager = new ActiveMQJAASSecurityManager("LDAPLogin");
-      Configuration configuration = new ConfigurationImpl()
-         .setSecurityEnabled(true)
-         .addAcceptorConfiguration(new TransportConfiguration(InVMAcceptorFactory.class.getCanonicalName()))
-         .setJournalDirectory(ActiveMQTestBase.getJournalDir(testDir, 0, false))
-         .setBindingsDirectory(ActiveMQTestBase.getBindingsDir(testDir, 0, false))
-         .setPagingDirectory(ActiveMQTestBase.getPageDir(testDir, 0, false))
-         .setLargeMessagesDirectory(ActiveMQTestBase.getLargeMessagesDir(testDir, 0, false))
-         .setPersistenceEnabled(false)
-         .addSecuritySettingPlugin(legacyLDAPSecuritySettingPlugin);
+      Configuration configuration = new ConfigurationImpl().setSecurityEnabled(true).addAcceptorConfiguration(new TransportConfiguration(InVMAcceptorFactory.class.getCanonicalName())).setJournalDirectory(ActiveMQTestBase.getJournalDir(testDir, 0, false)).setBindingsDirectory(ActiveMQTestBase.getBindingsDir(testDir, 0, false)).setPagingDirectory(ActiveMQTestBase.getPageDir(testDir, 0, false)).setLargeMessagesDirectory(ActiveMQTestBase.getLargeMessagesDir(testDir, 0, false)).setPersistenceEnabled(false).addSecuritySettingPlugin(legacyLDAPSecuritySettingPlugin);
 
       server = ActiveMQServers.newActiveMQServer(configuration, ManagementFactory.getPlatformMBeanServer(), securityManager, false);
    }
@@ -180,8 +172,7 @@ public class LegacyLDAPSecuritySettingPluginListenerTest extends AbstractLdapTes
       try {
          producer2.send(name, session.createMessage(true));
          Assert.fail("Sending here should fail due to the original security data.");
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          // ok
       }
 
@@ -196,8 +187,7 @@ public class LegacyLDAPSecuritySettingPluginListenerTest extends AbstractLdapTes
       try {
          producer.send(name, session.createMessage(true));
          Assert.fail("Sending here should fail due to the modified security data.");
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          // ok
       }
 
@@ -221,8 +211,7 @@ public class LegacyLDAPSecuritySettingPluginListenerTest extends AbstractLdapTes
       try {
          session2.createConsumer(queue);
          Assert.fail("Consuming here should fail due to the original security data.");
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          // ok
       }
 
@@ -239,8 +228,7 @@ public class LegacyLDAPSecuritySettingPluginListenerTest extends AbstractLdapTes
       try {
          session.createConsumer(queue);
          Assert.fail("Sending here should fail due to the modified security data.");
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          // ok
       }
 
@@ -252,7 +240,7 @@ public class LegacyLDAPSecuritySettingPluginListenerTest extends AbstractLdapTes
       server.getConfiguration().setSecurityInvalidationInterval(0);
       server.start();
       String queue = "queue2";
-      server.createQueue(SimpleString.toSimpleString(queue), SimpleString.toSimpleString(queue), null, false, false);
+      server.createQueue(SimpleString.toSimpleString(queue), RoutingType.ANYCAST, SimpleString.toSimpleString(queue), null, false, false);
       ClientSessionFactory cf = locator.createSessionFactory();
       ClientSession session = cf.createSession("first", "secret", false, true, true, false, 0);
       ClientConsumer consumer;
@@ -260,8 +248,7 @@ public class LegacyLDAPSecuritySettingPluginListenerTest extends AbstractLdapTes
       try {
          session.createConsumer(queue);
          Assert.fail("Consuming here should fail due to the original security data.");
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          // ok
       }
 
@@ -283,8 +270,7 @@ public class LegacyLDAPSecuritySettingPluginListenerTest extends AbstractLdapTes
       try {
          session.createConsumer(queue);
          Assert.fail("Consuming here should fail due to the modified security data.");
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          // ok
       }
 
@@ -296,7 +282,7 @@ public class LegacyLDAPSecuritySettingPluginListenerTest extends AbstractLdapTes
       server.getConfiguration().setSecurityInvalidationInterval(0);
       server.start();
       String queue = "queue2";
-      server.createQueue(SimpleString.toSimpleString(queue), SimpleString.toSimpleString(queue), null, false, false);
+      server.createQueue(SimpleString.toSimpleString(queue), RoutingType.ANYCAST, SimpleString.toSimpleString(queue), null, false, false);
       ClientSessionFactory cf = locator.createSessionFactory();
       ClientSession session = cf.createSession("first", "secret", false, true, true, false, 0);
       ClientProducer producer = session.createProducer(SimpleString.toSimpleString(queue));
@@ -304,8 +290,7 @@ public class LegacyLDAPSecuritySettingPluginListenerTest extends AbstractLdapTes
       try {
          producer.send(session.createMessage(true));
          Assert.fail("Producing here should fail due to the original security data.");
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          // ok
       }
 
@@ -326,8 +311,7 @@ public class LegacyLDAPSecuritySettingPluginListenerTest extends AbstractLdapTes
       try {
          producer.send(session.createMessage(true));
          Assert.fail("Producing here should fail due to the modified security data.");
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          // ok
       }
 

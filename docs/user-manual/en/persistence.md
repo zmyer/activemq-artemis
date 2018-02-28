@@ -45,7 +45,7 @@ The majority of the journal is written in Java, however we abstract out
 the interaction with the actual file system to allow different pluggable
 implementations. Apache ActiveMQ Artemis ships with two implementations:
 
--   Java [NIO](http://en.wikipedia.org/wiki/New_I/O).
+-   Java [NIO](https://en.wikipedia.org/wiki/New_I/O).
 
     The first implementation uses standard Java NIO to interface with
     the file system. This provides extremely good performance and runs
@@ -67,13 +67,27 @@ implementations. Apache ActiveMQ Artemis ships with two implementations:
     installed). For instructions on how to install libaio please see Installing AIO section.
 
     Also, please note that AIO will only work with the following file
-    systems: ext2, ext3, ext4, jfs, xfs. With other file systems, e.g.
-    NFS it may appear to work, but it will fall back to a slower
-    synchronous behaviour. Don't put the journal on a NFS share!
+    systems: ext2, ext3, ext4, jfs, xfs and NFSV4.
 
     For more information on libaio please see [lib AIO](libaio.md).
 
     libaio is part of the kernel project.
+    
+-   [Memory mapped](https://en.wikipedia.org/wiki/Memory-mapped_file).
+
+    The third implementation uses a file-backed [READ_WRITE](https://docs.oracle.com/javase/8/docs/api/java/nio/channels/FileChannel.MapMode.html#READ_WRITE)
+    memory mapping against the OS page cache to interface with the file system.
+    
+    This provides extremely good performance (especially under strictly process failure durability requirements), 
+    almost zero copy (actually *is* the kernel page cache) and zero garbage (from the Java HEAP perspective) operations and runs 
+    on any platform where there's a Java 4+ runtime.
+    
+    Under power failure durability requirements it will perform at least on par with the NIO journal with the only 
+    exception of Linux OS with kernel less or equals 2.6, in which the [*msync*](https://docs.oracle.com/javase/8/docs/api/java/nio/MappedByteBuffer.html#force%28%29)) implementation necessary to ensure 
+    durable writes was different (and slower) from the [*fsync*](https://docs.oracle.com/javase/8/docs/api/java/nio/channels/FileChannel.html#force%28boolean%29) used is case of NIO journal.
+    
+    It benefits by the configuration of OS [huge pages](https://en.wikipedia.org/wiki/Page_%28computer_memory%29),
+    in particular when is used a big number of journal files and sizing them as multiple of the OS page size in bytes.    
 
 The standard Apache ActiveMQ Artemis core server uses two instances of the journal:
 
@@ -89,20 +103,6 @@ The standard Apache ActiveMQ Artemis core server uses two instances of the journ
     The files on this journal are prefixed as `activemq-bindings`. Each
     file has a `bindings` extension. File size is `1048576`, and it is
     located at the bindings folder.
-
--   JMS journal.
-
-    This journal instance stores all JMS related data, This is basically
-    any JMS Queues, Topics and Connection Factories and any JNDI
-    bindings for these resources.
-
-    Any JMS Resources created via the management API will be persisted
-    to this journal. Any resources configured via configuration files
-    will not. The JMS Journal will only be created if JMS is being used.
-
-    The files on this journal are prefixed as `activemq-jms`. Each file
-    has a `jms` extension. File size is `1048576`, and it is located at
-    the bindings folder.
 
 -   Message journal.
 
@@ -180,12 +180,13 @@ The message journal is configured using the following attributes in
 
 -   `journal-type`
 
-    Valid values are `NIO` or `ASYNCIO`.
+    Valid values are `NIO`, `ASYNCIO` or `MAPPED`.
 
-    Choosing `NIO` chooses the Java NIO journal. Choosing `AIO` chooses
-    the Linux asynchronous IO journal. If you choose `AIO` but are not
+    Choosing `NIO` chooses the Java NIO journal. Choosing `ASYNCIO` chooses
+    the Linux asynchronous IO journal. If you choose `ASYNCIO` but are not
     running Linux or you do not have libaio installed then Apache ActiveMQ Artemis will
     detect this and automatically fall back to using `NIO`.
+    Choosing `MAPPED` chooses the Java Memory Mapped journal.
 
 -   `journal-sync-transactional`
 
@@ -298,6 +299,26 @@ The message journal is configured using the following attributes in
     data files on the journal
 
     The default for this parameter is `30`
+    
+-   `journal-datasync` (default: true)
+    
+    This will disable the use of fdatasync on journal writes.
+    When enabled it ensures full power failure durability, otherwise 
+    process failure durability on journal writes (OS guaranteed).
+    This is particular effective for `NIO` and `MAPPED` journals, which rely on 
+     *fsync*/*msync* to force write changes to disk.
+
+### An important note on disabling `journal-datasync`.
+
+> Any modern OS guarantees that on process failures (i.e. crash) all the uncommitted changes
+> to the page cache will be flushed to the file system, maintaining coherence between 
+> subsequent operations against the same pages and ensuring that no data will be lost.
+> The predictability of the timing of such flushes, in case of a disabled *journal-datasync*,
+> depends on the OS configuration, but without compromising (or relaxing) the process 
+> failure durability semantics as described above.
+> Rely on the OS page cache sacrifice the power failure protection, while increasing the 
+> effectiveness of the journal operations, capable of exploiting 
+> the read caching and write combining features provided by the OS's kernel page cache subsystem.
 
 ### An important note on disabling disk write cache.
 
@@ -373,7 +394,7 @@ policy.
 ActiveMQ Artemis currently has support for a limited number of database vendors (older versions may work but mileage may
 vary):
 
-1. PostGres 9.4.x
+1. PostgreSQL 9.4.x
 2. MySQL 5.7.x
 3. Apache Derby 10.11.1.1
 
@@ -384,7 +405,8 @@ in the database tables is encoded using Apache ActiveMQ Artemis internal encodin
 
 To configure Apache ActiveMQ Artemis to use a database for persisting messages and bindings data you must do two things.
 
-1. Add the appropriate JDBC driver libraries to the Artemis runtime.  You can do this by dropping the relevant jars in the lib folder of the ActiveMQ Artemis distribution.
+1. See the documentation on [adding runtime dependencies](using-server.md) to 
+   understand how to make the JDBC driver available to the broker.
 
 2. Create a store element in your broker.xml config file under the ```<core>``` element.  For example:
 
@@ -394,6 +416,7 @@ To configure Apache ActiveMQ Artemis to use a database for persisting messages a
             <jdbc-connection-url>jdbc:derby:data/derby/database-store;create=true</jdbc-connection-url>
             <bindings-table-name>BINDINGS_TABLE</bindings-table-name>
             <message-table-name>MESSAGE_TABLE</message-table-name>
+            <page-store-table-name>MESSAGE_TABLE</page-store-table-name>
             <large-message-table-name>LARGE_MESSAGES_TABLE</large-message-table-name>
             <jdbc-driver-class-name>org.apache.derby.jdbc.EmbeddedDriver</jdbc-driver-class-name>
          </database-store>
@@ -415,11 +438,36 @@ To configure Apache ActiveMQ Artemis to use a database for persisting messages a
 -   `large-message-table-name`
 
     The name of the table in which messages and related data will be persisted for the ActiveMQ Artemis server.  Specifying table names allows users to share single database amongst multiple servers, without interference.
+    
+-   `page-store-table-name`
+
+    The name of the table to house the page store directory information.  Note that each address will have it's own page table which will use this name appended with a unique id of up to 20 characters.
 
 -   `jdbc-driver-class-name`
 
     The fully qualified class name of the desired database Driver.
 
+-   `jdbc-network-timeout`
+
+    The JDBC network connection timeout in milliseconds. The default value
+    is 20000 milliseconds (ie 20 seconds).
+    
+-   `jdbc-lock-acquisition-timeout`
+
+    The max allowed time in milliseconds while trying to acquire a JDBC lock. The default value
+    is 60000 milliseconds (ie 60 seconds).
+        
+-   `jdbc-lock-renew-period`
+
+    The period in milliseconds of the keep alive service of a JDBC lock. The default value
+    is 2000 milliseconds (ie 2 seconds).
+    
+-   `jdbc-lock-expiration`
+
+    The time in milliseconds a JDBC lock is considered valid without keeping it alive. The default value
+    is 20000 milliseconds (ie 20 seconds).
+
+Note that some DBMS (e.g. Oracle, 30 chars) have restrictions on the size of table names, this should be taken into consideration when configuring table names for the Artemis database store, pay particular attention to the page store table name, which can be appended with a unique ID of up to 20 characters.  (for Oracle this would mean configuring a page-store-table-name of max size of 10 chars).
 
 ## Configuring Apache ActiveMQ Artemis for Zero Persistence
 

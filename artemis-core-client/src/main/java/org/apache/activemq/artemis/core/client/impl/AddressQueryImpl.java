@@ -28,18 +28,34 @@ public class AddressQueryImpl implements ClientSession.AddressQuery {
 
    private final ArrayList<SimpleString> queueNames;
 
-   private final boolean autoCreateJmsQueues;
+   private final boolean autoCreateQueues;
 
-   private final boolean autoCreateJmsTopics;
+   private final boolean autoCreateAddresses;
+
+   private final boolean defaultPurgeOnNoConsumers;
+
+   private final int defaultMaxConsumers;
+
+   private final Boolean defaultExclusive;
+
+   private final Boolean defaultLastValue;
 
    public AddressQueryImpl(final boolean exists,
                            final List<SimpleString> queueNames,
-                           final boolean autoCreateJmsQueues,
-                           final boolean autoCreateJmsTopics) {
+                           final boolean autoCreateQueues,
+                           final boolean autoCreateAddresses,
+                           final boolean defaultPurgeOnNoConsumers,
+                           final int defaultMaxConsumers,
+                           final Boolean defaultExclusive,
+                           final Boolean defaultLastValue) {
       this.exists = exists;
       this.queueNames = new ArrayList<>(queueNames);
-      this.autoCreateJmsQueues = autoCreateJmsQueues;
-      this.autoCreateJmsTopics = autoCreateJmsTopics;
+      this.autoCreateQueues = autoCreateQueues;
+      this.autoCreateAddresses = autoCreateAddresses;
+      this.defaultPurgeOnNoConsumers = defaultPurgeOnNoConsumers;
+      this.defaultMaxConsumers = defaultMaxConsumers;
+      this.defaultExclusive = defaultExclusive;
+      this.defaultLastValue = defaultLastValue;
    }
 
    @Override
@@ -53,12 +69,32 @@ public class AddressQueryImpl implements ClientSession.AddressQuery {
    }
 
    @Override
-   public boolean isAutoCreateJmsQueues() {
-      return autoCreateJmsQueues;
+   public boolean isAutoCreateQueues() {
+      return autoCreateQueues;
    }
 
    @Override
-   public boolean isAutoCreateJmsTopics() {
-      return autoCreateJmsTopics;
+   public boolean isAutoCreateAddresses() {
+      return autoCreateAddresses;
+   }
+
+   @Override
+   public boolean isDefaultPurgeOnNoConsumers() {
+      return defaultPurgeOnNoConsumers;
+   }
+
+   @Override
+   public int getDefaultMaxConsumers() {
+      return defaultMaxConsumers;
+   }
+
+   @Override
+   public Boolean isDefaultLastValueQueue() {
+      return defaultLastValue;
+   }
+
+   @Override
+   public Boolean isDefaultExclusive() {
+      return defaultExclusive;
    }
 }

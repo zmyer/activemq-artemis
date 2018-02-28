@@ -27,23 +27,34 @@ import javax.security.auth.login.LoginContext;
 import javax.security.auth.login.LoginException;
 import java.io.File;
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.net.URL;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 
 import org.apache.activemq.artemis.spi.core.security.jaas.RolePrincipal;
 import org.apache.activemq.artemis.spi.core.security.jaas.UserPrincipal;
 import org.apache.commons.io.FileUtils;
+import org.jboss.logging.Logger;
 import org.junit.Assert;
 import org.junit.Test;
 
 public class PropertiesLoginModuleTest extends Assert {
+
+   private static final Logger logger = Logger.getLogger(PropertiesLoginModuleTest.class);
 
    static {
       String path = System.getProperty("java.security.auth.login.config");
       if (path == null) {
          URL resource = PropertiesLoginModuleTest.class.getClassLoader().getResource("login.config");
          if (resource != null) {
-            path = resource.getFile();
-            System.setProperty("java.security.auth.login.config", path);
+            try {
+               path = URLDecoder.decode(resource.getFile(), StandardCharsets.UTF_8.name());
+               System.setProperty("java.security.auth.login.config", path);
+            } catch (UnsupportedEncodingException e) {
+               logger.error(e.getMessage(), e);
+               throw new RuntimeException(e);
+            }
          }
       }
    }
@@ -63,6 +74,13 @@ public class PropertiesLoginModuleTest extends Assert {
       context.logout();
 
       assertEquals("Should have zero principals", 0, subject.getPrincipals().size());
+   }
+
+   @Test
+   public void testLoginMasked() throws LoginException {
+      LoginContext context = new LoginContext("PropertiesLogin", new UserPassHandler("third", "helloworld"));
+      context.login();
+      context.logout();
    }
 
    @Test
@@ -117,8 +135,7 @@ public class PropertiesLoginModuleTest extends Assert {
       try {
          context.login();
          fail("Should have thrown a FailedLoginException");
-      }
-      catch (FailedLoginException doNothing) {
+      } catch (FailedLoginException doNothing) {
       }
 
    }
@@ -130,8 +147,7 @@ public class PropertiesLoginModuleTest extends Assert {
       try {
          context.login();
          fail("Should have thrown a FailedLoginException");
-      }
-      catch (FailedLoginException doNothing) {
+      } catch (FailedLoginException doNothing) {
       }
 
    }
@@ -151,11 +167,9 @@ public class PropertiesLoginModuleTest extends Assert {
          for (int i = 0; i < callbacks.length; i++) {
             if (callbacks[i] instanceof NameCallback) {
                ((NameCallback) callbacks[i]).setName(user);
-            }
-            else if (callbacks[i] instanceof PasswordCallback) {
+            } else if (callbacks[i] instanceof PasswordCallback) {
                ((PasswordCallback) callbacks[i]).setPassword(pass.toCharArray());
-            }
-            else {
+            } else {
                throw new UnsupportedCallbackException(callbacks[i]);
             }
          }

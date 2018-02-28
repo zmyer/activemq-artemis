@@ -205,7 +205,7 @@ public class RandomReattachTest extends ActiveMQTestBase {
       for (int its = 0; its < numIts; its++) {
          RandomReattachTest.log.info("####" + getName() + " iteration #" + its);
          start();
-         ServerLocator locator = createInVMNonHALocator().setReconnectAttempts(-1).setConfirmationWindowSize(1024 * 1024);
+         ServerLocator locator = createInVMNonHALocator().setReconnectAttempts(15).setConfirmationWindowSize(1024 * 1024);
 
          ClientSessionFactory sf = createSessionFactory(locator);
 
@@ -215,7 +215,8 @@ public class RandomReattachTest extends ActiveMQTestBase {
 
          do {
             runnable.run(sf);
-         } while (!failer.isExecuted());
+         }
+         while (!failer.isExecuted());
       }
    }
 
@@ -279,8 +280,7 @@ public class RandomReattachTest extends ActiveMQTestBase {
 
             try {
                message.acknowledge();
-            }
-            catch (ActiveMQException me) {
+            } catch (ActiveMQException me) {
                RandomReattachTest.log.error("Failed to process", me);
             }
 
@@ -492,8 +492,7 @@ public class RandomReattachTest extends ActiveMQTestBase {
 
             try {
                message.acknowledge();
-            }
-            catch (ActiveMQException e) {
+            } catch (ActiveMQException e) {
                e.printStackTrace();
                throw new RuntimeException(e.getMessage(), e);
             }
@@ -1292,7 +1291,7 @@ public class RandomReattachTest extends ActiveMQTestBase {
 
    public abstract class RunnableT {
 
-      abstract void run(final ClientSessionFactory sf) throws Exception;
+      abstract void run(ClientSessionFactory sf) throws Exception;
    }
 
    abstract static class AssertionCheckMessageHandler implements MessageHandler {
@@ -1313,8 +1312,7 @@ public class RandomReattachTest extends ActiveMQTestBase {
       public void onMessage(ClientMessage message) {
          try {
             onMessageAssert(message);
-         }
-         catch (AssertionError e) {
+         } catch (AssertionError e) {
             e.printStackTrace(); // System.out -> junit reports
             errors.add(e);
          }

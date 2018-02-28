@@ -23,7 +23,7 @@ import org.apache.activemq.artemis.core.transaction.Transaction;
 /**
  * A ServerConsumer
  */
-public interface ServerConsumer extends Consumer {
+public interface ServerConsumer extends Consumer, ConsumerInfo {
 
    void setlowConsumerDetection(SlowConsumerDetectionListener listener);
 
@@ -31,10 +31,14 @@ public interface ServerConsumer extends Consumer {
 
    void fireSlowConsumer();
 
-   /** this is to be used with anything specific on a protocol head. */
+   /**
+    * this is to be used with anything specific on a protocol head.
+    */
    Object getProtocolData();
 
-   /** this is to be used with anything specific on a protocol head. */
+   /**
+    * this is to be used with anything specific on a protocol head.
+    */
    void setProtocolData(Object protocolData);
 
    /**
@@ -74,17 +78,23 @@ public interface ServerConsumer extends Consumer {
 
    MessageReference removeReferenceByID(long messageID) throws Exception;
 
-   /** Some protocols may choose to send the message back to delivering instead of redeliver.
-    *  For example openwire will redeliver through the client, so messages will go back to delivering list after rollback. */
+   /**
+    * Some protocols may choose to send the message back to delivering instead of redeliver.
+    * For example openwire will redeliver through the client, so messages will go back to delivering list after rollback.
+    */
    void backToDelivering(MessageReference reference);
 
-   List<MessageReference> getDeliveringReferencesBasedOnProtocol(boolean remove, Object protocolDataStart, Object protocolDataEnd);
+   List<MessageReference> getDeliveringReferencesBasedOnProtocol(boolean remove,
+                                                                 Object protocolDataStart,
+                                                                 Object protocolDataEnd);
 
    void acknowledge(Transaction tx, long messageID) throws Exception;
 
    void individualAcknowledge(Transaction tx, long messageID) throws Exception;
 
-   void individualCancel(final long messageID, boolean failed) throws Exception;
+   void reject(long messageID) throws Exception;
+
+   void individualCancel(long messageID, boolean failed) throws Exception;
 
    void forceDelivery(long sequence);
 
@@ -98,5 +108,3 @@ public interface ServerConsumer extends Consumer {
 
    void promptDelivery();
 }
-
-

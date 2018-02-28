@@ -19,6 +19,7 @@ package org.apache.activemq.artemis.core.config;
 import java.io.Serializable;
 
 import org.apache.activemq.artemis.api.config.ActiveMQDefaultConfiguration;
+import org.apache.activemq.artemis.core.server.DivertConfigurationRoutingType;
 import org.apache.activemq.artemis.utils.UUIDGenerator;
 
 public class DivertConfiguration implements Serializable {
@@ -37,7 +38,9 @@ public class DivertConfiguration implements Serializable {
 
    private String filterString = null;
 
-   private String transformerClassName = null;
+   private TransformerConfiguration transformerConfiguration = null;
+
+   private DivertConfigurationRoutingType routingType = DivertConfigurationRoutingType.valueOf(ActiveMQDefaultConfiguration.getDefaultDivertRoutingType());
 
    public DivertConfiguration() {
    }
@@ -66,8 +69,12 @@ public class DivertConfiguration implements Serializable {
       return filterString;
    }
 
-   public String getTransformerClassName() {
-      return transformerClassName;
+   public TransformerConfiguration getTransformerConfiguration() {
+      return transformerConfiguration;
+   }
+
+   public DivertConfigurationRoutingType getRoutingType() {
+      return routingType;
    }
 
    /**
@@ -84,8 +91,7 @@ public class DivertConfiguration implements Serializable {
    public DivertConfiguration setRoutingName(final String routingName) {
       if (routingName == null) {
          this.routingName = UUIDGenerator.getInstance().generateStringUUID();
-      }
-      else {
+      } else {
          this.routingName = routingName;
       }
       return this;
@@ -124,10 +130,18 @@ public class DivertConfiguration implements Serializable {
    }
 
    /**
-    * @param transformerClassName the transformerClassName to set
+    * @param transformerConfiguration the transformerConfiguration to set
     */
-   public DivertConfiguration setTransformerClassName(final String transformerClassName) {
-      this.transformerClassName = transformerClassName;
+   public DivertConfiguration setTransformerConfiguration(final TransformerConfiguration transformerConfiguration) {
+      this.transformerConfiguration = transformerConfiguration;
+      return this;
+   }
+
+   /**
+    * @param routingType the routingType to set
+    */
+   public DivertConfiguration setRoutingType(final DivertConfigurationRoutingType routingType) {
+      this.routingType = routingType;
       return this;
    }
 
@@ -141,7 +155,8 @@ public class DivertConfiguration implements Serializable {
       result = prime * result + ((forwardingAddress == null) ? 0 : forwardingAddress.hashCode());
       result = prime * result + ((name == null) ? 0 : name.hashCode());
       result = prime * result + ((routingName == null) ? 0 : routingName.hashCode());
-      result = prime * result + ((transformerClassName == null) ? 0 : transformerClassName.hashCode());
+      result = prime * result + ((transformerConfiguration == null) ? 0 : transformerConfiguration.hashCode());
+      result = prime * result + ((routingType == null) ? 0 : routingType.hashCode());
       return result;
    }
 
@@ -157,40 +172,39 @@ public class DivertConfiguration implements Serializable {
       if (address == null) {
          if (other.address != null)
             return false;
-      }
-      else if (!address.equals(other.address))
+      } else if (!address.equals(other.address))
          return false;
       if (exclusive != other.exclusive)
          return false;
       if (filterString == null) {
          if (other.filterString != null)
             return false;
-      }
-      else if (!filterString.equals(other.filterString))
+      } else if (!filterString.equals(other.filterString))
          return false;
       if (forwardingAddress == null) {
          if (other.forwardingAddress != null)
             return false;
-      }
-      else if (!forwardingAddress.equals(other.forwardingAddress))
+      } else if (!forwardingAddress.equals(other.forwardingAddress))
          return false;
       if (name == null) {
          if (other.name != null)
             return false;
-      }
-      else if (!name.equals(other.name))
+      } else if (!name.equals(other.name))
          return false;
       if (routingName == null) {
          if (other.routingName != null)
             return false;
-      }
-      else if (!routingName.equals(other.routingName))
+      } else if (!routingName.equals(other.routingName))
          return false;
-      if (transformerClassName == null) {
-         if (other.transformerClassName != null)
+      if (transformerConfiguration == null) {
+         if (other.transformerConfiguration != null)
             return false;
-      }
-      else if (!transformerClassName.equals(other.transformerClassName))
+      } else if (!transformerConfiguration.equals(other.transformerConfiguration))
+         return false;
+      if (routingType == null) {
+         if (other.routingType != null)
+            return false;
+      } else if (!routingType.equals(other.routingType))
          return false;
       return true;
    }

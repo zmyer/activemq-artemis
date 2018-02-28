@@ -22,9 +22,10 @@ import javax.jms.Session;
 import javax.jms.TextMessage;
 import javax.jms.Topic;
 
-import org.apache.activemq.artemis.api.jms.management.TopicControl;
-import org.apache.activemq.artemis.tests.integration.management.ManagementControlHelper;
+import org.apache.activemq.artemis.api.core.SimpleString;
+import org.apache.activemq.artemis.api.core.management.AddressControl;
 import org.apache.activemq.artemis.core.config.Configuration;
+import org.apache.activemq.artemis.tests.integration.management.ManagementControlHelper;
 import org.apache.activemq.artemis.tests.util.JMSTestBase;
 import org.junit.Test;
 
@@ -47,7 +48,7 @@ public class ExpiryMessageTest extends JMSTestBase {
    @Test
    public void testSendTopicNoSubscription() throws Exception {
       Topic topic = createTopic("test-topic");
-      TopicControl control = ManagementControlHelper.createTopicControl(topic, mbeanServer);
+      AddressControl control = ManagementControlHelper.createAddressControl(new SimpleString(topic.getTopicName()), mbeanServer);
 
       Connection conn2 = cf.createConnection();
 

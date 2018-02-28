@@ -26,6 +26,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * <p>
@@ -34,6 +36,8 @@ import java.util.List;
  * </p>
  */
 public class Artemis {
+
+   private static final Logger logger = Logger.getLogger(Artemis.class.getName());
 
    public static void main(String[] args) throws Throwable {
       String home = System.getProperty("artemis.home");
@@ -45,14 +49,17 @@ public class Artemis {
       execute(fileHome, fileInstance, args);
    }
 
-
-   /** This is a good method for booting an embedded command */
+   /**
+    * This is a good method for booting an embedded command
+    */
    public static Object execute(File artemisHome, File artemisInstance, List<String> args) throws Throwable {
       return execute(artemisHome, artemisInstance, args.toArray(new String[args.size()]));
    }
 
-   /** This is a good method for booting an embedded command */
-   public static Object execute(File fileHome, File fileInstance, String ... args) throws Throwable {
+   /**
+    * This is a good method for booting an embedded command
+    */
+   public static Object execute(File fileHome, File fileInstance, String... args) throws Throwable {
       ArrayList<File> dirs = new ArrayList<>();
       if (fileHome != null) {
          dirs.add(new File(fileHome, "lib"));
@@ -60,7 +67,6 @@ public class Artemis {
       if (fileInstance != null) {
          dirs.add(new File(fileInstance, "lib"));
       }
-
 
       ArrayList<URL> urls = new ArrayList<>();
 
@@ -117,14 +123,13 @@ public class Artemis {
       URLClassLoader loader = new URLClassLoader(urls.toArray(new URL[urls.size()]));
       Thread.currentThread().setContextClassLoader(loader);
       Class<?> clazz = loader.loadClass("org.apache.activemq.artemis.cli.Artemis");
-      Method method = clazz.getMethod("execute", File.class, File.class, args.getClass());
+      Method method = clazz.getMethod("execute", Boolean.TYPE, File.class, File.class, args.getClass());
+
       try {
-         return method.invoke(null, fileHome, fileInstance, args);
-      }
-      catch (InvocationTargetException e) {
+         return method.invoke(null, true, fileHome, fileInstance, args);
+      } catch (InvocationTargetException e) {
          throw e.getTargetException();
-      }
-      finally {
+      } finally {
          Thread.currentThread().setContextClassLoader(originalCL);
       }
 
@@ -141,9 +146,8 @@ public class Artemis {
    private static void add(ArrayList<URL> urls, File file) {
       try {
          urls.add(file.toURI().toURL());
-      }
-      catch (MalformedURLException e) {
-         e.printStackTrace();
+      } catch (MalformedURLException e) {
+         logger.log(Level.WARNING, e.getMessage(), e);
       }
    }
 

@@ -33,6 +33,8 @@ import javax.jms.Topic;
 import javax.jms.TopicConnection;
 import javax.jms.TopicSession;
 import java.lang.ref.WeakReference;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
@@ -51,9 +53,9 @@ import org.apache.activemq.artemis.core.client.impl.ClientSessionInternal;
 import org.apache.activemq.artemis.core.version.Version;
 import org.apache.activemq.artemis.reader.MessageUtil;
 import org.apache.activemq.artemis.utils.ActiveMQThreadFactory;
-import org.apache.activemq.artemis.utils.ConcurrentHashSet;
 import org.apache.activemq.artemis.utils.UUIDGenerator;
 import org.apache.activemq.artemis.utils.VersionLoader;
+import org.apache.activemq.artemis.utils.collections.ConcurrentHashSet;
 
 /**
  * ActiveMQ Artemis implementation of a JMS Connection.
@@ -124,6 +126,8 @@ public class ActiveMQConnection extends ActiveMQConnectionForContextImpl impleme
 
    private final int transactionBatchSize;
 
+   private final boolean cacheDestinations;
+
    private ClientSession initialSession;
 
    private final Exception creationStack;
@@ -141,6 +145,7 @@ public class ActiveMQConnection extends ActiveMQConnectionForContextImpl impleme
                              final String clientID,
                              final int dupsOKBatchSize,
                              final int transactionBatchSize,
+                             final boolean cacheDestinations,
                              final ClientSessionFactory sessionFactory) {
       this.options = options;
 
@@ -161,6 +166,8 @@ public class ActiveMQConnection extends ActiveMQConnectionForContextImpl impleme
       this.dupsOKBatchSize = dupsOKBatchSize;
 
       this.transactionBatchSize = transactionBatchSize;
+
+      this.cacheDestinations = cacheDestinations;
 
       creationStack = new Exception();
    }
@@ -235,20 +242,12 @@ public class ActiveMQConnection extends ActiveMQConnectionForContextImpl impleme
          throw new IllegalStateException("setClientID can only be called directly after the connection is created");
       }
 
-      try {
-         initialSession.addUniqueMetaData(ClientSession.JMS_SESSION_CLIENT_ID_PROPERTY, clientID);
-      }
-      catch (ActiveMQException e) {
-         if (e.getType() == ActiveMQExceptionType.DUPLICATE_METADATA) {
-            throw new InvalidClientIDException("clientID=" + clientID + " was already set into another connection");
-         }
-      }
+      validateClientID(initialSession, clientID);
 
       this.clientID = clientID;
       try {
          this.addSessionMetaData(initialSession);
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          JMSException ex = new JMSException("Internal error setting metadata jms-client-id");
          ex.setLinkedException(e);
          ex.initCause(e);
@@ -258,11 +257,19 @@ public class ActiveMQConnection extends ActiveMQConnectionForContextImpl impleme
       justCreated = false;
    }
 
+   private void validateClientID(ClientSession validateSession, String clientID) throws InvalidClientIDException {
+      try {
+         validateSession.addUniqueMetaData(ClientSession.JMS_SESSION_CLIENT_ID_PROPERTY, clientID);
+      } catch (ActiveMQException e) {
+         if (e.getType() == ActiveMQExceptionType.DUPLICATE_METADATA) {
+            throw new InvalidClientIDException("clientID=" + clientID + " was already set into another connection");
+         }
+      }
+   }
+
    @Override
    public ConnectionMetaData getMetaData() throws JMSException {
       checkClosed();
-
-      justCreated = false;
 
       if (metaData == null) {
          metaData = new ActiveMQConnectionMetaData(thisVersion);
@@ -275,8 +282,6 @@ public class ActiveMQConnection extends ActiveMQConnectionForContextImpl impleme
    public ExceptionListener getExceptionListener() throws JMSException {
       checkClosed();
 
-      justCreated = false;
-
       return exceptionListener;
    }
 
@@ -285,7 +290,6 @@ public class ActiveMQConnection extends ActiveMQConnectionForContextImpl impleme
       checkClosed();
 
       exceptionListener = listener;
-      justCreated = false;
    }
 
    @Override
@@ -321,7 +325,6 @@ public class ActiveMQConnection extends ActiveMQConnectionForContextImpl impleme
          session.stop();
       }
 
-      justCreated = false;
       started = false;
    }
 
@@ -349,25 +352,28 @@ public class ActiveMQConnection extends ActiveMQConnectionForContextImpl impleme
                   if (!initialSession.isClosed()) {
                      try {
                         initialSession.deleteQueue(queueName);
-                     }
-                     catch (ActiveMQException ignore) {
+                     } catch (ActiveMQException ignore) {
                         // Exception on deleting queue shouldn't prevent close from completing
                      }
                   }
                }
             }
-         }
-         finally {
+         } finally {
             if (initialSession != null) {
                initialSession.close();
             }
          }
 
-         failoverListenerExecutor.shutdown();
+         AccessController.doPrivileged(new PrivilegedAction() {
+            @Override
+            public Object run() {
+               failoverListenerExecutor.shutdown();
+               return null;
+            }
+         });
 
          closed = true;
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          throw JMSExceptionHelper.convertFromActiveMQException(e);
       }
    }
@@ -569,7 +575,9 @@ public class ActiveMQConnection extends ActiveMQConnectionForContextImpl impleme
    @Override
    protected final void finalize() throws Throwable {
       if (!closed) {
-         ActiveMQJMSClientLogger.LOGGER.connectionLeftOpen(creationStack);
+         if (this.factoryReference.isFinalizeChecks()) {
+            ActiveMQJMSClientLogger.LOGGER.connectionLeftOpen(creationStack);
+         }
 
          close();
       }
@@ -589,26 +597,21 @@ public class ActiveMQConnection extends ActiveMQConnectionForContextImpl impleme
 
       try {
          ClientSession session;
-
+         boolean isBlockOnAcknowledge = sessionFactory.getServerLocator().isBlockOnAcknowledge();
+         int ackBatchSize = sessionFactory.getServerLocator().getAckBatchSize();
          if (acknowledgeMode == Session.SESSION_TRANSACTED) {
             session = sessionFactory.createSession(username, password, isXA, false, false, sessionFactory.getServerLocator().isPreAcknowledge(), transactionBatchSize);
-         }
-         else if (acknowledgeMode == Session.AUTO_ACKNOWLEDGE) {
+         } else if (acknowledgeMode == Session.AUTO_ACKNOWLEDGE) {
             session = sessionFactory.createSession(username, password, isXA, true, true, sessionFactory.getServerLocator().isPreAcknowledge(), 0);
-         }
-         else if (acknowledgeMode == Session.DUPS_OK_ACKNOWLEDGE) {
+         } else if (acknowledgeMode == Session.DUPS_OK_ACKNOWLEDGE) {
             session = sessionFactory.createSession(username, password, isXA, true, true, sessionFactory.getServerLocator().isPreAcknowledge(), dupsOKBatchSize);
-         }
-         else if (acknowledgeMode == Session.CLIENT_ACKNOWLEDGE) {
-            session = sessionFactory.createSession(username, password, isXA, true, false, sessionFactory.getServerLocator().isPreAcknowledge(), transactionBatchSize);
-         }
-         else if (acknowledgeMode == ActiveMQJMSConstants.INDIVIDUAL_ACKNOWLEDGE) {
-            session = sessionFactory.createSession(username, password, isXA, true, false, false, transactionBatchSize);
-         }
-         else if (acknowledgeMode == ActiveMQJMSConstants.PRE_ACKNOWLEDGE) {
+         } else if (acknowledgeMode == Session.CLIENT_ACKNOWLEDGE) {
+            session = sessionFactory.createSession(username, password, isXA, true, false, sessionFactory.getServerLocator().isPreAcknowledge(), isBlockOnAcknowledge ? transactionBatchSize : ackBatchSize);
+         } else if (acknowledgeMode == ActiveMQJMSConstants.INDIVIDUAL_ACKNOWLEDGE) {
+            session = sessionFactory.createSession(username, password, isXA, true, false, false, isBlockOnAcknowledge ? transactionBatchSize : ackBatchSize);
+         } else if (acknowledgeMode == ActiveMQJMSConstants.PRE_ACKNOWLEDGE) {
             session = sessionFactory.createSession(username, password, isXA, true, false, true, transactionBatchSize);
-         }
-         else {
+         } else {
             throw new JMSRuntimeException("Invalid ackmode: " + acknowledgeMode);
          }
 
@@ -631,8 +634,7 @@ public class ActiveMQConnection extends ActiveMQConnectionForContextImpl impleme
          this.addSessionMetaData(session);
 
          return jbs;
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          throw JMSExceptionHelper.convertFromActiveMQException(e);
       }
    }
@@ -656,10 +658,9 @@ public class ActiveMQConnection extends ActiveMQConnectionForContextImpl impleme
                                               ClientSession session,
                                               int type) {
       if (isXA) {
-         return new ActiveMQXASession(options, this, transacted, true, acknowledgeMode, session, type);
-      }
-      else {
-         return new ActiveMQSession(options, this, transacted, false, acknowledgeMode, session, type);
+         return new ActiveMQXASession(options, this, transacted, true, acknowledgeMode, cacheDestinations, session, type);
+      } else {
+         return new ActiveMQSession(options, this, transacted, false, acknowledgeMode, cacheDestinations, session, type);
       }
    }
 
@@ -673,12 +674,15 @@ public class ActiveMQConnection extends ActiveMQConnectionForContextImpl impleme
       try {
          initialSession = sessionFactory.createSession(username, password, false, false, false, false, 0);
 
+         if (clientID != null) {
+            validateClientID(initialSession, clientID);
+         }
+
          addSessionMetaData(initialSession);
 
          initialSession.addFailureListener(listener);
          initialSession.addFailoverListener(failoverListener);
-      }
-      catch (ActiveMQException me) {
+      } catch (ActiveMQException me) {
          throw JMSExceptionHelper.convertFromActiveMQException(me);
       }
    }
@@ -740,8 +744,7 @@ public class ActiveMQConnection extends ActiveMQConnectionForContextImpl impleme
                      }
                   }).start();
                }
-            }
-            catch (JMSException e) {
+            } catch (JMSException e) {
                if (!conn.closed) {
                   ActiveMQJMSClientLogger.LOGGER.errorCallingExcListener(e);
                }
@@ -786,8 +789,7 @@ public class ActiveMQConnection extends ActiveMQConnectionForContextImpl impleme
                      }
                   });
                }
-            }
-            catch (JMSException e) {
+            } catch (JMSException e) {
                if (!conn.closed) {
                   ActiveMQJMSClientLogger.LOGGER.errorCallingFailoverListener(e);
                }

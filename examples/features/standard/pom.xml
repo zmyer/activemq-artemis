@@ -24,7 +24,7 @@ under the License.
    <parent>
       <groupId>org.apache.activemq.examples.clustered</groupId>
       <artifactId>broker-features</artifactId>
-      <version>1.5.0-SNAPSHOT</version>
+      <version>2.5.0-SNAPSHOT</version>
    </parent>
 
    <groupId>org.apache.activemq.examples.broker</groupId>
@@ -43,8 +43,11 @@ under the License.
          <modules>
             <module>bridge</module>
             <module>browser</module>
+            <module>broker-plugin</module>
+            <module>cdi</module>
             <module>client-kickoff</module>
             <module>consumer-rate-limit</module>
+            <module>database</module>
             <module>dead-letter</module>
             <module>delayed-redelivery</module>
             <module>divert</module>
@@ -55,6 +58,8 @@ under the License.
             <module>http-transport</module>
             <module>interceptor</module>
             <module>interceptor-client</module>
+            <module>interceptor-mqtt</module>
+            <module>interceptor-amqp</module>
             <module>instantiate-connection-factory</module>
             <module>jms-auto-closeable</module>
             <module>jms-bridge</module>
@@ -62,6 +67,7 @@ under the License.
             <module>jms-context</module>
             <module>jms-shared-consumer</module>
             <module>jmx</module>
+            <module>jmx-ssl</module>
             <module>large-message</module>
             <module>last-value-queue</module>
             <module>management</module>
@@ -84,6 +90,7 @@ under the License.
             <module>security</module>
             <module>security-ldap</module>
             <module>send-acknowledgements</module>
+            <module>slow-consumer</module>
             <module>spring-integration</module>
             <module>ssl-enabled</module>
             <module>ssl-enabled-dual-authentication</module>
@@ -97,6 +104,7 @@ under the License.
             <module>xa-heuristic</module>
             <module>xa-receive</module>
             <module>xa-send</module>
+            <module>ssl-enabled-crl-mqtt</module>
          </modules>
       </profile>
       <profile>
@@ -104,8 +112,11 @@ under the License.
          <modules>
             <module>bridge</module>
             <module>browser</module>
+            <module>broker-plugin</module>
+            <module>cdi</module>
             <module>client-kickoff</module>
             <module>consumer-rate-limit</module>
+            <module>database</module>
             <module>dead-letter</module>
             <module>delayed-redelivery</module>
             <module>divert</module>
@@ -116,6 +127,8 @@ under the License.
             <module>http-transport</module>
             <module>interceptor</module>
             <module>interceptor-client</module>
+            <module>interceptor-mqtt</module>
+            <module>interceptor-amqp</module>
             <module>jms-auto-closeable</module>
             <module>instantiate-connection-factory</module>
             <module>jms-bridge</module>
@@ -123,6 +136,7 @@ under the License.
             <module>jms-context</module>
             <module>jms-shared-consumer</module>
             <module>jmx</module>
+            <module>jmx-ssl</module>
             <module>large-message</module>
             <module>last-value-queue</module>
             <module>management</module>
@@ -146,6 +160,7 @@ under the License.
             <module>security</module>
             <module>security-ldap</module>
             <module>send-acknowledgements</module>
+            <module>slow-consumer</module>
             <module>spring-integration</module>
             <module>ssl-enabled</module>
             <module>ssl-enabled-dual-authentication</module>
@@ -163,6 +178,7 @@ under the License.
             <module>xa-heuristic</module>
             <module>xa-receive</module>
             <module>xa-send</module>
+            <module>ssl-enabled-crl-mqtt</module>
          </modules>
       </profile>
 

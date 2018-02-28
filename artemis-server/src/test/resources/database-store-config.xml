@@ -15,9 +15,9 @@
   limitations under the License.
 -->
 <configuration
-      xmlns="urn:activemq"
-      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-      xsi:schemaLocation="urn:activemq ../../main/resources/schema/artemis-server.xsd">
+        xmlns="urn:activemq"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="urn:activemq ../../main/resources/schema/artemis-server.xsd">
    <core xmlns="urn:activemq:core">
       <store>
          <database-store>
@@ -25,6 +25,7 @@
             <bindings-table-name>BINDINGS_TABLE</bindings-table-name>
             <message-table-name>MESSAGE_TABLE</message-table-name>
             <large-message-table-name>LARGE_MESSAGE_TABLE</large-message-table-name>
+            <page-store-table-name>PAGE_STORE_TABLE</page-store-table-name>
             <jdbc-driver-class-name>org.apache.derby.jdbc.EmbeddedDriver</jdbc-driver-class-name>
          </database-store>
       </store>

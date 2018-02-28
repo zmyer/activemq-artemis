@@ -27,18 +27,17 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
-import java.util.concurrent.TimeUnit;
 
 import org.apache.activemq.artemis.api.core.ActiveMQException;
+import org.apache.activemq.artemis.api.core.Message;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.core.config.Configuration;
 import org.apache.activemq.artemis.core.io.IOCriticalErrorListener;
+import org.apache.activemq.artemis.core.io.SequentialFile;
 import org.apache.activemq.artemis.core.journal.Journal;
 import org.apache.activemq.artemis.core.journal.Journal.JournalState;
 import org.apache.activemq.artemis.core.journal.JournalLoadInformation;
-import org.apache.activemq.artemis.core.io.SequentialFile;
 import org.apache.activemq.artemis.core.journal.impl.FileWrapperJournal;
 import org.apache.activemq.artemis.core.journal.impl.JournalFile;
 import org.apache.activemq.artemis.core.paging.PagedMessage;
@@ -53,8 +52,8 @@ import org.apache.activemq.artemis.core.protocol.core.Channel;
 import org.apache.activemq.artemis.core.protocol.core.ChannelHandler;
 import org.apache.activemq.artemis.core.protocol.core.Packet;
 import org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.BackupReplicationStartFailedMessage;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ActiveMQExceptionMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.BackupReplicationStartFailedMessage;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationAddMessage;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationAddTXMessage;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationCommitMessage;
@@ -76,10 +75,11 @@ import org.apache.activemq.artemis.core.replication.ReplicationManager.ADD_OPERA
 import org.apache.activemq.artemis.core.server.ActiveMQComponent;
 import org.apache.activemq.artemis.core.server.ActiveMQMessageBundle;
 import org.apache.activemq.artemis.core.server.ActiveMQServerLogger;
-import org.apache.activemq.artemis.core.server.ServerMessage;
+
 import org.apache.activemq.artemis.core.server.cluster.qourum.SharedNothingBackupQuorum;
 import org.apache.activemq.artemis.core.server.impl.ActiveMQServerImpl;
 import org.apache.activemq.artemis.core.server.impl.SharedNothingBackupActivation;
+import org.apache.activemq.artemis.utils.actors.OrderedExecutorFactory;
 import org.jboss.logging.Logger;
 
 /**
@@ -89,7 +89,6 @@ import org.jboss.logging.Logger;
 public final class ReplicationEndpoint implements ChannelHandler, ActiveMQComponent {
 
    private static final Logger logger = Logger.getLogger(ReplicationEndpoint.class);
-
 
    private final IOCriticalErrorListener criticalErrorListener;
    private final ActiveMQServerImpl server;
@@ -172,62 +171,56 @@ public final class ReplicationEndpoint implements ChannelHandler, ActiveMQCompon
 
          if (type == PacketImpl.REPLICATION_APPEND) {
             handleAppendAddRecord((ReplicationAddMessage) packet);
-         }
-         else if (type == PacketImpl.REPLICATION_APPEND_TX) {
+         } else if (type == PacketImpl.REPLICATION_APPEND_TX) {
             handleAppendAddTXRecord((ReplicationAddTXMessage) packet);
-         }
-         else if (type == PacketImpl.REPLICATION_DELETE) {
+         } else if (type == PacketImpl.REPLICATION_DELETE) {
             handleAppendDelete((ReplicationDeleteMessage) packet);
-         }
-         else if (type == PacketImpl.REPLICATION_DELETE_TX) {
+         } else if (type == PacketImpl.REPLICATION_DELETE_TX) {
             handleAppendDeleteTX((ReplicationDeleteTXMessage) packet);
-         }
-         else if (type == PacketImpl.REPLICATION_PREPARE) {
+         } else if (type == PacketImpl.REPLICATION_PREPARE) {
             handlePrepare((ReplicationPrepareMessage) packet);
-         }
-         else if (type == PacketImpl.REPLICATION_COMMIT_ROLLBACK) {
+         } else if (type == PacketImpl.REPLICATION_COMMIT_ROLLBACK) {
             handleCommitRollback((ReplicationCommitMessage) packet);
-         }
-         else if (type == PacketImpl.REPLICATION_PAGE_WRITE) {
+         } else if (type == PacketImpl.REPLICATION_PAGE_WRITE) {
             handlePageWrite((ReplicationPageWriteMessage) packet);
-         }
-         else if (type == PacketImpl.REPLICATION_PAGE_EVENT) {
+         } else if (type == PacketImpl.REPLICATION_PAGE_EVENT) {
             handlePageEvent((ReplicationPageEventMessage) packet);
-         }
-         else if (type == PacketImpl.REPLICATION_LARGE_MESSAGE_BEGIN) {
+         } else if (type == PacketImpl.REPLICATION_LARGE_MESSAGE_BEGIN) {
             handleLargeMessageBegin((ReplicationLargeMessageBeginMessage) packet);
-         }
-         else if (type == PacketImpl.REPLICATION_LARGE_MESSAGE_WRITE) {
+         } else if (type == PacketImpl.REPLICATION_LARGE_MESSAGE_WRITE) {
             handleLargeMessageWrite((ReplicationLargeMessageWriteMessage) packet);
-         }
-         else if (type == PacketImpl.REPLICATION_LARGE_MESSAGE_END) {
+         } else if (type == PacketImpl.REPLICATION_LARGE_MESSAGE_END) {
             handleLargeMessageEnd((ReplicationLargeMessageEndMessage) packet);
-         }
-         else if (type == PacketImpl.REPLICATION_START_FINISH_SYNC) {
+         } else if (type == PacketImpl.REPLICATION_START_FINISH_SYNC) {
             response = handleStartReplicationSynchronization((ReplicationStartSyncMessage) packet);
-         }
-         else if (type == PacketImpl.REPLICATION_SYNC_FILE) {
+         } else if (type == PacketImpl.REPLICATION_SYNC_FILE) {
             handleReplicationSynchronization((ReplicationSyncFileMessage) packet);
-         }
-         else if (type == PacketImpl.REPLICATION_SCHEDULED_FAILOVER) {
+         } else if (type == PacketImpl.REPLICATION_SCHEDULED_FAILOVER) {
             handleLiveStopping((ReplicationLiveIsStoppingMessage) packet);
-         }
-         else if (type == PacketImpl.BACKUP_REGISTRATION_FAILED) {
+         } else if (type == PacketImpl.BACKUP_REGISTRATION_FAILED) {
             handleFatalError((BackupReplicationStartFailedMessage) packet);
-         }
-         else {
+         } else {
             ActiveMQServerLogger.LOGGER.invalidPacketForReplication(packet);
          }
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
+         logger.warn(e.getMessage(), e);
          ActiveMQServerLogger.LOGGER.errorHandlingReplicationPacket(e, packet);
          response = new ActiveMQExceptionMessage(e);
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
+         logger.warn(e.getMessage(), e);
          ActiveMQServerLogger.LOGGER.errorHandlingReplicationPacket(e, packet);
          response = new ActiveMQExceptionMessage(ActiveMQMessageBundle.BUNDLE.replicationUnhandledError(e));
       }
-      channel.send(response);
+
+      if (response != null) {
+         if (logger.isTraceEnabled()) {
+            logger.trace("Returning " + response);
+         }
+
+         channel.send(response);
+      } else {
+         logger.trace("Response is null, ignoring response");
+      }
    }
 
    /**
@@ -269,13 +262,12 @@ public final class ReplicationEndpoint implements ChannelHandler, ActiveMQCompon
             journalLoadInformation[jc.typeByte] = journalsHolder.get(jc).loadSyncOnly(JournalState.SYNCING);
          }
 
-         pageManager = new PagingManagerImpl(new PagingStoreFactoryNIO(storageManager, config.getPagingLocation(), config.getJournalBufferSize_NIO(), server.getScheduledPool(), server.getExecutorFactory(), config.isJournalSyncNonTransactional(), criticalErrorListener), server.getAddressSettingsRepository());
+         pageManager = new PagingManagerImpl(new PagingStoreFactoryNIO(storageManager, config.getPagingLocation(), config.getJournalBufferTimeout_NIO(), server.getScheduledPool(), server.getIOExecutorFactory(), config.isJournalSyncNonTransactional(), criticalErrorListener), server.getAddressSettingsRepository());
 
          pageManager.start();
 
          started = true;
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          if (server.isStarted())
             throw e;
       }
@@ -286,6 +278,12 @@ public final class ReplicationEndpoint implements ChannelHandler, ActiveMQCompon
       if (!started) {
          return;
       }
+
+      logger.trace("Stopping endpoint");
+
+      started = false;
+
+      OrderedExecutorFactory.flushExecutor(executor);
 
       // Channel may be null if there isn't a connection to a live server
       if (channel != null) {
@@ -316,8 +314,7 @@ public final class ReplicationEndpoint implements ChannelHandler, ActiveMQCompon
             try {
                page.sync();
                page.close(false);
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                ActiveMQServerLogger.LOGGER.errorClosingPageOnReplication(e);
             }
          }
@@ -325,15 +322,6 @@ public final class ReplicationEndpoint implements ChannelHandler, ActiveMQCompon
       pageManager.stop();
 
       pageIndex.clear();
-      final CountDownLatch latch = new CountDownLatch(1);
-      executor.execute(new Runnable() {
-
-         @Override
-         public void run() {
-            latch.countDown();
-         }
-      });
-      latch.await(30, TimeUnit.SECONDS);
 
       // Storage needs to be the last to stop
       storageManager.stop();
@@ -349,37 +337,70 @@ public final class ReplicationEndpoint implements ChannelHandler, ActiveMQCompon
       this.channel = channel;
    }
 
-   private void finishSynchronization(String liveID) throws Exception {
+   private synchronized void finishSynchronization(String liveID) throws Exception {
       if (logger.isTraceEnabled()) {
-         logger.trace("finishSynchronization::" + liveID);
+         logger.trace("BACKUP-SYNC-START: finishSynchronization::" + liveID);
       }
       for (JournalContent jc : EnumSet.allOf(JournalContent.class)) {
          Journal journal = journalsHolder.remove(jc);
+         if (logger.isTraceEnabled()) {
+            logger.trace("getting lock on " + jc + ", journal = " + journal);
+         }
+         registerJournal(jc.typeByte, journal);
          journal.synchronizationLock();
          try {
+            if (logger.isTraceEnabled()) {
+               logger.trace("lock acquired on " + jc);
+            }
             // files should be already in place.
             filesReservedForSync.remove(jc);
-            registerJournal(jc.typeByte, journal);
+            if (logger.isTraceEnabled()) {
+               logger.trace("stopping journal for " + jc);
+            }
             journal.stop();
+            if (logger.isTraceEnabled()) {
+               logger.trace("starting journal for " + jc);
+            }
             journal.start();
+            if (logger.isTraceEnabled()) {
+               logger.trace("loadAndSync " + jc);
+            }
             journal.loadSyncOnly(JournalState.SYNCING_UP_TO_DATE);
-         }
-         finally {
+         } finally {
+            if (logger.isTraceEnabled()) {
+               logger.trace("unlocking " + jc);
+            }
             journal.synchronizationUnlock();
          }
+      }
+
+      if (logger.isTraceEnabled()) {
+         logger.trace("Sync on large messages...");
       }
       ByteBuffer buffer = ByteBuffer.allocate(4 * 1024);
       for (Entry<Long, ReplicatedLargeMessage> entry : largeMessages.entrySet()) {
          ReplicatedLargeMessage lm = entry.getValue();
          if (lm instanceof LargeServerMessageInSync) {
             LargeServerMessageInSync lmSync = (LargeServerMessageInSync) lm;
+            if (logger.isTraceEnabled()) {
+               logger.trace("lmSync on " + lmSync.toString());
+            }
             lmSync.joinSyncedData(buffer);
          }
+      }
+
+      if (logger.isTraceEnabled()) {
+         logger.trace("setRemoteBackupUpToDate and liveIDSet for " + liveID);
       }
 
       journalsHolder = null;
       backupQuorum.liveIDSet(liveID);
       activation.setRemoteBackupUpToDate();
+
+      if (logger.isTraceEnabled()) {
+         logger.trace("Backup is synchronized / BACKUP-SYNC-DONE");
+      }
+
       ActiveMQServerLogger.LOGGER.backupServerSynched(server);
       return;
    }
@@ -391,7 +412,7 @@ public final class ReplicationEndpoint implements ChannelHandler, ActiveMQCompon
     * @throws Exception
     */
    private void handleReplicationSynchronization(ReplicationSyncFileMessage msg) throws Exception {
-      Long id = Long.valueOf(msg.getId());
+      long id = msg.getId();
       byte[] data = msg.getData();
       SequentialFile channel1;
       switch (msg.getFileType()) {
@@ -431,7 +452,7 @@ public final class ReplicationEndpoint implements ChannelHandler, ActiveMQCompon
       if (!channel1.isOpen()) {
          channel1.open();
       }
-      channel1.writeDirect(ByteBuffer.wrap(data), true);
+      channel1.writeDirect(ByteBuffer.wrap(data), false);
    }
 
    /**
@@ -499,6 +520,7 @@ public final class ReplicationEndpoint implements ChannelHandler, ActiveMQCompon
       }
       final ReplicatedLargeMessage message = lookupLargeMessage(packet.getMessageId(), true, false);
       if (message != null) {
+         message.setPendingRecordID(packet.getPendingRecordId());
          executor.execute(new Runnable() {
             @Override
             public void run() {
@@ -507,8 +529,7 @@ public final class ReplicationEndpoint implements ChannelHandler, ActiveMQCompon
                      logger.trace("Deleting LargeMessage " + packet.getMessageId() + " on the executor @ handleLargeMessageEnd");
                   }
                   message.deleteFile();
-               }
-               catch (Exception e) {
+               } catch (Exception e) {
                   ActiveMQServerLogger.LOGGER.errorDeletingLargeMessage(e, packet.getMessageId());
                }
             }
@@ -533,15 +554,13 @@ public final class ReplicationEndpoint implements ChannelHandler, ActiveMQCompon
 
       if (delete) {
          message = largeMessages.remove(messageId);
-      }
-      else {
+      } else {
          message = largeMessages.get(messageId);
          if (message == null) {
             if (createIfNotExists) {
                createLargeMessage(messageId, false);
                message = largeMessages.get(messageId);
-            }
-            else {
+            } else {
                // No warnings if it's a delete, as duplicate deletes may be sent repeatedly.
                ActiveMQServerLogger.LOGGER.largeMessageNotAvailable(messageId);
             }
@@ -567,8 +586,7 @@ public final class ReplicationEndpoint implements ChannelHandler, ActiveMQCompon
       ReplicatedLargeMessage msg;
       if (liveToBackupSync) {
          msg = new LargeServerMessageInSync(storageManager);
-      }
-      else {
+      } else {
          msg = storageManager.createLargeMessage();
       }
 
@@ -584,8 +602,7 @@ public final class ReplicationEndpoint implements ChannelHandler, ActiveMQCompon
       Journal journalToUse = getJournal(packet.getJournalID());
       if (packet.isRollback()) {
          journalToUse.appendRollbackRecord(packet.getTxId(), noSync);
-      }
-      else {
+      } else {
          journalToUse.appendCommitRecord(packet.getTxId(), noSync);
       }
    }
@@ -623,8 +640,7 @@ public final class ReplicationEndpoint implements ChannelHandler, ActiveMQCompon
 
       if (packet.getOperation() == ADD_OPERATION_TYPE.UPDATE) {
          journalToUse.appendUpdateRecordTransactional(packet.getTxId(), packet.getId(), packet.getRecordType(), packet.getRecordData());
-      }
-      else {
+      } else {
          journalToUse.appendAddRecordTransactional(packet.getTxId(), packet.getId(), packet.getRecordType(), packet.getRecordData());
       }
    }
@@ -640,8 +656,7 @@ public final class ReplicationEndpoint implements ChannelHandler, ActiveMQCompon
             logger.trace("Endpoint appendUpdate id = " + packet.getId());
          }
          journalToUse.appendUpdateRecord(packet.getId(), packet.getJournalRecordType(), packet.getRecordData(), noSync);
-      }
-      else {
+      } else {
          if (logger.isTraceEnabled()) {
             logger.trace("Endpoint append id = " + packet.getId());
          }
@@ -666,8 +681,7 @@ public final class ReplicationEndpoint implements ChannelHandler, ActiveMQCompon
             if (deletePages) {
                page.delete(null);
             }
-         }
-         else {
+         } else {
             page.close(false);
          }
       }
@@ -680,8 +694,8 @@ public final class ReplicationEndpoint implements ChannelHandler, ActiveMQCompon
    private void handlePageWrite(final ReplicationPageWriteMessage packet) throws Exception {
       PagedMessage pgdMessage = packet.getPagedMessage();
       pgdMessage.initMessage(storageManager);
-      ServerMessage msg = pgdMessage.getMessage();
-      Page page = getPage(msg.getAddress(), packet.getPageNumber());
+      Message msg = pgdMessage.getMessage();
+      Page page = getPage(msg.getAddressSimpleString(), packet.getPageNumber());
       page.write(pgdMessage);
    }
 

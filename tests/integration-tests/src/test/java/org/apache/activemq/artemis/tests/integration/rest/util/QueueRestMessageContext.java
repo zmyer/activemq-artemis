@@ -22,7 +22,8 @@ import org.apache.http.Header;
 import org.apache.http.client.methods.CloseableHttpResponse;
 
 public class QueueRestMessageContext extends RestMessageContext {
-   public static final String PREFIX_QUEUE = "/queues/jms.queue.";
+
+   public static final String PREFIX_QUEUE = "/queues/";
 
    public QueueRestMessageContext(RestAMQConnection restAMQConnection, String queue) throws IOException {
       super(restAMQConnection, queue);
@@ -44,8 +45,7 @@ public class QueueRestMessageContext extends RestMessageContext {
       CloseableHttpResponse response = null;
       if (!this.autoAck) {
          response = connection.post(pullUri, "application/x-www-form-urlencoded", "autoAck=false");
-      }
-      else {
+      } else {
          response = connection.post(pullUri);
       }
 
@@ -61,8 +61,7 @@ public class QueueRestMessageContext extends RestMessageContext {
                contextMap.put(KEY_MSG_ACK_NEXT, header.getValue());
             }
          }
-      }
-      finally {
+      } finally {
          response.close();
       }
 

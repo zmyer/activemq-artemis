@@ -16,14 +16,15 @@
  */
 package org.apache.activemq.artemis.ra;
 
+import javax.jms.JMSException;
+import javax.jms.JMSRuntimeException;
+import javax.resource.NotSupportedException;
+
 import org.apache.activemq.artemis.api.core.ActiveMQIllegalStateException;
+import org.jboss.logging.Messages;
 import org.jboss.logging.annotations.Cause;
 import org.jboss.logging.annotations.Message;
 import org.jboss.logging.annotations.MessageBundle;
-import org.jboss.logging.Messages;
-
-import javax.jms.JMSRuntimeException;
-import javax.resource.NotSupportedException;
 
 /**
  * Logger Code 15
@@ -62,4 +63,8 @@ public interface ActiveMQRABundle {
 
    @Message(id = 159006, value = "Invalid Session Mode {0}", format = Message.Format.MESSAGE_FORMAT)
    JMSRuntimeException invalidAcknowledgeMode(int sessionMode);
+
+   @Message(id = 159007, value = "Invalid Session Mode SESSION_TRANSACTED, to enable Local Transacted Sessions you can " +
+         "set the allowLocalTransactions (allow-local-transactions) on the resource adapter")
+   JMSException invalidSessionTransactedModeRuntimeAllowLocal();
 }

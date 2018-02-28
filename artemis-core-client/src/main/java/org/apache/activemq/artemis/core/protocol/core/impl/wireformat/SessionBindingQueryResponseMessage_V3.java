@@ -23,59 +23,66 @@ import org.apache.activemq.artemis.api.core.SimpleString;
 
 public class SessionBindingQueryResponseMessage_V3 extends SessionBindingQueryResponseMessage_V2 {
 
-   private boolean autoCreateJmsTopics;
+   protected boolean autoCreateAddresses;
 
    public SessionBindingQueryResponseMessage_V3(final boolean exists,
                                                 final List<SimpleString> queueNames,
-                                                final boolean autoCreateJmsQueues,
-                                                final boolean autoCreateJmsTopics) {
+                                                final boolean autoCreateQueues,
+                                                final boolean autoCreateAddresses) {
       super(SESS_BINDINGQUERY_RESP_V3);
 
       this.exists = exists;
 
       this.queueNames = queueNames;
 
-      this.autoCreateJmsQueues = autoCreateJmsQueues;
+      this.autoCreateQueues = autoCreateQueues;
 
-      this.autoCreateJmsTopics = autoCreateJmsTopics;
+      this.autoCreateAddresses = autoCreateAddresses;
    }
 
    public SessionBindingQueryResponseMessage_V3() {
       super(SESS_BINDINGQUERY_RESP_V3);
    }
 
-   public boolean isAutoCreateJmsTopics() {
-      return autoCreateJmsTopics;
+   public SessionBindingQueryResponseMessage_V3(byte v) {
+      super(v);
+   }
+
+   public boolean isAutoCreateAddresses() {
+      return autoCreateAddresses;
    }
 
    @Override
    public void encodeRest(final ActiveMQBuffer buffer) {
       super.encodeRest(buffer);
-      buffer.writeBoolean(autoCreateJmsTopics);
+      buffer.writeBoolean(autoCreateAddresses);
    }
 
    @Override
    public void decodeRest(final ActiveMQBuffer buffer) {
       super.decodeRest(buffer);
-      autoCreateJmsTopics = buffer.readBoolean();
+      autoCreateAddresses = buffer.readBoolean();
    }
 
    @Override
    public int hashCode() {
       final int prime = 31;
       int result = super.hashCode();
-      result = prime * result + (autoCreateJmsTopics ? 1231 : 1237);
+      result = prime * result + (autoCreateAddresses ? 1231 : 1237);
       return result;
    }
 
    @Override
    public String toString() {
       StringBuffer buff = new StringBuffer(getParentString());
-      buff.append(", exists=" + exists);
-      buff.append(", queueNames=" + queueNames);
-      buff.append(", autoCreateJmsQueues=" + autoCreateJmsQueues);
-      buff.append(", autoCreateJmsTopics=" + autoCreateJmsTopics);
       buff.append("]");
+      return buff.toString();
+   }
+
+   @Override
+   public String getParentString() {
+      StringBuffer buff = new StringBuffer(super.getParentString());
+      buff.append(", autoCreateAddresses=" + autoCreateAddresses);
       return buff.toString();
    }
 
@@ -88,7 +95,7 @@ public class SessionBindingQueryResponseMessage_V3 extends SessionBindingQueryRe
       if (!(obj instanceof SessionBindingQueryResponseMessage_V3))
          return false;
       SessionBindingQueryResponseMessage_V3 other = (SessionBindingQueryResponseMessage_V3) obj;
-      if (autoCreateJmsTopics != other.autoCreateJmsTopics)
+      if (autoCreateAddresses != other.autoCreateAddresses)
          return false;
       return true;
    }

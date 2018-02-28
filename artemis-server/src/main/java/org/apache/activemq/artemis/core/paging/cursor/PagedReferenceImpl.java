@@ -24,12 +24,12 @@ import org.apache.activemq.artemis.core.paging.PagedMessage;
 import org.apache.activemq.artemis.core.server.ActiveMQServerLogger;
 import org.apache.activemq.artemis.core.server.MessageReference;
 import org.apache.activemq.artemis.core.server.Queue;
-import org.apache.activemq.artemis.core.server.ServerMessage;
 import org.apache.activemq.artemis.core.server.impl.AckReason;
 import org.apache.activemq.artemis.core.transaction.Transaction;
+import org.apache.activemq.artemis.utils.collections.LinkedListImpl;
 import org.jboss.logging.Logger;
 
-public class PagedReferenceImpl implements PagedReference {
+public class PagedReferenceImpl extends LinkedListImpl.Node<PagedReferenceImpl> implements PagedReference {
 
    private static final Logger logger = Logger.getLogger(PagedReferenceImpl.class);
 
@@ -41,7 +41,7 @@ public class PagedReferenceImpl implements PagedReference {
 
    private int persistedCount;
 
-   private int messageEstimate;
+   private int messageEstimate = -1;
 
    private Long consumerId;
 
@@ -52,6 +52,14 @@ public class PagedReferenceImpl implements PagedReference {
    private boolean alreadyAcked;
 
    private Object protocolData;
+
+   private Boolean largeMessage;
+
+   private long transactionID = -1;
+
+   private long messageID = -1;
+
+   private long messageSize = -1;
 
    @Override
    public Object getProtocolData() {
@@ -64,7 +72,7 @@ public class PagedReferenceImpl implements PagedReference {
    }
 
    @Override
-   public ServerMessage getMessage() {
+   public Message getMessage() {
       return getPagedMessage().getMessage();
    }
 
@@ -93,15 +101,21 @@ public class PagedReferenceImpl implements PagedReference {
                              final PagedMessage message,
                              final PageSubscription subscription) {
       this.position = position;
-
-      if (message == null) {
-         this.messageEstimate = -1;
-      }
-      else {
-         this.messageEstimate = message.getMessage().getMemoryEstimate();
-      }
       this.message = new WeakReference<>(message);
       this.subscription = subscription;
+      if (message != null) {
+         this.largeMessage = message.getMessage().isLargeMessage();
+         this.transactionID = message.getTransactionID();
+         this.messageID = message.getMessage().getMessageID();
+
+         //pre-cache the message size so we don't have to reload the message later if it is GC'd
+         getPersistentSize();
+      } else {
+         this.largeMessage = null;
+         this.transactionID = -1;
+         this.messageID = -1;
+         this.messageSize = -1;
+      }
    }
 
    @Override
@@ -121,12 +135,11 @@ public class PagedReferenceImpl implements PagedReference {
 
    @Override
    public int getMessageMemoryEstimate() {
-      if (messageEstimate < 0) {
+      if (messageEstimate <= 0) {
          try {
             messageEstimate = getMessage().getMemoryEstimate();
-         }
-         catch (Throwable e) {
-            ActiveMQServerLogger.LOGGER.warn(e.getMessage(), e);
+         } catch (Throwable e) {
+            ActiveMQServerLogger.LOGGER.errorCalculateMessageMemoryEstimate(e);
          }
       }
       return messageEstimate;
@@ -141,16 +154,10 @@ public class PagedReferenceImpl implements PagedReference {
    public long getScheduledDeliveryTime() {
       if (deliveryTime == null) {
          try {
-            ServerMessage msg = getMessage();
-            if (msg.containsProperty(Message.HDR_SCHEDULED_DELIVERY_TIME)) {
-               deliveryTime = getMessage().getLongProperty(Message.HDR_SCHEDULED_DELIVERY_TIME);
-            }
-            else {
-               deliveryTime = 0L;
-            }
-         }
-         catch (Throwable e) {
-            ActiveMQServerLogger.LOGGER.warn(e.getMessage(), e);
+            Message msg = getMessage();
+            return msg.getScheduledDeliveryTime();
+         } catch (Throwable e) {
+            ActiveMQServerLogger.LOGGER.errorCalculateScheduledDeliveryTime(e);
             return 0L;
          }
       }
@@ -196,7 +203,7 @@ public class PagedReferenceImpl implements PagedReference {
 
    @Override
    public void handled() {
-      getQueue().referenceHandled();
+      getQueue().referenceHandled(this);
    }
 
    @Override
@@ -223,8 +230,7 @@ public class PagedReferenceImpl implements PagedReference {
    public void acknowledge(Transaction tx, AckReason reason) throws Exception {
       if (tx == null) {
          getQueue().acknowledge(this, reason);
-      }
-      else {
+      } else {
          getQueue().acknowledge(tx, this, reason);
       }
    }
@@ -237,8 +243,7 @@ public class PagedReferenceImpl implements PagedReference {
       String msgToString;
       try {
          msgToString = getPagedMessage().toString();
-      }
-      catch (Throwable e) {
+      } catch (Throwable e) {
          // in case of an exception because of a missing page, we just want toString to return null
          msgToString = "error:" + e.getMessage();
       }
@@ -270,6 +275,42 @@ public class PagedReferenceImpl implements PagedReference {
    @Override
    public Long getConsumerId() {
       return this.consumerId;
+   }
+
+   @Override
+   public boolean isLargeMessage() {
+      if (largeMessage == null && message != null) {
+         largeMessage = getMessage().isLargeMessage();
+      }
+      return largeMessage;
+   }
+
+   @Override
+   public long getTransactionID() {
+      if (transactionID < 0) {
+         transactionID = getPagedMessage().getTransactionID();
+      }
+      return transactionID;
+   }
+
+   @Override
+   public long getMessageID() {
+      if (messageID < 0) {
+         messageID = getPagedMessage().getMessage().getMessageID();
+      }
+      return messageID;
+   }
+
+   @Override
+   public long getPersistentSize() {
+      if (messageSize == -1) {
+         try {
+            messageSize = getPagedMessage().getPersistentSize();
+         } catch (Throwable e) {
+            ActiveMQServerLogger.LOGGER.errorCalculatePersistentSize(e);
+         }
+      }
+      return messageSize;
    }
 
 }

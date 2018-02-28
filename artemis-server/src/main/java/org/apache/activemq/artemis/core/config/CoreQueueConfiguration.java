@@ -18,6 +18,9 @@ package org.apache.activemq.artemis.core.config;
 
 import java.io.Serializable;
 
+import org.apache.activemq.artemis.api.config.ActiveMQDefaultConfiguration;
+import org.apache.activemq.artemis.api.core.RoutingType;
+
 public class CoreQueueConfiguration implements Serializable {
 
    private static final long serialVersionUID = 650404974977490254L;
@@ -29,6 +32,18 @@ public class CoreQueueConfiguration implements Serializable {
    private String filterString = null;
 
    private boolean durable = true;
+
+   private String user = null;
+
+   private Boolean exclusive;
+
+   private Boolean lastValue;
+
+   private Integer maxConsumers = ActiveMQDefaultConfiguration.getDefaultMaxQueueConsumers();
+
+   private Boolean purgeOnNoConsumers = ActiveMQDefaultConfiguration.getDefaultPurgeOnNoConsumers();
+
+   private RoutingType routingType = ActiveMQDefaultConfiguration.getDefaultRoutingType();
 
    public CoreQueueConfiguration() {
    }
@@ -47,6 +62,18 @@ public class CoreQueueConfiguration implements Serializable {
 
    public boolean isDurable() {
       return durable;
+   }
+
+   public String getUser() {
+      return user;
+   }
+
+   public Boolean isExclusive() {
+      return exclusive;
+   }
+
+   public Boolean isLastValue() {
+      return lastValue;
    }
 
    /**
@@ -81,6 +108,57 @@ public class CoreQueueConfiguration implements Serializable {
       return this;
    }
 
+   /**
+    * @param maxConsumers for this queue, default is -1 (unlimited)
+    */
+   public CoreQueueConfiguration setMaxConsumers(Integer maxConsumers) {
+      this.maxConsumers = maxConsumers;
+      return this;
+   }
+
+   /**
+    * @param purgeOnNoConsumers delete this queue when consumer count reaches 0, default is false
+    */
+   public CoreQueueConfiguration setPurgeOnNoConsumers(Boolean purgeOnNoConsumers) {
+      this.purgeOnNoConsumers = purgeOnNoConsumers;
+      return this;
+   }
+
+   /**
+    * @param user the use you want to associate with creating the queue
+    */
+   public CoreQueueConfiguration setUser(String user) {
+      this.user = user;
+      return this;
+   }
+
+   public CoreQueueConfiguration setExclusive(Boolean exclusive) {
+      this.exclusive = exclusive;
+      return this;
+   }
+
+   public CoreQueueConfiguration setLastValue(Boolean lastValue) {
+      this.lastValue = lastValue;
+      return this;
+   }
+
+   public boolean getPurgeOnNoConsumers() {
+      return purgeOnNoConsumers;
+   }
+
+   public int getMaxConsumers() {
+      return maxConsumers;
+   }
+
+   public RoutingType getRoutingType() {
+      return routingType;
+   }
+
+   public CoreQueueConfiguration setRoutingType(RoutingType routingType) {
+      this.routingType = routingType;
+      return this;
+   }
+
    @Override
    public int hashCode() {
       final int prime = 31;
@@ -89,6 +167,10 @@ public class CoreQueueConfiguration implements Serializable {
       result = prime * result + (durable ? 1231 : 1237);
       result = prime * result + ((filterString == null) ? 0 : filterString.hashCode());
       result = prime * result + ((name == null) ? 0 : name.hashCode());
+      result = prime * result + ((maxConsumers == null) ? 0 : maxConsumers.hashCode());
+      result = prime * result + ((purgeOnNoConsumers == null) ? 0 : purgeOnNoConsumers.hashCode());
+      result = prime * result + ((exclusive == null) ? 0 : exclusive.hashCode());
+      result = prime * result + ((lastValue == null) ? 0 : lastValue.hashCode());
       return result;
    }
 
@@ -104,23 +186,43 @@ public class CoreQueueConfiguration implements Serializable {
       if (address == null) {
          if (other.address != null)
             return false;
-      }
-      else if (!address.equals(other.address))
+      } else if (!address.equals(other.address))
          return false;
       if (durable != other.durable)
          return false;
       if (filterString == null) {
          if (other.filterString != null)
             return false;
-      }
-      else if (!filterString.equals(other.filterString))
+      } else if (!filterString.equals(other.filterString))
          return false;
       if (name == null) {
          if (other.name != null)
             return false;
-      }
-      else if (!name.equals(other.name))
+      } else if (!name.equals(other.name))
          return false;
+      if (maxConsumers == null) {
+         if (other.maxConsumers != null)
+            return false;
+      } else if (!maxConsumers.equals(other.maxConsumers))
+         return false;
+      if (purgeOnNoConsumers == null) {
+         if (other.purgeOnNoConsumers != null)
+            return false;
+      } else if (!purgeOnNoConsumers.equals(other.purgeOnNoConsumers)) {
+         return false;
+      }
+      if (exclusive == null) {
+         if (other.exclusive != null)
+            return false;
+      } else if (!exclusive.equals(other.exclusive)) {
+         return false;
+      }
+      if (lastValue == null) {
+         if (other.lastValue != null)
+            return false;
+      } else if (!lastValue.equals(other.lastValue)) {
+         return false;
+      }
       return true;
    }
 }

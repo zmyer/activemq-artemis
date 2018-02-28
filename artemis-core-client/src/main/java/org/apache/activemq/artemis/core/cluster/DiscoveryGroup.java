@@ -35,7 +35,7 @@ import org.apache.activemq.artemis.core.client.ActiveMQClientLogger;
 import org.apache.activemq.artemis.core.server.ActiveMQComponent;
 import org.apache.activemq.artemis.core.server.management.Notification;
 import org.apache.activemq.artemis.core.server.management.NotificationService;
-import org.apache.activemq.artemis.utils.TypedProperties;
+import org.apache.activemq.artemis.utils.collections.TypedProperties;
 import org.jboss.logging.Logger;
 
 /**
@@ -150,8 +150,7 @@ public final class DiscoveryGroup implements ActiveMQComponent {
 
       try {
          endpoint.close(false);
-      }
-      catch (Exception e1) {
+      } catch (Exception e1) {
          ActiveMQClientLogger.LOGGER.errorStoppingDiscoveryBroadcastEndpoint(endpoint, e1);
       }
 
@@ -163,8 +162,7 @@ public final class DiscoveryGroup implements ActiveMQComponent {
                ActiveMQClientLogger.LOGGER.timedOutStoppingDiscovery();
             }
          }
-      }
-      catch (InterruptedException e) {
+      } catch (InterruptedException e) {
          throw new ActiveMQInterruptedException(e);
       }
 
@@ -176,8 +174,7 @@ public final class DiscoveryGroup implements ActiveMQComponent {
          Notification notification = new Notification(nodeID, CoreNotificationType.DISCOVERY_GROUP_STOPPED, props);
          try {
             notificationService.sendNotification(notification);
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             ActiveMQClientLogger.LOGGER.errorSendingNotifOnDiscoveryStop(e);
          }
       }
@@ -207,8 +204,7 @@ public final class DiscoveryGroup implements ActiveMQComponent {
          while (started && !received && (toWait > 0 || timeout == 0)) {
             try {
                waitLock.wait(toWait);
-            }
-            catch (InterruptedException e) {
+            } catch (InterruptedException e) {
                throw new ActiveMQInterruptedException(e);
             }
 
@@ -238,8 +234,7 @@ public final class DiscoveryGroup implements ActiveMQComponent {
 
       if (currentUniqueID == null) {
          uniqueIDMap.put(originatingNodeID, uniqueID);
-      }
-      else {
+      } else {
          if (!currentUniqueID.equals(uniqueID)) {
             ActiveMQClientLogger.LOGGER.multipleServersBroadcastingSameNode(originatingNodeID);
             uniqueIDMap.put(originatingNodeID, uniqueID);
@@ -260,18 +255,14 @@ public final class DiscoveryGroup implements ActiveMQComponent {
                   data = endpoint.receiveBroadcast();
                   if (data == null) {
                      if (started) {
-                        // This is totally unexpected, so I'm not even bothering on creating
-                        // a log entry for that
-                        ActiveMQClientLogger.LOGGER.warn("Unexpected null data received from DiscoveryEndpoint");
+                        ActiveMQClientLogger.LOGGER.unexpectedNullDataReceived();
                      }
                      break;
                   }
-               }
-               catch (Exception e) {
+               } catch (Exception e) {
                   if (!started) {
                      return;
-                  }
-                  else {
+                  } else {
                      ActiveMQClientLogger.LOGGER.errorReceivingPacketInDiscovery(e);
                   }
                }
@@ -332,8 +323,7 @@ public final class DiscoveryGroup implements ActiveMQComponent {
 
                   waitLock.notifyAll();
                }
-            }
-            catch (Throwable e) {
+            } catch (Throwable e) {
                ActiveMQClientLogger.LOGGER.failedToReceiveDatagramInDiscovery(e);
             }
          }
@@ -357,8 +347,7 @@ public final class DiscoveryGroup implements ActiveMQComponent {
       for (DiscoveryListener listener : listeners) {
          try {
             listener.connectorsChanged(getDiscoveryEntries());
-         }
-         catch (Throwable t) {
+         } catch (Throwable t) {
             // Catch it so exception doesn't prevent other listeners from running
             ActiveMQClientLogger.LOGGER.failedToCallListenerInDiscovery(t);
          }

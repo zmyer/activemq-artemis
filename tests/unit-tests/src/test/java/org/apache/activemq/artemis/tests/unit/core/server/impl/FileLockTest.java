@@ -18,9 +18,7 @@ package org.apache.activemq.artemis.tests.unit.core.server.impl;
 
 import java.io.File;
 
-import org.apache.activemq.artemis.core.server.impl.AIOFileLockNodeManager;
 import org.apache.activemq.artemis.core.server.impl.FileLockNodeManager;
-import org.apache.activemq.artemis.jlibaio.LibaioContext;
 import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.junit.Before;
 import org.junit.Test;
@@ -41,14 +39,6 @@ public class FileLockTest extends ActiveMQTestBase {
 
    }
 
-   @Test
-   public void testAIOLock() throws Exception {
-      if (LibaioContext.isLoaded()) {
-         doTestLock(new AIOFileLockNodeManager(getTestDirfile(), false), new AIOFileLockNodeManager(getTestDirfile(), false));
-      }
-
-   }
-
    public void doTestLock(final FileLockNodeManager lockManager1,
                           final FileLockNodeManager lockManager2) throws Exception {
       lockManager1.start();
@@ -61,8 +51,7 @@ public class FileLockTest extends ActiveMQTestBase {
          public void run() {
             try {
                lockManager2.startLiveNode();
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                e.printStackTrace();
             }
          }

@@ -16,15 +16,15 @@
  */
 package org.apache.activemq.artemis.tests.util;
 
-import org.junit.Test;
-
 import java.util.concurrent.CountDownLatch;
 
-import org.junit.Assert;
-
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.utils.DataConstants;
 import org.apache.activemq.artemis.utils.RandomUtil;
+import org.junit.Assert;
+import org.junit.Test;
 
 public class SimpleStringTest extends Assert {
 
@@ -122,32 +122,28 @@ public class SimpleStringTest extends Assert {
       try {
          s1.charAt(-1);
          Assert.fail("Should throw exception");
-      }
-      catch (IndexOutOfBoundsException e) {
+      } catch (IndexOutOfBoundsException e) {
          // OK
       }
 
       try {
          s1.charAt(-2);
          Assert.fail("Should throw exception");
-      }
-      catch (IndexOutOfBoundsException e) {
+      } catch (IndexOutOfBoundsException e) {
          // OK
       }
 
       try {
          s1.charAt(s.length());
          Assert.fail("Should throw exception");
-      }
-      catch (IndexOutOfBoundsException e) {
+      } catch (IndexOutOfBoundsException e) {
          // OK
       }
 
       try {
          s1.charAt(s.length() + 1);
          Assert.fail("Should throw exception");
-      }
-      catch (IndexOutOfBoundsException e) {
+      } catch (IndexOutOfBoundsException e) {
          // OK
       }
 
@@ -169,40 +165,35 @@ public class SimpleStringTest extends Assert {
       try {
          s1.subSequence(-1, 2);
          Assert.fail("Should throw exception");
-      }
-      catch (IndexOutOfBoundsException e) {
+      } catch (IndexOutOfBoundsException e) {
          // OK
       }
 
       try {
          s1.subSequence(-4, -2);
          Assert.fail("Should throw exception");
-      }
-      catch (IndexOutOfBoundsException e) {
+      } catch (IndexOutOfBoundsException e) {
          // OK
       }
 
       try {
          s1.subSequence(0, s1.length() + 1);
          Assert.fail("Should throw exception");
-      }
-      catch (IndexOutOfBoundsException e) {
+      } catch (IndexOutOfBoundsException e) {
          // OK
       }
 
       try {
          s1.subSequence(0, s1.length() + 2);
          Assert.fail("Should throw exception");
-      }
-      catch (IndexOutOfBoundsException e) {
+      } catch (IndexOutOfBoundsException e) {
          // OK
       }
 
       try {
          s1.subSequence(5, 1);
          Assert.fail("Should throw exception");
-      }
-      catch (IndexOutOfBoundsException e) {
+      } catch (IndexOutOfBoundsException e) {
          // OK
       }
    }
@@ -379,8 +370,7 @@ public class SimpleStringTest extends Assert {
                   if (newhash != initialhash) {
                      failed = true;
                   }
-               }
-               catch (Exception e) {
+               } catch (Exception e) {
                   e.printStackTrace();
                   failed = true;
                }
@@ -405,5 +395,52 @@ public class SimpleStringTest extends Assert {
          }
       }
    }
+
+   @Test
+   public void testToSimpleStringPoolStringArgument() throws Exception {
+      final String s = "pooled";
+      final SimpleString ss = SimpleString.toSimpleString(s);
+      final String s1 = ss.toString();
+      Assert.assertSame("SimpleString::toSimpleString is not pooling the given String", s, s1);
+   }
+
+   @Test
+   public void testByteBufSimpleStringPool() {
+      final int capacity = 8;
+      final int chars = Integer.toString(capacity).length();
+      final SimpleString.ByteBufSimpleStringPool pool = new SimpleString.ByteBufSimpleStringPool(capacity, chars);
+      final int bytes = new SimpleString(Integer.toString(capacity)).sizeof();
+      final ByteBuf bb = Unpooled.buffer(bytes, bytes);
+      for (int i = 0; i < capacity; i++) {
+         final SimpleString s = new SimpleString(Integer.toString(i));
+         bb.resetWriterIndex();
+         SimpleString.writeSimpleString(bb, s);
+         bb.resetReaderIndex();
+         final SimpleString expectedPooled = pool.getOrCreate(bb);
+         bb.resetReaderIndex();
+         Assert.assertSame(expectedPooled, pool.getOrCreate(bb));
+      }
+   }
+
+   @Test
+   public void testByteBufSimpleStringPoolTooLong() {
+      final SimpleString tooLong = new SimpleString("aa");
+      final ByteBuf bb = Unpooled.buffer(tooLong.sizeof(), tooLong.sizeof());
+      SimpleString.writeSimpleString(bb, tooLong);
+      final SimpleString.ByteBufSimpleStringPool pool = new SimpleString.ByteBufSimpleStringPool(1, tooLong.length() - 1);
+      Assert.assertNotSame(pool.getOrCreate(bb), pool.getOrCreate(bb.resetReaderIndex()));
+   }
+
+   @Test
+   public void testStringSimpleStringPool() throws Exception {
+      final int capacity = 8;
+      final SimpleString.StringSimpleStringPool pool = new SimpleString.StringSimpleStringPool(capacity);
+      for (int i = 0; i < capacity; i++) {
+         final String s = Integer.toString(i);
+         final SimpleString expectedPooled = pool.getOrCreate(s);
+         Assert.assertSame(expectedPooled, pool.getOrCreate(s));
+      }
+   }
+
 
 }

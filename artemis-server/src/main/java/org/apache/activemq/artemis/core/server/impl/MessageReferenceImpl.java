@@ -18,16 +18,17 @@ package org.apache.activemq.artemis.core.server.impl;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.apache.activemq.artemis.api.core.ActiveMQException;
+import org.apache.activemq.artemis.api.core.Message;
 import org.apache.activemq.artemis.core.server.MessageReference;
 import org.apache.activemq.artemis.core.server.Queue;
-import org.apache.activemq.artemis.core.server.ServerMessage;
 import org.apache.activemq.artemis.core.transaction.Transaction;
-import org.apache.activemq.artemis.utils.MemorySize;
+import org.apache.activemq.artemis.utils.collections.LinkedListImpl;
 
 /**
  * Implementation of a MessageReference
  */
-public class MessageReferenceImpl implements MessageReference {
+public class MessageReferenceImpl extends LinkedListImpl.Node<MessageReferenceImpl> implements MessageReference {
 
    private final AtomicInteger deliveryCount = new AtomicInteger();
 
@@ -35,7 +36,7 @@ public class MessageReferenceImpl implements MessageReference {
 
    private volatile long scheduledDeliveryTime;
 
-   private final ServerMessage message;
+   private final Message message;
 
    private final Queue queue;
 
@@ -47,21 +48,7 @@ public class MessageReferenceImpl implements MessageReference {
 
    // Static --------------------------------------------------------
 
-   private static final int memoryOffset;
-
-   static {
-      // This is an estimate of how much memory a ServerMessageImpl takes up, exclusing body and properties
-      // Note, it is only an estimate, it's not possible to be entirely sure with Java
-      // This figure is calculated using the test utilities in org.apache.activemq.tests.unit.util.sizeof
-      // The value is somewhat higher on 64 bit architectures, probably due to different alignment
-
-      if (MemorySize.is64bitArch()) {
-         memoryOffset = 48;
-      }
-      else {
-         memoryOffset = 32;
-      }
-   }
+   private static final int memoryOffset = 64;
 
    // Constructors --------------------------------------------------
 
@@ -81,7 +68,7 @@ public class MessageReferenceImpl implements MessageReference {
       this.queue = queue;
    }
 
-   protected MessageReferenceImpl(final ServerMessage message, final Queue queue) {
+   public MessageReferenceImpl(final Message message, final Queue queue) {
       this.message = message;
 
       this.queue = queue;
@@ -156,8 +143,13 @@ public class MessageReferenceImpl implements MessageReference {
    }
 
    @Override
-   public ServerMessage getMessage() {
+   public Message getMessage() {
       return message;
+   }
+
+   @Override
+   public long getMessageID() {
+      return getMessage().getMessageID();
    }
 
    @Override
@@ -167,7 +159,7 @@ public class MessageReferenceImpl implements MessageReference {
 
    @Override
    public void handled() {
-      queue.referenceHandled();
+      queue.referenceHandled(this);
    }
 
    @Override
@@ -199,8 +191,7 @@ public class MessageReferenceImpl implements MessageReference {
    public void acknowledge(Transaction tx, AckReason reason) throws Exception {
       if (tx == null) {
          getQueue().acknowledge(this, reason);
-      }
-      else {
+      } else {
          getQueue().acknowledge(tx, this, reason);
       }
    }
@@ -248,5 +239,10 @@ public class MessageReferenceImpl implements MessageReference {
    @Override
    public int hashCode() {
       return this.getMessage().hashCode();
+   }
+
+   @Override
+   public long getPersistentSize() throws ActiveMQException {
+      return this.getMessage().getPersistentSize();
    }
 }

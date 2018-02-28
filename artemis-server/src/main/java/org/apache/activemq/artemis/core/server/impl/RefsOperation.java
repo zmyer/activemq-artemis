@@ -22,12 +22,13 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.activemq.artemis.api.core.Message;
 import org.apache.activemq.artemis.core.paging.cursor.NonExistentPage;
+import org.apache.activemq.artemis.core.paging.cursor.PagedReference;
 import org.apache.activemq.artemis.core.persistence.StorageManager;
 import org.apache.activemq.artemis.core.server.ActiveMQServerLogger;
 import org.apache.activemq.artemis.core.server.MessageReference;
 import org.apache.activemq.artemis.core.server.Queue;
-import org.apache.activemq.artemis.core.server.ServerMessage;
 import org.apache.activemq.artemis.core.transaction.Transaction;
 import org.apache.activemq.artemis.core.transaction.TransactionOperationAbstract;
 import org.apache.activemq.artemis.core.transaction.impl.TransactionImpl;
@@ -89,20 +90,8 @@ public class RefsOperation extends TransactionOperationAbstract {
             if (ref.isAlreadyAcked()) {
                ackedRefs.add(ref);
             }
-            // if ignore redelivery check, we just perform redelivery straight
-            if (ref.getQueue().checkRedelivery(ref, timeBase, ignoreRedeliveryCheck)) {
-               LinkedList<MessageReference> toCancel = queueMap.get(ref.getQueue());
-
-               if (toCancel == null) {
-                  toCancel = new LinkedList<>();
-
-                  queueMap.put((QueueImpl) ref.getQueue(), toCancel);
-               }
-
-               toCancel.addFirst(ref);
-            }
-         }
-         catch (Exception e) {
+            rollbackRedelivery(tx, ref, timeBase, queueMap);
+         } catch (Exception e) {
             ActiveMQServerLogger.LOGGER.errorCheckingDLQ(e);
          }
       }
@@ -123,7 +112,7 @@ public class RefsOperation extends TransactionOperationAbstract {
          try {
             Transaction ackedTX = new TransactionImpl(storageManager);
             for (MessageReference ref : ackedRefs) {
-               ServerMessage message = ref.getMessage();
+               Message message = ref.getMessage();
                if (message.isDurable()) {
                   int durableRefCount = message.incrementDurableRefCount();
 
@@ -140,10 +129,24 @@ public class RefsOperation extends TransactionOperationAbstract {
                message.incrementRefCount();
             }
             ackedTX.commit(true);
+         } catch (Exception e) {
+            ActiveMQServerLogger.LOGGER.failedToProcessMessageReferenceAfterRollback(e);
          }
-         catch (Exception e) {
-            ActiveMQServerLogger.LOGGER.warn(e.getMessage(), e);
+      }
+   }
+
+   protected void rollbackRedelivery(Transaction tx, MessageReference ref, long timeBase, Map<QueueImpl, LinkedList<MessageReference>> queueMap) throws Exception {
+      // if ignore redelivery check, we just perform redelivery straight
+      if (ref.getQueue().checkRedelivery(ref, timeBase, ignoreRedeliveryCheck)) {
+         LinkedList<MessageReference> toCancel = queueMap.get(ref.getQueue());
+
+         if (toCancel == null) {
+            toCancel = new LinkedList<>();
+
+            queueMap.put((QueueImpl) ref.getQueue(), toCancel);
          }
+
+         toCancel.addFirst(ref);
       }
    }
 
@@ -157,7 +160,9 @@ public class RefsOperation extends TransactionOperationAbstract {
 
       if (pagedMessagesToPostACK != null) {
          for (MessageReference refmsg : pagedMessagesToPostACK) {
-            decrementRefCount(refmsg);
+            if (((PagedReference) refmsg).isLargeMessage()) {
+               decrementRefCount(refmsg);
+            }
          }
       }
    }
@@ -165,13 +170,11 @@ public class RefsOperation extends TransactionOperationAbstract {
    private void decrementRefCount(MessageReference refmsg) {
       try {
          refmsg.getMessage().decrementRefCount();
-      }
-      catch (NonExistentPage e) {
+      } catch (NonExistentPage e) {
          // This could happen on after commit, since the page could be deleted on file earlier by another thread
          logger.debug(e);
-      }
-      catch (Exception e) {
-         ActiveMQServerLogger.LOGGER.warn(e.getMessage(), e);
+      } catch (Exception e) {
+         ActiveMQServerLogger.LOGGER.failedToDecrementMessageReferenceCount(e);
       }
    }
 

@@ -21,15 +21,21 @@ import javax.transaction.xa.XAResource;
 import javax.transaction.xa.Xid;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
 
+import org.apache.activemq.artemis.api.config.ActiveMQDefaultConfiguration;
 import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
 import org.apache.activemq.artemis.api.core.ActiveMQException;
 import org.apache.activemq.artemis.api.core.ActiveMQExceptionType;
+import org.apache.activemq.artemis.api.core.ICoreMessage;
 import org.apache.activemq.artemis.api.core.Message;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.api.core.client.ClientConsumer;
 import org.apache.activemq.artemis.api.core.client.ClientSession;
@@ -43,16 +49,18 @@ import org.apache.activemq.artemis.core.client.impl.ClientLargeMessageInternal;
 import org.apache.activemq.artemis.core.client.impl.ClientMessageInternal;
 import org.apache.activemq.artemis.core.client.impl.ClientProducerCreditsImpl;
 import org.apache.activemq.artemis.core.client.impl.ClientSessionImpl;
-import org.apache.activemq.artemis.core.message.impl.MessageInternal;
+import org.apache.activemq.artemis.core.message.impl.CoreMessage;
 import org.apache.activemq.artemis.core.protocol.core.Channel;
 import org.apache.activemq.artemis.core.protocol.core.ChannelHandler;
 import org.apache.activemq.artemis.core.protocol.core.CommandConfirmationHandler;
 import org.apache.activemq.artemis.core.protocol.core.CoreRemotingConnection;
 import org.apache.activemq.artemis.core.protocol.core.Packet;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ActiveMQExceptionMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.CreateAddressMessage;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.CreateQueueMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.CreateQueueMessage_V2;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.CreateSessionMessage;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.CreateSharedQueueMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.CreateSharedQueueMessage_V2;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.DisconnectConsumerMessage;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.DisconnectConsumerWithKillMessage;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReattachSessionMessage;
@@ -61,7 +69,10 @@ import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.RollbackMe
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionAcknowledgeMessage;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionAddMetaDataMessageV2;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionBindingQueryMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionBindingQueryResponseMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionBindingQueryResponseMessage_V2;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionBindingQueryResponseMessage_V3;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionBindingQueryResponseMessage_V4;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionCloseMessage;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionConsumerCloseMessage;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionConsumerFlowCreditMessage;
@@ -73,7 +84,7 @@ import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionInd
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionProducerCreditsFailMessage;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionProducerCreditsMessage;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionQueueQueryMessage;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionQueueQueryResponseMessage_V2;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionQueueQueryResponseMessage;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionReceiveContinuationMessage;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionReceiveLargeMessage;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionReceiveMessage;
@@ -81,6 +92,7 @@ import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionReq
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionSendContinuationMessage;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionSendLargeMessage;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionSendMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionSendMessage_1X;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionUniqueAddMetaDataMessage;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionXAAfterFailedMessage;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionXACommitMessage;
@@ -101,7 +113,6 @@ import org.apache.activemq.artemis.spi.core.remoting.Connection;
 import org.apache.activemq.artemis.spi.core.remoting.ReadyListener;
 import org.apache.activemq.artemis.spi.core.remoting.SessionContext;
 import org.apache.activemq.artemis.utils.TokenBucketLimiterImpl;
-import org.apache.activemq.artemis.utils.VersionLoader;
 import org.jboss.logging.Logger;
 
 import static org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl.DISCONNECT_CONSUMER;
@@ -132,7 +143,6 @@ public class ActiveMQSessionContext extends SessionContext {
    public void resetName(String name) {
       this.name = name;
    }
-
 
    protected int getConfirmationWindow() {
       return confirmationWindow;
@@ -178,8 +188,7 @@ public class ActiveMQSessionContext extends SessionContext {
          if (packet.getType() == PacketImpl.SESS_SEND) {
             SessionSendMessage ssm = (SessionSendMessage) packet;
             callSendAck(ssm.getHandler(), ssm.getMessage());
-         }
-         else if (packet.getType() == PacketImpl.SESS_SEND_CONTINUATION) {
+         } else if (packet.getType() == PacketImpl.SESS_SEND_CONTINUATION) {
             SessionSendContinuationMessage scm = (SessionSendContinuationMessage) packet;
             if (!scm.isContinues()) {
                callSendAck(scm.getHandler(), scm.getMessage());
@@ -190,8 +199,7 @@ public class ActiveMQSessionContext extends SessionContext {
       private void callSendAck(SendAcknowledgementHandler handler, final Message message) {
          if (handler != null) {
             handler.sendAcknowledged(message);
-         }
-         else if (sendAckHandler != null) {
+         } else if (sendAckHandler != null) {
             sendAckHandler.sendAcknowledged(message);
          }
       }
@@ -239,9 +247,31 @@ public class ActiveMQSessionContext extends SessionContext {
    @Override
    public void createSharedQueue(SimpleString address,
                                  SimpleString queueName,
+                                 RoutingType routingType,
+                                 SimpleString filterString,
+                                 boolean durable,
+                                 Integer maxConsumers,
+                                 Boolean purgeOnNoConsumers,
+                                 Boolean exclusive,
+                                 Boolean lastValue) throws ActiveMQException {
+      sessionChannel.sendBlocking(new CreateSharedQueueMessage_V2(address, queueName, routingType, filterString, durable, maxConsumers, purgeOnNoConsumers, exclusive, lastValue, true), PacketImpl.NULL_RESPONSE);
+   }
+
+   @Override
+   public void createSharedQueue(SimpleString address,
+                                 SimpleString queueName,
+                                 RoutingType routingType,
                                  SimpleString filterString,
                                  boolean durable) throws ActiveMQException {
-      sessionChannel.sendBlocking(new CreateSharedQueueMessage(address, queueName, filterString, durable, true), PacketImpl.NULL_RESPONSE);
+      createSharedQueue(address, queueName, routingType, filterString, durable, null, null, null, null);
+   }
+
+   @Override
+   public void createSharedQueue(SimpleString address,
+                                 SimpleString queueName,
+                                 SimpleString filterString,
+                                 boolean durable) throws ActiveMQException {
+      createSharedQueue(address, queueName, null, filterString, durable);
    }
 
    @Override
@@ -251,8 +281,14 @@ public class ActiveMQSessionContext extends SessionContext {
 
    @Override
    public ClientSession.QueueQuery queueQuery(final SimpleString queueName) throws ActiveMQException {
-      SessionQueueQueryMessage request = new SessionQueueQueryMessage(queueName);
-      SessionQueueQueryResponseMessage_V2 response = (SessionQueueQueryResponseMessage_V2) sessionChannel.sendBlocking(request, PacketImpl.SESS_QUEUEQUERY_RESP_V2);
+      SessionQueueQueryResponseMessage response;
+      if (sessionChannel.getConnection().isVersionBeforeAddressChange()) {
+         SessionQueueQueryMessage request = new SessionQueueQueryMessage(queueName);
+         response = (SessionQueueQueryResponseMessage) sessionChannel.sendBlocking(request, PacketImpl.SESS_QUEUEQUERY_RESP_V2);
+      } else {
+         SessionQueueQueryMessage request = new SessionQueueQueryMessage(queueName);
+         response = (SessionQueueQueryResponseMessage) sessionChannel.sendBlocking(request, PacketImpl.SESS_QUEUEQUERY_RESP_V3);
+      }
 
       return response.toQueueQuery();
    }
@@ -277,7 +313,13 @@ public class ActiveMQSessionContext extends SessionContext {
 
       SessionCreateConsumerMessage request = new SessionCreateConsumerMessage(consumerID, queueName, filterString, browseOnly, true);
 
-      SessionQueueQueryResponseMessage_V2 queueInfo = (SessionQueueQueryResponseMessage_V2) sessionChannel.sendBlocking(request, PacketImpl.SESS_QUEUEQUERY_RESP_V2);
+      SessionQueueQueryResponseMessage queueInfo;
+
+      if (sessionChannel.getConnection().isVersionBeforeAddressChange()) {
+         queueInfo = (SessionQueueQueryResponseMessage) sessionChannel.sendBlocking(request, PacketImpl.SESS_QUEUEQUERY_RESP_V2);
+      } else {
+         queueInfo = (SessionQueueQueryResponseMessage) sessionChannel.sendBlocking(request, PacketImpl.SESS_QUEUEQUERY_RESP_V3);
+      }
 
       // The actual windows size that gets used is determined by the user since
       // could be overridden on the queue settings
@@ -293,9 +335,23 @@ public class ActiveMQSessionContext extends SessionContext {
 
    @Override
    public ClientSession.AddressQuery addressQuery(final SimpleString address) throws ActiveMQException {
-      SessionBindingQueryResponseMessage_V3 response = (SessionBindingQueryResponseMessage_V3) sessionChannel.sendBlocking(new SessionBindingQueryMessage(address), PacketImpl.SESS_BINDINGQUERY_RESP_V3);
-
-      return new AddressQueryImpl(response.isExists(), response.getQueueNames(), response.isAutoCreateJmsQueues(), response.isAutoCreateJmsTopics());
+      if (sessionChannel.supports(PacketImpl.SESS_BINDINGQUERY_RESP_V4, getServerVersion())) {
+         Packet packet = sessionChannel.sendBlocking(new SessionBindingQueryMessage(address), PacketImpl.SESS_BINDINGQUERY_RESP_V4);
+         SessionBindingQueryResponseMessage_V4 response = (SessionBindingQueryResponseMessage_V4) packet;
+         return new AddressQueryImpl(response.isExists(), response.getQueueNames(), response.isAutoCreateQueues(), response.isAutoCreateAddresses(), response.isDefaultPurgeOnNoConsumers(), response.getDefaultMaxConsumers(), response.isDefaultExclusive(), response.isDefaultLastValue());
+      } else if (sessionChannel.supports(PacketImpl.SESS_BINDINGQUERY_RESP_V3, getServerVersion())) {
+         Packet packet = sessionChannel.sendBlocking(new SessionBindingQueryMessage(address), PacketImpl.SESS_BINDINGQUERY_RESP_V3);
+         SessionBindingQueryResponseMessage_V3 response = (SessionBindingQueryResponseMessage_V3) packet;
+         return new AddressQueryImpl(response.isExists(), response.getQueueNames(), response.isAutoCreateQueues(), response.isAutoCreateAddresses(), ActiveMQDefaultConfiguration.getDefaultPurgeOnNoConsumers(), ActiveMQDefaultConfiguration.getDefaultMaxQueueConsumers(), null, null);
+      } else if (sessionChannel.supports(PacketImpl.SESS_BINDINGQUERY_RESP_V2, getServerVersion())) {
+         Packet packet = sessionChannel.sendBlocking(new SessionBindingQueryMessage(address), PacketImpl.SESS_BINDINGQUERY_RESP_V2);
+         SessionBindingQueryResponseMessage_V2 response = (SessionBindingQueryResponseMessage_V2) packet;
+         return new AddressQueryImpl(response.isExists(), response.getQueueNames(), response.isAutoCreateQueues(), false, ActiveMQDefaultConfiguration.getDefaultPurgeOnNoConsumers(), ActiveMQDefaultConfiguration.getDefaultMaxQueueConsumers(), null, null);
+      } else {
+         Packet packet = sessionChannel.sendBlocking(new SessionBindingQueryMessage(address), PacketImpl.SESS_BINDINGQUERY_RESP);
+         SessionBindingQueryResponseMessage response = (SessionBindingQueryResponseMessage) packet;
+         return new AddressQueryImpl(response.isExists(), response.getQueueNames(), false, false, ActiveMQDefaultConfiguration.getDefaultPurgeOnNoConsumers(), ActiveMQDefaultConfiguration.getDefaultMaxQueueConsumers(), null, null);
+      }
    }
 
    @Override
@@ -317,6 +373,15 @@ public class ActiveMQSessionContext extends SessionContext {
    @Override
    public void simpleCommit() throws ActiveMQException {
       sessionChannel.sendBlocking(new PacketImpl(PacketImpl.SESS_COMMIT), PacketImpl.NULL_RESPONSE);
+   }
+
+   @Override
+   public void simpleCommit(boolean block) throws ActiveMQException {
+      if (block) {
+         sessionChannel.sendBlocking(new PacketImpl(PacketImpl.SESS_COMMIT), PacketImpl.NULL_RESPONSE);
+      } else {
+         sessionChannel.sendBatched(new PacketImpl(PacketImpl.SESS_COMMIT));
+      }
    }
 
    @Override
@@ -363,14 +428,11 @@ public class ActiveMQSessionContext extends SessionContext {
       Packet packet;
       if (flags == XAResource.TMSUSPEND) {
          packet = new PacketImpl(PacketImpl.SESS_XA_SUSPEND);
-      }
-      else if (flags == XAResource.TMSUCCESS) {
+      } else if (flags == XAResource.TMSUCCESS) {
          packet = new SessionXAEndMessage(xid, false);
-      }
-      else if (flags == XAResource.TMFAIL) {
+      } else if (flags == XAResource.TMFAIL) {
          packet = new SessionXAEndMessage(xid, true);
-      }
-      else {
+      } else {
          throw new XAException(XAException.XAER_INVAL);
       }
 
@@ -397,70 +459,57 @@ public class ActiveMQSessionContext extends SessionContext {
    }
 
    @Override
-   public int getCreditsOnSendingFull(MessageInternal msgI) {
+   public int getCreditsOnSendingFull(Message msgI) {
       return msgI.getEncodeSize();
    }
 
    @Override
-   public void sendFullMessage(MessageInternal msgI,
+   public void sendFullMessage(ICoreMessage msgI,
                                boolean sendBlocking,
                                SendAcknowledgementHandler handler,
                                SimpleString defaultAddress) throws ActiveMQException {
-      SessionSendMessage packet = new SessionSendMessage(msgI, sendBlocking, handler);
+      SessionSendMessage packet;
+      if (sessionChannel.getConnection().isVersionBeforeAddressChange()) {
+         packet = new SessionSendMessage_1X(msgI, sendBlocking, handler);
+      } else {
+         packet = new SessionSendMessage(msgI, sendBlocking, handler);
+      }
 
       if (sendBlocking) {
          sessionChannel.sendBlocking(packet, PacketImpl.NULL_RESPONSE);
-      }
-      else {
+      } else {
          sessionChannel.sendBatched(packet);
       }
    }
 
    @Override
-   public int sendInitialChunkOnLargeMessage(MessageInternal msgI) throws ActiveMQException {
+   public int sendInitialChunkOnLargeMessage(Message msgI) throws ActiveMQException {
       SessionSendLargeMessage initialChunk = new SessionSendLargeMessage(msgI);
 
       sessionChannel.send(initialChunk);
 
-      return msgI.getHeadersAndPropertiesEncodeSize();
+      return ((CoreMessage)msgI).getHeadersAndPropertiesEncodeSize();
    }
 
    @Override
-   public int sendLargeMessageChunk(MessageInternal msgI,
+   public int sendLargeMessageChunk(Message msgI,
                                     long messageBodySize,
                                     boolean sendBlocking,
                                     boolean lastChunk,
                                     byte[] chunk,
                                     int reconnectID,
                                     SendAcknowledgementHandler messageHandler) throws ActiveMQException {
-      final boolean requiresResponse = lastChunk && sendBlocking;
-      final SessionSendContinuationMessage chunkPacket = new SessionSendContinuationMessage(msgI, chunk, !lastChunk, requiresResponse, messageBodySize, messageHandler);
-
-      if (requiresResponse) {
-         // When sending it blocking, only the last chunk will be blocking.
-         sessionChannel.sendBlocking(chunkPacket, reconnectID, PacketImpl.NULL_RESPONSE);
-      }
-      else {
-         sessionChannel.send(chunkPacket, reconnectID);
-      }
-
-      return chunkPacket.getPacketSize();
+      return sendSessionSendContinuationMessage(this.sessionChannel, msgI, messageBodySize, sendBlocking, lastChunk, chunk, messageHandler);
    }
 
    @Override
-   public int sendServerLargeMessageChunk(MessageInternal msgI, long messageBodySize, boolean sendBlocking, boolean lastChunk, byte[] chunk, SendAcknowledgementHandler messageHandler) throws ActiveMQException {
-      final boolean requiresResponse = lastChunk && sendBlocking;
-      final SessionSendContinuationMessage chunkPacket = new SessionSendContinuationMessage(msgI, chunk, !lastChunk, requiresResponse, messageBodySize, messageHandler);
-
-      if (requiresResponse) {
-         // When sending it blocking, only the last chunk will be blocking.
-         sessionChannel.sendBlocking(chunkPacket, PacketImpl.NULL_RESPONSE);
-      }
-      else {
-         sessionChannel.send(chunkPacket);
-      }
-
-      return chunkPacket.getPacketSize();
+   public int sendServerLargeMessageChunk(Message msgI,
+                                          long messageBodySize,
+                                          boolean sendBlocking,
+                                          boolean lastChunk,
+                                          byte[] chunk,
+                                          SendAcknowledgementHandler messageHandler) throws ActiveMQException {
+      return sendSessionSendContinuationMessage(this.sessionChannel, msgI, messageBodySize, sendBlocking, lastChunk, chunk, messageHandler);
    }
 
    @Override
@@ -471,15 +520,13 @@ public class ActiveMQSessionContext extends SessionContext {
       PacketImpl messagePacket;
       if (individual) {
          messagePacket = new SessionIndividualAcknowledgeMessage(getConsumerID(consumer), message.getMessageID(), block);
-      }
-      else {
+      } else {
          messagePacket = new SessionAcknowledgeMessage(getConsumerID(consumer), message.getMessageID(), block);
       }
 
       if (block) {
          sessionChannel.sendBlocking(messagePacket, PacketImpl.NULL_RESPONSE);
-      }
-      else {
+      } else {
          sessionChannel.sendBatched(messagePacket);
       }
    }
@@ -513,8 +560,7 @@ public class ActiveMQSessionContext extends SessionContext {
 
       if (response.isError()) {
          throw new XAException(response.getResponseCode());
-      }
-      else {
+      } else {
          return response.getResponseCode();
       }
    }
@@ -546,15 +592,12 @@ public class ActiveMQSessionContext extends SessionContext {
       Packet packet;
       if (flags == XAResource.TMJOIN) {
          packet = new SessionXAJoinMessage(xid);
-      }
-      else if (flags == XAResource.TMRESUME) {
+      } else if (flags == XAResource.TMRESUME) {
          packet = new SessionXAResumeMessage(xid);
-      }
-      else if (flags == XAResource.TMNOFLAGS) {
+      } else if (flags == XAResource.TMNOFLAGS) {
          // Don't need to flush since the previous end will have done this
          packet = new SessionXAStartMessage(xid);
-      }
-      else {
+      } else {
          throw new XAException(XAException.XAER_INVAL);
       }
 
@@ -581,13 +624,66 @@ public class ActiveMQSessionContext extends SessionContext {
    }
 
    @Override
+   public void createAddress(SimpleString address,
+                             Set<RoutingType> routingTypes,
+                             final boolean autoCreated) throws ActiveMQException {
+      createAddress(address, EnumSet.copyOf(routingTypes), autoCreated);
+   }
+
+   @Override
+   public void createAddress(SimpleString address,
+                             EnumSet<RoutingType> routingTypes,
+                             final boolean autoCreated) throws ActiveMQException {
+      CreateAddressMessage request = new CreateAddressMessage(address, routingTypes, autoCreated, true);
+      if (!sessionChannel.getConnection().isVersionBeforeAddressChange()) {
+         sessionChannel.sendBlocking(request, PacketImpl.NULL_RESPONSE);
+      }
+   }
+
+   @Deprecated
+   @Override
    public void createQueue(SimpleString address,
                            SimpleString queueName,
                            SimpleString filterString,
                            boolean durable,
-                           boolean temp) throws ActiveMQException {
-      CreateQueueMessage request = new CreateQueueMessage(address, queueName, filterString, durable, temp, true);
-      sessionChannel.sendBlocking(request, PacketImpl.NULL_RESPONSE);
+                           boolean temp,
+                           boolean autoCreated) throws ActiveMQException {
+      createQueue(address, ActiveMQDefaultConfiguration.getDefaultRoutingType(), queueName, filterString, durable, temp, ActiveMQDefaultConfiguration.getDefaultMaxQueueConsumers(), ActiveMQDefaultConfiguration.getDefaultPurgeOnNoConsumers(), autoCreated);
+   }
+
+   @Override
+   public void createQueue(SimpleString address,
+                           RoutingType routingType,
+                           SimpleString queueName,
+                           SimpleString filterString,
+                           boolean durable,
+                           boolean temp,
+                           int maxConsumers,
+                           boolean purgeOnNoConsumers,
+                           boolean autoCreated,
+                           Boolean exclusive,
+                           Boolean lastValue) throws ActiveMQException {
+      if (sessionChannel.getConnection().isVersionBeforeAddressChange()) {
+         CreateQueueMessage request = new CreateQueueMessage(address, queueName, filterString, durable, temp, true);
+         sessionChannel.sendBlocking(request, PacketImpl.NULL_RESPONSE);
+      } else {
+         CreateQueueMessage request = new CreateQueueMessage_V2(address, queueName, routingType, filterString, durable, temp, maxConsumers, purgeOnNoConsumers, autoCreated, true, exclusive, lastValue);
+         sessionChannel.sendBlocking(request, PacketImpl.NULL_RESPONSE);
+      }
+   }
+
+   @Deprecated
+   @Override
+   public void createQueue(SimpleString address,
+                           RoutingType routingType,
+                           SimpleString queueName,
+                           SimpleString filterString,
+                           boolean durable,
+                           boolean temp,
+                           int maxConsumers,
+                           boolean purgeOnNoConsumers,
+                           boolean autoCreated) throws ActiveMQException {
+      createQueue(address, routingType, queueName, filterString, durable, temp, maxConsumers, purgeOnNoConsumers, autoCreated, null, null);
    }
 
    @Override
@@ -610,8 +706,7 @@ public class ActiveMQSessionContext extends SessionContext {
          sessionChannel.replayCommands(response.getLastConfirmedCommandID());
 
          return true;
-      }
-      else {
+      } else {
          ActiveMQClientLogger.LOGGER.reconnectCreatingNewSession(sessionChannel.getID());
 
          sessionChannel.clearCommands();
@@ -628,16 +723,14 @@ public class ActiveMQSessionContext extends SessionContext {
                                final boolean xa,
                                final boolean autoCommitSends,
                                final boolean autoCommitAcks,
-                               final boolean preAcknowledge,
-                               final SimpleString defaultAddress) throws ActiveMQException {
-      Packet createRequest = newCreateSession(username, password, minLargeMessageSize, xa, autoCommitSends, autoCommitAcks, preAcknowledge, defaultAddress);
+                               final boolean preAcknowledge) throws ActiveMQException {
+      Packet createRequest = newCreateSession(username, password, minLargeMessageSize, xa, autoCommitSends, autoCommitAcks, preAcknowledge);
       boolean retry;
       do {
          try {
             getCreateChannel().sendBlocking(createRequest, PacketImpl.CREATESESSION_RESP);
             retry = false;
-         }
-         catch (ActiveMQException e) {
+         } catch (ActiveMQException e) {
             // the session was created while its server was starting, retry it:
             if (e.getType() == ActiveMQExceptionType.SESSION_CREATION_REJECTED) {
                ActiveMQClientLogger.LOGGER.retryCreateSessionSeverStarting(name);
@@ -645,17 +738,16 @@ public class ActiveMQSessionContext extends SessionContext {
                // sleep a little bit to avoid spinning too much
                try {
                   Thread.sleep(10);
-               }
-               catch (InterruptedException ie) {
+               } catch (InterruptedException ie) {
                   Thread.currentThread().interrupt();
                   throw e;
                }
-            }
-            else {
+            } else {
                throw e;
             }
          }
-      } while (retry && !session.isClosing());
+      }
+      while (retry && !session.isClosing());
    }
 
    protected CreateSessionMessage newCreateSession(String username,
@@ -664,20 +756,21 @@ public class ActiveMQSessionContext extends SessionContext {
                                                    boolean xa,
                                                    boolean autoCommitSends,
                                                    boolean autoCommitAcks,
-                                                   boolean preAcknowledge,
-                                                   SimpleString defaultAddress) {
-      return new CreateSessionMessage(name, sessionChannel.getID(), VersionLoader.getVersion().getIncrementingVersion(), username, password, minLargeMessageSize, xa, autoCommitSends, autoCommitAcks, preAcknowledge, confirmationWindow, defaultAddress == null ? null : defaultAddress.toString());
+                                                   boolean preAcknowledge) {
+      return new CreateSessionMessage(name, sessionChannel.getID(), getServerVersion(), username, password, minLargeMessageSize, xa, autoCommitSends, autoCommitAcks, preAcknowledge, confirmationWindow, null);
    }
 
    @Override
-   public void recreateConsumerOnServer(ClientConsumerInternal consumerInternal) throws ActiveMQException {
+   public void recreateConsumerOnServer(ClientConsumerInternal consumerInternal,
+                                        long consumerId,
+                                        boolean isSessionStarted) throws ActiveMQException {
       ClientSession.QueueQuery queueInfo = consumerInternal.getQueueInfo();
 
       // We try and recreate any non durable queues, since they probably won't be there unless
       // they are defined in broker.xml
       // This allows e.g. JMS non durable subs and temporary queues to continue to be used after failover
       if (!queueInfo.isDurable()) {
-         CreateQueueMessage createQueueRequest = new CreateQueueMessage(queueInfo.getAddress(), queueInfo.getName(), queueInfo.getFilterString(), false, queueInfo.isTemporary(), false);
+         CreateQueueMessage_V2 createQueueRequest = new CreateQueueMessage_V2(queueInfo.getAddress(), queueInfo.getName(), queueInfo.getRoutingType(), queueInfo.getFilterString(), false, queueInfo.isTemporary(), queueInfo.getMaxConsumers(), queueInfo.isPurgeOnNoConsumers(), queueInfo.isAutoCreated(), false, queueInfo.isExclusive(), queueInfo.isLastValue());
 
          sendPacketWithoutLock(sessionChannel, createQueueRequest);
       }
@@ -692,11 +785,23 @@ public class ActiveMQSessionContext extends SessionContext {
          SessionConsumerFlowCreditMessage packet = new SessionConsumerFlowCreditMessage(getConsumerID(consumerInternal), clientWindowSize);
 
          sendPacketWithoutLock(sessionChannel, packet);
-      }
-      else {
+      } else {
          // https://jira.jboss.org/browse/HORNETQ-522
          SessionConsumerFlowCreditMessage packet = new SessionConsumerFlowCreditMessage(getConsumerID(consumerInternal), 1);
          sendPacketWithoutLock(sessionChannel, packet);
+      }
+
+      //force a delivery to avoid a infinite waiting
+      //it can happen when the consumer sends a 'forced delivery' then
+      //waiting forever, while the connection is broken and the server's
+      //'forced delivery' message never gets to consumer. If session
+      //is reconnected, its consumer never knows and stays waiting.
+      //note this message will either be ignored by consumer (forceDeliveryCount
+      //doesn't match, which is fine) or be caught by consumer
+      //(in which case the consumer will wake up, thus avoid the infinite waiting).
+      if (isSessionStarted && consumerInternal.getForceDeliveryCount() > 0) {
+         SessionForceConsumerDelivery forceDel = new SessionForceConsumerDelivery(consumerId, consumerInternal.getForceDeliveryCount() - 1);
+         sendPacketWithoutLock(sessionChannel, forceDel);
       }
    }
 
@@ -775,6 +880,41 @@ public class ActiveMQSessionContext extends SessionContext {
       }
    }
 
+   private static int sendSessionSendContinuationMessage(Channel channel,
+                                                         Message msgI,
+                                                         long messageBodySize,
+                                                         boolean sendBlocking,
+                                                         boolean lastChunk,
+                                                         byte[] chunk,
+                                                         SendAcknowledgementHandler messageHandler) throws ActiveMQException {
+      final boolean requiresResponse = lastChunk && sendBlocking;
+      final SessionSendContinuationMessage chunkPacket = new SessionSendContinuationMessage(msgI, chunk, !lastChunk, requiresResponse, messageBodySize, messageHandler);
+      final int expectedEncodeSize = chunkPacket.expectedEncodeSize();
+      //perform a weak form of flow control to avoid OOM on tight loops
+      final CoreRemotingConnection connection = channel.getConnection();
+      final long blockingCallTimeoutMillis = Math.max(0, connection.getBlockingCallTimeout());
+      final long startFlowControl = System.nanoTime();
+      try {
+         final boolean isWritable = connection.blockUntilWritable(expectedEncodeSize, blockingCallTimeoutMillis);
+         if (!isWritable) {
+            final long endFlowControl = System.nanoTime();
+            final long elapsedFlowControl = endFlowControl - startFlowControl;
+            final long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(elapsedFlowControl);
+            ActiveMQClientLogger.LOGGER.timeoutStreamingLargeMessage();
+            logger.debug("try to write " + expectedEncodeSize + " bytes after blocked " + elapsedMillis + " ms on a not writable connection: [" + connection.getID() + "]");
+         }
+         if (requiresResponse) {
+            // When sending it blocking, only the last chunk will be blocking.
+            channel.sendBlocking(chunkPacket, PacketImpl.NULL_RESPONSE);
+         } else {
+            channel.send(chunkPacket);
+         }
+         return chunkPacket.getPacketSize();
+      } catch (Throwable e) {
+         throw new ActiveMQException(e.getMessage());
+      }
+   }
+
    class ClientSessionPacketHandler implements ChannelHandler {
 
       @Override
@@ -830,8 +970,7 @@ public class ActiveMQSessionContext extends SessionContext {
                   throw new IllegalStateException("Invalid packet: " + type);
                }
             }
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             ActiveMQClientLogger.LOGGER.failedToHandlePacket(e);
          }
 
@@ -859,20 +998,16 @@ public class ActiveMQSessionContext extends SessionContext {
          // No flow control - buffer can increase without bound! Only use with
          // caution for very fast consumers
          clientWindowSize = -1;
-      }
-      else if (windowSize == 0) {
+      } else if (windowSize == 0) {
          // Slow consumer - no buffering
          clientWindowSize = 0;
-      }
-      else if (windowSize == 1) {
+      } else if (windowSize == 1) {
          // Slow consumer = buffer 1
          clientWindowSize = 1;
-      }
-      else if (windowSize > 1) {
+      } else if (windowSize > 1) {
          // Client window size is half server window size
          clientWindowSize = windowSize >> 1;
-      }
-      else {
+      } else {
          throw ActiveMQClientMessageBundle.BUNDLE.invalidWindowSize(windowSize);
       }
 

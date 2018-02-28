@@ -28,6 +28,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import org.apache.activemq.artemis.api.core.SimpleString;
+import org.apache.activemq.artemis.api.core.management.ResourceNames;
 import org.apache.activemq.artemis.api.jms.ActiveMQJMSClient;
 import org.apache.activemq.artemis.core.security.Role;
 import org.apache.activemq.artemis.core.server.Queue;
@@ -39,14 +40,19 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
+import static org.apache.activemq.artemis.api.core.management.ResourceNames.ADDRESS;
+import static org.apache.activemq.artemis.api.core.management.ResourceNames.QUEUE;
+
 public class AutoCreateJmsDestinationTest extends JMSTestBase {
+
+   public static final String QUEUE_NAME = "test";
 
    @Test
    public void testAutoCreateOnSendToQueue() throws Exception {
       Connection connection = cf.createConnection();
       Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
 
-      javax.jms.Queue queue = ActiveMQJMSClient.createQueue("test");
+      javax.jms.Queue queue = ActiveMQJMSClient.createQueue(QUEUE_NAME);
 
       MessageProducer producer = session.createProducer(queue);
 
@@ -67,8 +73,9 @@ public class AutoCreateJmsDestinationTest extends JMSTestBase {
          Assert.assertNotNull(m);
       }
 
-      // make sure the JMX control was created for the JMS queue
-      assertNotNull(server.getManagementService().getResource("jms.queue.test"));
+      // make sure the JMX control was created for the address and queue
+      assertNotNull(server.getManagementService().getResource(ADDRESS + QUEUE_NAME));
+      assertNotNull(server.getManagementService().getResource(QUEUE + QUEUE_NAME));
 
       connection.close();
    }
@@ -78,7 +85,7 @@ public class AutoCreateJmsDestinationTest extends JMSTestBase {
       Connection connection = cf.createConnection();
       Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
 
-      javax.jms.Queue queue = ActiveMQJMSClient.createQueue("test");
+      javax.jms.Queue queue = ActiveMQJMSClient.createQueue(QUEUE_NAME);
 
       MessageProducer producer = session.createProducer(null);
 
@@ -107,22 +114,19 @@ public class AutoCreateJmsDestinationTest extends JMSTestBase {
       ((ActiveMQJAASSecurityManager) server.getSecurityManager()).getConfiguration().addUser("guest", "guest");
       ((ActiveMQJAASSecurityManager) server.getSecurityManager()).getConfiguration().setDefaultUser("guest");
       ((ActiveMQJAASSecurityManager) server.getSecurityManager()).getConfiguration().addRole("guest", "rejectAll");
-      Role role = new Role("rejectAll", false, false, false, false, false, false, false, false);
+      Role role = new Role("rejectAll", false, false, false, false, false, false, false, false, false, false);
       Set<Role> roles = new HashSet<>();
       roles.add(role);
       server.getSecurityRepository().addMatch("#", roles);
       Connection connection = cf.createConnection();
       Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
 
-      javax.jms.Queue queue = ActiveMQJMSClient.createQueue("test");
-      MessageProducer producer = session.createProducer(queue);
-      TextMessage mess = session.createTextMessage("msg");
+      javax.jms.Queue queue = ActiveMQJMSClient.createQueue(QUEUE_NAME);
 
       try {
-         producer.send(mess);
+         session.createProducer(queue);
          Assert.fail("Sending a message here should throw a JMSSecurityException");
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          Assert.assertTrue(e instanceof JMSSecurityException);
       }
 
@@ -134,14 +138,14 @@ public class AutoCreateJmsDestinationTest extends JMSTestBase {
       Connection connection = cf.createConnection();
       Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
 
-      javax.jms.Topic topic = ActiveMQJMSClient.createTopic("test");
+      javax.jms.Topic topic = ActiveMQJMSClient.createTopic(QUEUE_NAME);
 
       MessageProducer producer = session.createProducer(topic);
       producer.send(session.createTextMessage("msg"));
 
       connection.close();
 
-      assertNotNull(server.getManagementService().getResource("jms.topic.test"));
+      assertNotNull(server.getManagementService().getResource(ResourceNames.ADDRESS + "test"));
    }
 
    @Test
@@ -150,7 +154,7 @@ public class AutoCreateJmsDestinationTest extends JMSTestBase {
       connection = cf.createConnection();
       Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
 
-      javax.jms.Queue queue = ActiveMQJMSClient.createQueue("test");
+      javax.jms.Queue queue = ActiveMQJMSClient.createQueue(QUEUE_NAME);
 
       MessageConsumer messageConsumer = session.createConsumer(queue);
       connection.start();
@@ -158,7 +162,7 @@ public class AutoCreateJmsDestinationTest extends JMSTestBase {
       Message m = messageConsumer.receive(500);
       Assert.assertNull(m);
 
-      Queue q = (Queue) server.getPostOffice().getBinding(new SimpleString("jms.queue.test")).getBindable();
+      Queue q = (Queue) server.getPostOffice().getBinding(new SimpleString(QUEUE_NAME)).getBindable();
       Assert.assertEquals(0, q.getMessageCount());
       Assert.assertEquals(0, q.getMessagesAdded());
       connection.close();
@@ -178,11 +182,11 @@ public class AutoCreateJmsDestinationTest extends JMSTestBase {
       connection.start();
       assertNotNull(consumer.receive(500));
 
-      assertNotNull(server.getManagementService().getResource("jms.topic." + topicName));
+      assertNotNull(server.getManagementService().getResource(ResourceNames.ADDRESS + topicName));
 
       connection.close();
 
-      assertNull(server.getManagementService().getResource("jms.topic." + topicName));
+      assertNull(server.getManagementService().getResource(ResourceNames.ADDRESS + topicName));
    }
 
    @Test
@@ -191,7 +195,7 @@ public class AutoCreateJmsDestinationTest extends JMSTestBase {
       connection.setClientID("myClientID");
       Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
 
-      javax.jms.Topic topic = ActiveMQJMSClient.createTopic("test");
+      javax.jms.Topic topic = ActiveMQJMSClient.createTopic(QUEUE_NAME);
 
       MessageConsumer consumer = session.createDurableConsumer(topic, "myDurableSub");
       MessageProducer producer = session.createProducer(topic);
@@ -201,7 +205,7 @@ public class AutoCreateJmsDestinationTest extends JMSTestBase {
 
       connection.close();
 
-      assertNotNull(server.getManagementService().getResource("jms.topic.test"));
+      assertNotNull(server.getManagementService().getResource(ResourceNames.ADDRESS + "test"));
 
       assertNotNull(server.locateQueue(SimpleString.toSimpleString("myClientID.myDurableSub")));
    }
@@ -211,7 +215,7 @@ public class AutoCreateJmsDestinationTest extends JMSTestBase {
       Connection connection = cf.createConnection();
       Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
 
-//      javax.jms.Topic topic = ActiveMQJMSClient.createTopic("test");
+      //      javax.jms.Topic topic = ActiveMQJMSClient.createTopic(QUEUE_NAME);
 
       ActiveMQTemporaryTopic topic = (ActiveMQTemporaryTopic) session.createTemporaryTopic();
 
@@ -233,7 +237,7 @@ public class AutoCreateJmsDestinationTest extends JMSTestBase {
 
       connection.close();
 
-//      assertNotNull(server.getManagementService().getResource("jms.topic.test"));
+      //      assertNotNull(server.getManagementService().getResource("jms.topic.test"));
 
       assertNull(server.locateQueue(topicAddress));
    }
@@ -245,7 +249,7 @@ public class AutoCreateJmsDestinationTest extends JMSTestBase {
       ((ActiveMQJAASSecurityManager) server.getSecurityManager()).getConfiguration().addUser("guest", "guest");
       ((ActiveMQJAASSecurityManager) server.getSecurityManager()).getConfiguration().setDefaultUser("guest");
       ((ActiveMQJAASSecurityManager) server.getSecurityManager()).getConfiguration().addRole("guest", "allowAll");
-      Role role = new Role("allowAll", true, true, true, true, true, true, true, true);
+      Role role = new Role("allowAll", true, true, true, true, true, true, true, true, true, true);
       Set<Role> roles = new HashSet<>();
       roles.add(role);
       server.getSecurityRepository().addMatch("#", roles);

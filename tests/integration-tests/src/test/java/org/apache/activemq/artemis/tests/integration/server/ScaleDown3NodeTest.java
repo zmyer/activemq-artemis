@@ -117,7 +117,7 @@ public class ScaleDown3NodeTest extends ClusterTestBase {
       createQueue(2, addressName, queueName1, null, false, servers[2].getConfiguration().getClusterUser(), servers[2].getConfiguration().getClusterPassword());
 
       // pause the SnF queue so that when the server tries to redistribute a message it won't actually go across the cluster bridge
-      String snfAddress = "sf.cluster0." + servers[0].getNodeID().toString();
+      String snfAddress = servers[0].getInternalNamingPrefix() + "sf.cluster0." + servers[0].getNodeID().toString();
       Queue snfQueue = ((LocalQueueBinding) servers[2].getPostOffice().getBinding(SimpleString.toSimpleString(snfAddress))).getQueue();
       snfQueue.pause();
 
@@ -140,8 +140,7 @@ public class ScaleDown3NodeTest extends ClusterTestBase {
          fileMessage.releaseResources();
 
          message = fileMessage;
-      }
-      else {
+      } else {
          message = session.createMessage(false);
       }
 
@@ -167,8 +166,7 @@ public class ScaleDown3NodeTest extends ClusterTestBase {
          messageCount = getMessageCount(snfQueue);
          if (messageCount < TEST_SIZE) {
             Thread.sleep(200);
-         }
-         else {
+         } else {
             break;
          }
       }
@@ -188,8 +186,7 @@ public class ScaleDown3NodeTest extends ClusterTestBase {
          messageCount = getMessageCount(((LocalQueueBinding) servers[2].getPostOffice().getBinding(new SimpleString(queueName1))).getQueue());
          if (messageCount > 0) {
             Thread.sleep(200);
-         }
-         else {
+         } else {
             break;
          }
       }
@@ -206,8 +203,7 @@ public class ScaleDown3NodeTest extends ClusterTestBase {
          messageCount = getMessageCount(((LocalQueueBinding) servers[1].getPostOffice().getBinding(new SimpleString(queueName1))).getQueue());
          if (messageCount < TEST_SIZE) {
             Thread.sleep(200);
-         }
-         else {
+         } else {
             break;
          }
       }
@@ -264,7 +260,7 @@ public class ScaleDown3NodeTest extends ClusterTestBase {
       createQueue(2, addressName, queueName3, null, false, servers[2].getConfiguration().getClusterUser(), servers[2].getConfiguration().getClusterPassword());
 
       // pause the SnF queue so that when the server tries to redistribute a message it won't actually go across the cluster bridge
-      String snfAddress = "sf.cluster0." + servers[0].getNodeID().toString();
+      String snfAddress = servers[0].getInternalNamingPrefix() + "sf.cluster0." + servers[0].getNodeID().toString();
       Queue snfQueue = ((LocalQueueBinding) servers[2].getPostOffice().getBinding(SimpleString.toSimpleString(snfAddress))).getQueue();
       snfQueue.pause();
 
@@ -292,8 +288,7 @@ public class ScaleDown3NodeTest extends ClusterTestBase {
          messageCount = getMessageCount(snfQueue);
          if (messageCount < TEST_SIZE * 2) {
             Thread.sleep(200);
-         }
-         else {
+         } else {
             break;
          }
       }
@@ -315,8 +310,7 @@ public class ScaleDown3NodeTest extends ClusterTestBase {
          messageCount += getMessageCount(((LocalQueueBinding) servers[2].getPostOffice().getBinding(new SimpleString(queueName3))).getQueue());
          if (messageCount > 0) {
             Thread.sleep(200);
-         }
-         else {
+         } else {
             break;
          }
       }
@@ -337,8 +331,7 @@ public class ScaleDown3NodeTest extends ClusterTestBase {
          messageCount += getMessageCount(((LocalQueueBinding) servers[1].getPostOffice().getBinding(new SimpleString(queueName3))).getQueue());
          if (messageCount < TEST_SIZE * 2) {
             Thread.sleep(200);
-         }
-         else {
+         } else {
             break;
          }
       }

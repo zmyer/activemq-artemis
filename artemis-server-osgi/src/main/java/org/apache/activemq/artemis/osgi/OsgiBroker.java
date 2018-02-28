@@ -31,7 +31,11 @@ import java.util.Set;
 import org.apache.activemq.artemis.api.core.Interceptor;
 import org.apache.activemq.artemis.api.core.TransportConfiguration;
 import org.apache.activemq.artemis.core.config.FileDeploymentManager;
+import org.apache.activemq.artemis.core.config.StoreConfiguration;
+import org.apache.activemq.artemis.core.config.StoreConfiguration.StoreType;
 import org.apache.activemq.artemis.core.config.impl.FileConfiguration;
+import org.apache.activemq.artemis.core.config.storage.DatabaseStorageConfiguration;
+import org.apache.activemq.artemis.core.remoting.impl.netty.TransportConstants;
 import org.apache.activemq.artemis.core.server.ActiveMQComponent;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.jms.server.config.impl.FileJMSConfiguration;
@@ -49,12 +53,14 @@ import org.osgi.util.tracker.ServiceTracker;
 @SuppressWarnings({"unchecked", "rawtypes"})
 @Component(configurationPid = "org.apache.activemq.artemis", configurationPolicy = ConfigurationPolicy.REQUIRE)
 public class OsgiBroker {
+
    private String name;
    private String configurationUrl;
    private String rolePrincipalClass;
    private Map<String, ActiveMQComponent> components;
    private Map<String, ServiceRegistration<?>> registrations;
    private ServiceTracker tracker;
+   private ServiceTracker dataSourceTracker;
 
    @Activate
    public void activate(ComponentContext cctx) throws Exception {
@@ -62,7 +68,7 @@ public class OsgiBroker {
       final Dictionary<String, Object> properties = cctx.getProperties();
       configurationUrl = getMandatory(properties, "config");
       name = getMandatory(properties, "name");
-      rolePrincipalClass = (String)properties.get("rolePrincipalClass");
+      rolePrincipalClass = (String) properties.get("rolePrincipalClass");
       String domain = getMandatory(properties, "domain");
       ActiveMQJAASSecurityManager security = new ActiveMQJAASSecurityManager(domain);
       if (rolePrincipalClass != null) {
@@ -87,46 +93,26 @@ public class OsgiBroker {
 
       components = fileDeploymentManager.buildService(security, ManagementFactory.getPlatformMBeanServer());
 
-      final ActiveMQServer server = (ActiveMQServer)components.get("core");
+      final ActiveMQServer server = (ActiveMQServer) components.get("core");
 
       String[] requiredProtocols = getRequiredProtocols(server.getConfiguration().getAcceptorConfigurations());
-      ProtocolTrackerCallBack callback = new ProtocolTrackerCallBack() {
+      ServerTrackerCallBack callback = new ServerTrackerCallBackImpl(server, context, properties);
 
-         @Override
-         public void addFactory(ProtocolManagerFactory<Interceptor> pmf) {
-            server.addProtocolManagerFactory(pmf);
-         }
+      StoreConfiguration storeConfiguration = server.getConfiguration().getStoreConfiguration();
+      String dataSourceName = String.class.cast(properties.get("dataSourceName"));
 
+      if (storeConfiguration != null &&
+          storeConfiguration.getStoreType() == StoreType.DATABASE && dataSourceName != null &&
+               !dataSourceName.isEmpty()) {
+         callback.setDataSourceDependency(true);
+         String filter = "(&(objectClass=javax.sql.DataSource)(osgi.jndi.service.name=" + dataSourceName + "))";
+         DataSourceTracker trackerCust =
+                  new DataSourceTracker(name, context, DatabaseStorageConfiguration.class.cast(storeConfiguration),
+                                        (ServerTrackerCallBack) callback);
+         dataSourceTracker = new ServiceTracker(context, context.createFilter(filter), trackerCust);
+         dataSourceTracker.open();
+      }
 
-         @Override
-         public void removeFactory(ProtocolManagerFactory<Interceptor> pmf) {
-            server.removeProtocolManagerFactory(pmf);
-         }
-
-         @Override
-         public void stop() throws Exception {
-            ActiveMQComponent[] mqComponents = new ActiveMQComponent[components.size()];
-            components.values().toArray(mqComponents);
-            for (int i = mqComponents.length - 1; i >= 0; i--) {
-               mqComponents[i].stop();
-            }
-            unregister();
-         }
-
-         @Override
-         public void start() throws Exception {
-            List<ActiveMQComponent> componentsByStartOrder = getComponentsByStartOrder(components);
-            for (ActiveMQComponent component : componentsByStartOrder) {
-               component.start();
-            }
-            register(context, properties);
-         }
-
-         @Override
-         public boolean isStarted() {
-            return server.isStarted();
-         }
-      };
       ProtocolTracker trackerCust = new ProtocolTracker(name, context, requiredProtocols, callback);
       tracker = new ServiceTracker(context, ProtocolManagerFactory.class, trackerCust);
       tracker.open();
@@ -140,13 +126,17 @@ public class OsgiBroker {
       return value;
    }
 
-
    private String[] getRequiredProtocols(Set<TransportConfiguration> acceptors) {
       ArrayList<String> protocols = new ArrayList<>();
       for (TransportConfiguration acceptor : acceptors) {
-         String protoName = acceptor.getName().toUpperCase();
-         if (!"ARTEMIS".equals(protoName)) {
-            protocols.add(protoName);
+         Object protocolsFromAcceptor = acceptor.getParams().get(TransportConstants.PROTOCOLS_PROP_NAME);
+         if (protocolsFromAcceptor != null) {
+            String[] protocolsSplit = protocolsFromAcceptor.toString().split(",");
+            for (String protocol : protocolsSplit) {
+               if (!protocols.contains(protocol)) {
+                  protocols.add(protocol);
+               }
+            }
          }
       }
       return protocols.toArray(new String[protocols.size()]);
@@ -155,6 +145,9 @@ public class OsgiBroker {
    @Deactivate
    public void stop() throws Exception {
       tracker.close();
+      if (dataSourceTracker != null) {
+         dataSourceTracker.close();
+      }
    }
 
    public Map<String, ActiveMQComponent> getComponents() {
@@ -181,7 +174,7 @@ public class OsgiBroker {
       for (Map.Entry<String, ActiveMQComponent> component : getComponents().entrySet()) {
          String[] classes = getInterfaces(component.getValue());
          Hashtable<String, Object> props = new Hashtable<>();
-         for (Enumeration<String> keyEnum = properties.keys(); keyEnum.hasMoreElements();) {
+         for (Enumeration<String> keyEnum = properties.keys(); keyEnum.hasMoreElements(); ) {
             String key = keyEnum.nextElement();
             Object val = properties.get(key);
             props.put(key, val);
@@ -215,4 +208,66 @@ public class OsgiBroker {
          }
       }
    }
+
+   private class ServerTrackerCallBackImpl implements ServerTrackerCallBack {
+
+      private volatile boolean dataSourceDependency = false;
+
+      private final ActiveMQServer server;
+      private final BundleContext context;
+      private final Dictionary<String, Object> properties;
+
+      ServerTrackerCallBackImpl(ActiveMQServer server, BundleContext context,
+                                         Dictionary<String, Object> properties) {
+         this.server = server;
+         this.context = context;
+         this.properties = properties;
+      }
+
+      @Override
+      public void addFactory(ProtocolManagerFactory<Interceptor> pmf) {
+         server.addProtocolManagerFactory(pmf);
+      }
+
+      @Override
+      public void removeFactory(ProtocolManagerFactory<Interceptor> pmf) {
+         server.removeProtocolManagerFactory(pmf);
+      }
+
+      @Override
+      public void stop() throws Exception {
+         ActiveMQComponent[] mqComponents = new ActiveMQComponent[components.size()];
+         components.values().toArray(mqComponents);
+         for (int i = mqComponents.length - 1; i >= 0; i--) {
+            mqComponents[i].stop();
+         }
+         unregister();
+      }
+
+      @Override
+      public void start() throws Exception {
+         if (!dataSourceDependency) {
+            List<ActiveMQComponent> componentsByStartOrder = getComponentsByStartOrder(components);
+            for (ActiveMQComponent component : componentsByStartOrder) {
+               component.start();
+            }
+            register(context, properties);
+         }
+      }
+
+      @Override
+      public boolean isStarted() {
+         return server.isStarted();
+      }
+
+
+
+      @Override
+      public void setDataSourceDependency(boolean dataSourceDependency) {
+         this.dataSourceDependency = dataSourceDependency;
+      }
+
+
+   }
+
 }

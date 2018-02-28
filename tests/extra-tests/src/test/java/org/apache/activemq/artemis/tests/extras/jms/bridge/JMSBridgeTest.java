@@ -34,21 +34,30 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.activemq.artemis.api.core.TransportConfiguration;
+import org.apache.activemq.artemis.api.jms.ActiveMQJMSClient;
 import org.apache.activemq.artemis.api.jms.ActiveMQJMSConstants;
+import org.apache.activemq.artemis.api.jms.JMSFactoryType;
 import org.apache.activemq.artemis.jms.bridge.ConnectionFactoryFactory;
 import org.apache.activemq.artemis.jms.bridge.QualityOfServiceMode;
 import org.apache.activemq.artemis.jms.bridge.impl.JMSBridgeImpl;
 import org.apache.activemq.artemis.jms.client.ActiveMQMessage;
+import org.apache.activemq.artemis.jms.client.ActiveMQXAConnectionFactory;
 import org.apache.activemq.artemis.service.extensions.ServiceUtils;
 import org.apache.activemq.artemis.tests.integration.IntegrationTestLogger;
 import org.apache.activemq.artemis.tests.integration.ra.DummyTransactionManager;
 import org.apache.activemq.artemis.utils.DefaultSensitiveStringCodec;
 import org.junit.Assert;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.Timeout;
 
 public class JMSBridgeTest extends BridgeTestBase {
 
    private static final IntegrationTestLogger log = IntegrationTestLogger.LOGGER;
+
+   @Rule
+   public Timeout timeout = new Timeout(120000);
 
    // MaxBatchSize but no MaxBatchTime
 
@@ -376,8 +385,7 @@ public class JMSBridgeTest extends BridgeTestBase {
 
          checkAllMessageReceivedInOrder(cf1, targetQueue, 0, NUM_MESSAGES - 1, false);
 
-      }
-      finally {
+      } finally {
          if (bridge != null) {
             JMSBridgeTest.log.info("Stopping bridge");
             bridge.stop();
@@ -416,88 +424,72 @@ public class JMSBridgeTest extends BridgeTestBase {
       try {
          bridge = new JMSBridgeImpl(null, cff1, sourceQueueFactory, targetQueueFactory, sourceUsername, sourcePassword, destUsername, destPassword, selector, failureRetryInterval, maxRetries, qosMode, batchSize, maxBatchTime, subName, clientID, false).setBridgeName("test-bridge");
          fail("expected exception");
-      }
-      catch (IllegalArgumentException e) {
+      } catch (IllegalArgumentException e) {
          // Ok
-      }
-      finally {
+      } finally {
          stopComponent(bridge);
       }
 
       try {
          bridge = new JMSBridgeImpl(cff0, null, sourceQueueFactory, targetQueueFactory, sourceUsername, sourcePassword, destUsername, destPassword, selector, failureRetryInterval, maxRetries, qosMode, batchSize, maxBatchTime, subName, clientID, false).setBridgeName("test-bridge");
          fail("expected exception");
-      }
-      catch (IllegalArgumentException e) {
+      } catch (IllegalArgumentException e) {
          // Ok
-      }
-      finally {
+      } finally {
          stopComponent(bridge);
       }
 
       try {
          bridge = new JMSBridgeImpl(cff0, cff1, null, targetQueueFactory, sourceUsername, sourcePassword, destUsername, destPassword, selector, failureRetryInterval, maxRetries, qosMode, batchSize, maxBatchTime, subName, clientID, false).setBridgeName("test-bridge");
          fail("expected exception");
-      }
-      catch (IllegalArgumentException e) {
+      } catch (IllegalArgumentException e) {
          // Ok
-      }
-      finally {
+      } finally {
          stopComponent(bridge);
       }
 
       try {
          bridge = new JMSBridgeImpl(cff0, cff1, sourceQueueFactory, null, sourceUsername, sourcePassword, destUsername, destPassword, selector, failureRetryInterval, maxRetries, qosMode, batchSize, maxBatchTime, subName, clientID, false).setBridgeName("test-bridge");
          fail("expected exception");
-      }
-      catch (IllegalArgumentException e) {
+      } catch (IllegalArgumentException e) {
          // Ok
-      }
-      finally {
+      } finally {
          stopComponent(bridge);
       }
 
       try {
          bridge = new JMSBridgeImpl(cff0, cff1, sourceQueueFactory, targetQueueFactory, sourceUsername, sourcePassword, destUsername, destPassword, selector, -2, maxRetries, qosMode, batchSize, maxBatchTime, subName, clientID, false).setBridgeName("test-bridge");
          fail("expected exception");
-      }
-      catch (IllegalArgumentException e) {
+      } catch (IllegalArgumentException e) {
          // Ok
-      }
-      finally {
+      } finally {
          stopComponent(bridge);
       }
 
       try {
          bridge = new JMSBridgeImpl(cff0, cff1, sourceQueueFactory, targetQueueFactory, sourceUsername, sourcePassword, destUsername, destPassword, selector, -1, 10, qosMode, batchSize, maxBatchTime, subName, clientID, false).setBridgeName("test-bridge");
          fail("expected exception");
-      }
-      catch (IllegalArgumentException e) {
+      } catch (IllegalArgumentException e) {
          // Ok
-      }
-      finally {
+      } finally {
          stopComponent(bridge);
       }
 
       try {
          bridge = new JMSBridgeImpl(cff0, cff1, sourceQueueFactory, null, sourceUsername, sourcePassword, destUsername, destPassword, selector, failureRetryInterval, maxRetries, qosMode, 0, maxBatchTime, subName, clientID, false).setBridgeName("test-bridge");
          fail("expected exception");
-      }
-      catch (IllegalArgumentException e) {
+      } catch (IllegalArgumentException e) {
          // Ok
-      }
-      finally {
+      } finally {
          stopComponent(bridge);
       }
 
       try {
          bridge = new JMSBridgeImpl(cff0, cff1, sourceQueueFactory, null, sourceUsername, sourcePassword, destUsername, destPassword, selector, failureRetryInterval, maxRetries, qosMode, batchSize, -2, subName, clientID, false).setBridgeName("test-bridge");
          fail("expected exception");
-      }
-      catch (IllegalArgumentException e) {
+      } catch (IllegalArgumentException e) {
          // Ok
-      }
-      finally {
+      } finally {
          stopComponent(bridge);
       }
    }
@@ -546,8 +538,7 @@ public class JMSBridgeTest extends BridgeTestBase {
 
          Message m = cons.receiveNoWait();
          Assert.assertNull(m);
-      }
-      finally {
+      } finally {
          if (connSource != null) {
             connSource.close();
          }
@@ -592,8 +583,7 @@ public class JMSBridgeTest extends BridgeTestBase {
 
             if (i >= NUM_MESSAGES / 2) {
                tm.setStringProperty("vegetable", "radish");
-            }
-            else {
+            } else {
                tm.setStringProperty("vegetable", "cauliflower");
             }
 
@@ -620,8 +610,7 @@ public class JMSBridgeTest extends BridgeTestBase {
 
          Assert.assertNull(m);
 
-      }
-      finally {
+      } finally {
          if (connSource != null) {
             connSource.close();
          }
@@ -690,8 +679,7 @@ public class JMSBridgeTest extends BridgeTestBase {
 
          Assert.assertNull(m);
 
-      }
-      finally {
+      } finally {
          if (connSource != null) {
             connSource.close();
          }
@@ -765,8 +753,7 @@ public class JMSBridgeTest extends BridgeTestBase {
 
          Assert.assertNull(m);
 
-      }
-      finally {
+      } finally {
          if (connSource != null) {
             connSource.close();
          }
@@ -818,13 +805,11 @@ public class JMSBridgeTest extends BridgeTestBase {
          sendMessages(cf0, sourceTopic, 0, NUM_MESSAGES, false, largeMessage);
 
          checkAllMessageReceivedInOrder(cf1, targetQueue, 0, NUM_MESSAGES, largeMessage);
-      }
-      finally {
+      } finally {
          if (started != null) {
             try {
                started.rollback();
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                JMSBridgeTest.log.error("Failed to rollback", e);
             }
          }
@@ -832,8 +817,7 @@ public class JMSBridgeTest extends BridgeTestBase {
          if (toResume != null) {
             try {
                mgr.resume(toResume);
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                JMSBridgeTest.log.error("Failed to resume", e);
             }
          }
@@ -866,8 +850,7 @@ public class JMSBridgeTest extends BridgeTestBase {
          sendMessages(cf0, sourceTopic, 0, NUM_MESSAGES, false, largeMessage);
 
          checkAllMessageReceivedInOrder(cf1, targetQueue, 0, NUM_MESSAGES, largeMessage);
-      }
-      finally {
+      } finally {
          if (bridge != null) {
             bridge.stop();
          }
@@ -897,8 +880,7 @@ public class JMSBridgeTest extends BridgeTestBase {
          sendMessages(cf0, sourceTopic, 0, NUM_MESSAGES, true, largeMessage);
 
          checkAllMessageReceivedInOrder(cf1, targetQueue, 0, NUM_MESSAGES, largeMessage);
-      }
-      finally {
+      } finally {
          if (bridge != null) {
             bridge.stop();
          }
@@ -1061,8 +1043,7 @@ public class JMSBridgeTest extends BridgeTestBase {
             }
          }
 
-      }
-      finally {
+      } finally {
          if (bridge != null) {
             bridge.stop();
          }
@@ -1228,8 +1209,7 @@ public class JMSBridgeTest extends BridgeTestBase {
 
          m = cons.receive(5000);
 
-      }
-      finally {
+      } finally {
          if (bridge != null) {
             bridge.stop();
          }
@@ -1303,8 +1283,7 @@ public class JMSBridgeTest extends BridgeTestBase {
 
             Assert.assertNull(header);
          }
-      }
-      finally {
+      } finally {
          if (bridge != null) {
             bridge.stop();
          }
@@ -1317,6 +1296,48 @@ public class JMSBridgeTest extends BridgeTestBase {
             connTarget.close();
          }
       }
+   }
+
+   @Test
+   public void testCrashDestStopBridge() throws Exception {
+      cff1xa = new ConnectionFactoryFactory() {
+         @Override
+         public Object createConnectionFactory() throws Exception {
+            ActiveMQXAConnectionFactory cf = (ActiveMQXAConnectionFactory) ActiveMQJMSClient.createConnectionFactoryWithoutHA(JMSFactoryType.XA_CF, new TransportConfiguration(INVM_CONNECTOR_FACTORY, params1));
+
+            cf.setReconnectAttempts(-1);
+            cf.setCallFailoverTimeout(-1);
+            cf.setCallTimeout(10000);
+            cf.setBlockOnNonDurableSend(true);
+            cf.setBlockOnDurableSend(true);
+            cf.setCacheLargeMessagesClient(true);
+
+            return cf;
+         }
+
+      };
+
+      JMSBridgeImpl bridge = new JMSBridgeImpl(cff0xa, cff1xa, sourceQueueFactory, targetQueueFactory, null, null, null, null, null, 1000, -1, QualityOfServiceMode.ONCE_AND_ONLY_ONCE, 10, 5000, null, null, false).setBridgeName("test-bridge");
+      addActiveMQComponent(bridge);
+      bridge.setTransactionManager(newTransactionManager());
+
+      bridge.start();
+
+      // Now crash the dest server
+
+      JMSBridgeTest.log.info("About to crash server");
+
+      jmsServer1.stop();
+
+      // Now stop the bridge while the failover is happening
+
+      JMSBridgeTest.log.info("About to stop the bridge");
+
+      bridge.stop();
+
+      // Shutdown the source server
+
+      jmsServer0.stop();
    }
 
    // Private -------------------------------------------------------------------------------
@@ -1370,8 +1391,7 @@ public class JMSBridgeTest extends BridgeTestBase {
             throw sender.ex;
          }
 
-      }
-      finally {
+      } finally {
          if (t != null) {
             t.join(10000);
          }
@@ -1379,8 +1399,7 @@ public class JMSBridgeTest extends BridgeTestBase {
          if (connSource != null) {
             try {
                connSource.close();
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                JMSBridgeTest.log.error("Failed to close connection", e);
             }
          }
@@ -1440,8 +1459,7 @@ public class JMSBridgeTest extends BridgeTestBase {
             throw sender.ex;
          }
 
-      }
-      finally {
+      } finally {
          if (t != null) {
             t.join(10000);
          }
@@ -1449,8 +1467,7 @@ public class JMSBridgeTest extends BridgeTestBase {
          if (connSource != null) {
             try {
                connSource.close();
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                JMSBridgeTest.log.error("Failed to close connection", e);
             }
          }
@@ -1508,8 +1525,7 @@ public class JMSBridgeTest extends BridgeTestBase {
             throw sender.ex;
          }
 
-      }
-      finally {
+      } finally {
          if (t != null) {
             t.join(10000);
          }
@@ -1517,8 +1533,7 @@ public class JMSBridgeTest extends BridgeTestBase {
          if (connSource != null) {
             try {
                connSource.close();
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                JMSBridgeTest.log.error("Failed to close connection", e);
             }
          }
@@ -1577,8 +1592,7 @@ public class JMSBridgeTest extends BridgeTestBase {
          checkAllMessageReceivedInOrder(cf1, targetQueue, NUM_MESSAGES, 1, false);
 
          checkAllMessageReceivedInOrder(cf1, targetQueue, 0, NUM_MESSAGES - 1, false);
-      }
-      finally {
+      } finally {
          if (bridge != null) {
             JMSBridgeTest.log.info("Stopping bridge");
             bridge.stop();
@@ -1634,8 +1648,7 @@ public class JMSBridgeTest extends BridgeTestBase {
          checkAllMessageReceivedInOrder(cf0, localTargetQueue, NUM_MESSAGES, 1, false);
 
          checkAllMessageReceivedInOrder(cf0, localTargetQueue, 0, NUM_MESSAGES - 1, false);
-      }
-      finally {
+      } finally {
          if (bridge != null) {
             bridge.stop();
          }
@@ -1654,7 +1667,7 @@ public class JMSBridgeTest extends BridgeTestBase {
       }
 
       try {
-         final long MAX_BATCH_TIME = 3000;
+         final long MAX_BATCH_TIME = 300;
 
          final int MAX_BATCH_SIZE = 100000; // something big so it won't reach it
 
@@ -1675,8 +1688,7 @@ public class JMSBridgeTest extends BridgeTestBase {
          // Messages should now be receivable
 
          checkAllMessageReceivedInOrder(cf1, targetQueue, 0, NUM_MESSAGES, false);
-      }
-      finally {
+      } finally {
          if (bridge != null) {
             bridge.stop();
          }
@@ -1694,7 +1706,7 @@ public class JMSBridgeTest extends BridgeTestBase {
       }
 
       try {
-         final long MAX_BATCH_TIME = 3000;
+         final long MAX_BATCH_TIME = 300;
 
          final int MAX_BATCH_SIZE = 100000; // something big so it won't reach it
 
@@ -1717,8 +1729,7 @@ public class JMSBridgeTest extends BridgeTestBase {
          // Messages should now be receivable
 
          checkAllMessageReceivedInOrder(cf0, localTargetQueue, 0, NUM_MESSAGES, false);
-      }
-      finally {
+      } finally {
          if (bridge != null) {
             bridge.stop();
          }
@@ -1733,8 +1744,7 @@ public class JMSBridgeTest extends BridgeTestBase {
       try {
          bridge = new JMSBridgeImpl(cff0, cff0, sourceQueueFactory, localTargetQueueFactory, null, null, null, null, null, 3000, 10, QualityOfServiceMode.ONCE_AND_ONLY_ONCE, 10000, 3000, null, null, false).setBridgeName("test-bridge");
          bridge.start();
-      }
-      finally {
+      } finally {
          if (bridge != null) {
             bridge.stop();
          }
@@ -1782,8 +1792,7 @@ public class JMSBridgeTest extends BridgeTestBase {
 
                JMSBridgeTest.log.trace("Sent message " + i);
             }
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             JMSBridgeTest.log.error("Failed to send", e);
             ex = e;
          }

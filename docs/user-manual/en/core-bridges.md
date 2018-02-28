@@ -42,8 +42,8 @@ Bridges are configured in `broker.xml`. Let's kick off
 with an example (this is actually from the bridge example):
 
     <bridge name="my-bridge">
-       <queue-name>jms.queue.sausage-factory</queue-name>
-       <forwarding-address>jms.queue.mincing-machine</forwarding-address>
+       <queue-name>sausage-factory</queue-name>
+       <forwarding-address>mincing-machine</forwarding-address>
        <filter string="name='aardvark'"/>
        <transformer-class-name>
           org.apache.activemq.artemis.jms.example.HatColourChangeTransformer
@@ -80,16 +80,6 @@ Let's take a look at all the parameters in turn:
     The queue must already exist by the time the bridge is instantiated
     at start-up.
 
-    > **Note**
-    >
-    > If you're using JMS then normally the JMS configuration
-    > `activemq-jms.xml` is loaded after the core configuration file
-    > `broker.xml` is loaded. If your bridge is
-    > consuming from a JMS queue then you'll need to make sure the JMS
-    > queue is also deployed as a core queue in the core configuration.
-    > Take a look at the bridge example for an example of how this is
-    > done.
-
 -   `forwarding-address`. This is the address on the target server that
     the message will be forwarded to. If a forwarding address is not
     specified, then the original address of the message will be
@@ -102,7 +92,7 @@ Let's take a look at all the parameters in turn:
 
 -   `transformer-class-name`. An optional transformer-class-name can be
     specified. This is the name of a user-defined class which implements
-    the `org.apache.activemq.artemis.core.server.cluster.Transformer` interface.
+    the `org.apache.activemq.artemis.core.server.transformer.Transformer` interface.
 
     If this is specified then the transformer's `transform()` method
     will be invoked with the message before it is forwarded. This gives

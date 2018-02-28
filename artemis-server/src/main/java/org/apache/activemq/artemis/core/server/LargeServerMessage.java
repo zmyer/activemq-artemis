@@ -17,17 +17,16 @@
 package org.apache.activemq.artemis.core.server;
 
 import org.apache.activemq.artemis.api.core.ActiveMQException;
+import org.apache.activemq.artemis.api.core.ICoreMessage;
 import org.apache.activemq.artemis.core.io.SequentialFile;
 import org.apache.activemq.artemis.core.replication.ReplicatedLargeMessage;
 
-public interface LargeServerMessage extends ServerMessage, ReplicatedLargeMessage {
+public interface LargeServerMessage extends ReplicatedLargeMessage, ICoreMessage {
+
+   long NO_PENDING_ID = -1;
 
    @Override
    void addBytes(byte[] bytes) throws Exception;
-
-   void setPendingRecordID(long pendingRecordID);
-
-   long getPendingRecordID();
 
    /**
     * We have to copy the large message content in case of DLQ and paged messages

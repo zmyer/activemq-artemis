@@ -22,17 +22,16 @@ import java.util.concurrent.Executor;
 
 import org.apache.activemq.artemis.api.core.Message;
 import org.apache.activemq.artemis.api.core.Pair;
-import org.apache.activemq.artemis.core.io.IOCallback;
 import org.apache.activemq.artemis.core.filter.Filter;
+import org.apache.activemq.artemis.core.io.IOCallback;
 import org.apache.activemq.artemis.core.persistence.StorageManager;
 import org.apache.activemq.artemis.core.postoffice.PostOffice;
+import org.apache.activemq.artemis.core.server.ActiveMQServerLogger;
 import org.apache.activemq.artemis.core.server.Consumer;
 import org.apache.activemq.artemis.core.server.HandleStatus;
-import org.apache.activemq.artemis.core.server.ActiveMQServerLogger;
 import org.apache.activemq.artemis.core.server.MessageReference;
 import org.apache.activemq.artemis.core.server.Queue;
 import org.apache.activemq.artemis.core.server.RoutingContext;
-import org.apache.activemq.artemis.core.server.ServerMessage;
 import org.apache.activemq.artemis.core.transaction.Transaction;
 import org.apache.activemq.artemis.core.transaction.impl.TransactionImpl;
 import org.apache.activemq.artemis.utils.ReusableLatch;
@@ -53,6 +52,8 @@ public class Redistributor implements Consumer {
 
    private int count;
 
+   private final long sequentialID;
+
    // a Flush executor here is happening inside another executor.
    // what may cause issues under load. Say you are running out of executors for cases where you don't need to wait at all.
    // So, instead of using a future we will use a plain ReusableLatch here
@@ -65,6 +66,8 @@ public class Redistributor implements Consumer {
                         final int batchSize) {
       this.queue = queue;
 
+      this.sequentialID = storageManager.generateID();
+
       this.storageManager = storageManager;
 
       this.postOffice = postOffice;
@@ -72,6 +75,11 @@ public class Redistributor implements Consumer {
       this.executor = executor;
 
       this.batchSize = batchSize;
+   }
+
+   @Override
+   public long sequentialID() {
+      return sequentialID;
    }
 
    @Override
@@ -122,9 +130,8 @@ public class Redistributor implements Consumer {
       try {
          boolean ok = pendingRuns.await(10000);
          return ok;
-      }
-      catch (InterruptedException e) {
-         ActiveMQServerLogger.LOGGER.warn(e.getMessage(), e);
+      } catch (InterruptedException e) {
+         ActiveMQServerLogger.LOGGER.failedToFlushExecutor(e);
          return false;
       }
    }
@@ -133,15 +140,14 @@ public class Redistributor implements Consumer {
    public synchronized HandleStatus handle(final MessageReference reference) throws Exception {
       if (!active) {
          return HandleStatus.BUSY;
-      }
-      //we shouldn't redistribute with message groups return NO_MATCH so other messages can be delivered
-      else if (reference.getMessage().getSimpleStringProperty(Message.HDR_GROUP_ID) != null) {
+      } else if (reference.getMessage().getGroupID() != null) {
+         //we shouldn't redistribute with message groups return NO_MATCH so other messages can be delivered
          return HandleStatus.NO_MATCH;
       }
 
       final Transaction tx = new TransactionImpl(storageManager);
 
-      final Pair<RoutingContext, ServerMessage> routingInfo = postOffice.redistribute(reference.getMessage(), queue, tx);
+      final Pair<RoutingContext, Message> routingInfo = postOffice.redistribute(reference.getMessage(), queue, tx);
 
       if (routingInfo == null) {
          return HandleStatus.BUSY;
@@ -152,8 +158,7 @@ public class Redistributor implements Consumer {
          postOffice.processRoute(routingInfo.getB(), routingInfo.getA(), false);
 
          ackRedistribution(reference, tx);
-      }
-      else {
+      } else {
          active = false;
          executor.execute(new Runnable() {
             @Override
@@ -171,16 +176,12 @@ public class Redistributor implements Consumer {
 
                      queue.deliverAsync();
                   }
-               }
-               catch (Exception e) {
+               } catch (Exception e) {
                   try {
                      tx.rollback();
-                  }
-                  catch (Exception e2) {
+                  } catch (Exception e2) {
                      // Nothing much we can do now
-
-                     // TODO log
-                     ActiveMQServerLogger.LOGGER.warn(e2.getMessage(), e2);
+                     ActiveMQServerLogger.LOGGER.failedToRollback(e2);
                   }
                }
             }
@@ -202,8 +203,7 @@ public class Redistributor implements Consumer {
          public void run() {
             try {
                runnable.run();
-            }
-            finally {
+            } finally {
                pendingRuns.countDown();
             }
          }

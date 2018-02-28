@@ -29,6 +29,7 @@ import org.apache.activemq.artemis.core.remoting.impl.AbstractAcceptor;
 import org.apache.activemq.artemis.core.security.ActiveMQPrincipal;
 import org.apache.activemq.artemis.core.server.ActiveMQComponent;
 import org.apache.activemq.artemis.core.server.ActiveMQMessageBundle;
+import org.apache.activemq.artemis.core.server.ActiveMQServerLogger;
 import org.apache.activemq.artemis.core.server.cluster.ClusterConnection;
 import org.apache.activemq.artemis.core.server.management.Notification;
 import org.apache.activemq.artemis.core.server.management.NotificationService;
@@ -38,8 +39,8 @@ import org.apache.activemq.artemis.spi.core.remoting.Connection;
 import org.apache.activemq.artemis.spi.core.remoting.ServerConnectionLifeCycleListener;
 import org.apache.activemq.artemis.utils.ConfigurationHelper;
 import org.apache.activemq.artemis.utils.ExecutorFactory;
-import org.apache.activemq.artemis.utils.OrderedExecutorFactory;
-import org.apache.activemq.artemis.utils.TypedProperties;
+import org.apache.activemq.artemis.utils.actors.OrderedExecutorFactory;
+import org.apache.activemq.artemis.utils.collections.TypedProperties;
 import org.jboss.logging.Logger;
 
 public final class InVMAcceptor extends AbstractAcceptor {
@@ -72,6 +73,7 @@ public final class InVMAcceptor extends AbstractAcceptor {
 
    private static final Logger logger = Logger.getLogger(InVMAcceptor.class);
 
+   private final boolean enableBufferPooling;
 
    public InVMAcceptor(final String name,
                        final ClusterConnection clusterConnection,
@@ -97,6 +99,8 @@ public final class InVMAcceptor extends AbstractAcceptor {
       executorFactory = new OrderedExecutorFactory(threadPool);
 
       connectionsAllowed = ConfigurationHelper.getLongProperty(TransportConstants.CONNECTIONS_ALLOWED, TransportConstants.DEFAULT_CONNECTIONS_ALLOWED, configuration);
+
+      enableBufferPooling = ConfigurationHelper.getBooleanProperty(TransportConstants.BUFFER_POOLING, TransportConstants.DEFAULT_BUFFER_POOLING, configuration);
    }
 
    @Override
@@ -166,9 +170,8 @@ public final class InVMAcceptor extends AbstractAcceptor {
          Notification notification = new Notification(null, CoreNotificationType.ACCEPTOR_STOPPED, props);
          try {
             notificationService.sendNotification(notification);
-         }
-         catch (Exception e) {
-            logger.warn("failed to send notification",e.getMessage(),e);
+         } catch (Exception e) {
+            ActiveMQServerLogger.LOGGER.failedToSendNotification(e);
          }
       }
 
@@ -224,6 +227,7 @@ public final class InVMAcceptor extends AbstractAcceptor {
       Listener connectionListener = new Listener(connector);
 
       InVMConnection inVMConnection = new InVMConnection(id, connectionID, remoteHandler, connectionListener, clientExecutor, defaultActiveMQPrincipal);
+      inVMConnection.setEnableBufferPooling(enableBufferPooling);
 
       connectionListener.connectionCreated(this, inVMConnection, protocolMap.get(ActiveMQClient.DEFAULT_CORE_PROTOCOL));
    }

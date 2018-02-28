@@ -45,7 +45,7 @@ import org.apache.activemq.artemis.api.jms.JMSFactoryType;
  * servers at different times, and verify that they transparently fail over onto their backup
  * servers.
  * <p>
- * Please see the readme.html file for more information.
+ * Please see the readme for more information.
  */
 public class SymmetricClusterExample {
 
@@ -207,8 +207,7 @@ public class SymmetricClusterExample {
                throw new IllegalStateException("Message is null!");
             }
          }
-      }
-      finally {
+      } finally {
          // Step 15. Be sure to close our resources!
 
          connection0.close();

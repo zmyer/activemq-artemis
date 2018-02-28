@@ -16,17 +16,6 @@
  */
 package org.apache.activemq.artemis.tests.integration.ra;
 
-import org.apache.activemq.artemis.api.core.client.ClientMessage;
-import org.apache.activemq.artemis.api.core.client.ClientProducer;
-import org.apache.activemq.artemis.api.core.client.ClientSession;
-import org.apache.activemq.artemis.core.postoffice.Binding;
-import org.apache.activemq.artemis.core.server.Queue;
-import org.apache.activemq.artemis.core.transaction.impl.XidImpl;
-import org.apache.activemq.artemis.ra.ActiveMQResourceAdapter;
-import org.apache.activemq.artemis.ra.inflow.ActiveMQActivationSpec;
-import org.apache.activemq.artemis.utils.UUIDGenerator;
-import org.junit.Test;
-
 import javax.jms.Message;
 import javax.resource.ResourceException;
 import javax.transaction.xa.XAException;
@@ -35,6 +24,18 @@ import javax.transaction.xa.Xid;
 import java.lang.reflect.Method;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+
+import org.apache.activemq.artemis.api.core.client.ClientMessage;
+import org.apache.activemq.artemis.api.core.client.ClientProducer;
+import org.apache.activemq.artemis.api.core.client.ClientSession;
+import org.apache.activemq.artemis.core.postoffice.Binding;
+import org.apache.activemq.artemis.core.server.Queue;
+import org.apache.activemq.artemis.core.transaction.impl.XidImpl;
+import org.apache.activemq.artemis.ra.ActiveMQResourceAdapter;
+import org.apache.activemq.artemis.ra.inflow.ActiveMQActivationSpec;
+import org.apache.activemq.artemis.tests.util.Wait;
+import org.apache.activemq.artemis.utils.UUIDGenerator;
+import org.junit.Test;
 
 public class ActiveMQMessageHandlerXATest extends ActiveMQRATestBase {
 
@@ -148,6 +149,7 @@ public class ActiveMQMessageHandlerXATest extends ActiveMQRATestBase {
       assertEquals(endpoint.lastMessage.getCoreMessage().getBodyBuffer().readString(), "teststring");
 
       Binding binding = server.getPostOffice().getBinding(MDBQUEUEPREFIXEDSIMPLE);
+      Wait.waitFor(() -> getMessageCount((Queue) binding.getBindable()) == 1);
       long messageCount = getMessageCount((Queue) binding.getBindable());
       assertEquals(1, messageCount);
    }
@@ -205,8 +207,7 @@ public class ActiveMQMessageHandlerXATest extends ActiveMQRATestBase {
          super.beforeDelivery(method);
          try {
             xaResource.start(xid, XAResource.TMNOFLAGS);
-         }
-         catch (XAException e) {
+         } catch (XAException e) {
             throw new ResourceException(e.getMessage(), e);
          }
       }
@@ -215,8 +216,7 @@ public class ActiveMQMessageHandlerXATest extends ActiveMQRATestBase {
       public void afterDelivery() throws ResourceException {
          try {
             xaResource.end(xid, XAResource.TMSUCCESS);
-         }
-         catch (XAException e) {
+         } catch (XAException e) {
             throw new ResourceException(e.getMessage(), e);
          }
 
@@ -258,8 +258,7 @@ public class ActiveMQMessageHandlerXATest extends ActiveMQRATestBase {
          super.onMessage(message);
          try {
             Thread.sleep(2000);
-         }
-         catch (InterruptedException e) {
+         } catch (InterruptedException e) {
             interrupted = true;
          }
       }
@@ -269,8 +268,7 @@ public class ActiveMQMessageHandlerXATest extends ActiveMQRATestBase {
          try {
             prepare();
             commit();
-         }
-         catch (XAException e) {
+         } catch (XAException e) {
             e.printStackTrace();
          }
          super.release();

@@ -104,7 +104,7 @@ public class SessionTest extends ActiveMQServerTestCase {
    @Test
    public void testCreateNonExistentQueue() throws Exception {
       AddressSettings addressSettings = new AddressSettings();
-      addressSettings.setAutoCreateJmsQueues(false);
+      addressSettings.setAutoCreateQueues(false);
       getJmsServer().getAddressSettingsRepository().addMatch("#", addressSettings);
 
       Connection conn = getConnectionFactory().createConnection();
@@ -112,8 +112,7 @@ public class SessionTest extends ActiveMQServerTestCase {
       try {
          sess.createQueue("QueueThatDoesNotExist");
          ProxyAssertSupport.fail();
-      }
-      catch (JMSException e) {
+      } catch (JMSException e) {
       }
       conn.close();
    }
@@ -126,8 +125,7 @@ public class SessionTest extends ActiveMQServerTestCase {
       try {
          s.createQueue("TestQueue");
          ProxyAssertSupport.fail("should throw IllegalStateException");
-      }
-      catch (javax.jms.IllegalStateException e) {
+      } catch (javax.jms.IllegalStateException e) {
          // OK
       }
       c.close();
@@ -136,7 +134,8 @@ public class SessionTest extends ActiveMQServerTestCase {
    @Test
    public void testCreateQueueWhileTopicWithSameNameExists() throws Exception {
       AddressSettings addressSettings = new AddressSettings();
-      addressSettings.setAutoCreateJmsQueues(false);
+      addressSettings.setAutoCreateQueues(false);
+      addressSettings.setAutoCreateAddresses(false);
       getJmsServer().getAddressSettingsRepository().addMatch("#", addressSettings);
 
       Connection conn = getConnectionFactory().createConnection();
@@ -144,8 +143,7 @@ public class SessionTest extends ActiveMQServerTestCase {
       try {
          sess.createQueue("TestTopic");
          ProxyAssertSupport.fail("should throw JMSException");
-      }
-      catch (JMSException e) {
+      } catch (JMSException e) {
          // OK
       }
       conn.close();
@@ -172,14 +170,14 @@ public class SessionTest extends ActiveMQServerTestCase {
 
    @Test
    public void testCreateNonExistentTopic() throws Exception {
-      getJmsServer().getAddressSettingsRepository().addMatch("#", new AddressSettings().setAutoCreateJmsTopics(false));
+      getJmsServer().getAddressSettingsRepository().addMatch("#", new AddressSettings().setAutoCreateQueues(false));
+      getJmsServer().getAddressSettingsRepository().addMatch("#", new AddressSettings().setAutoCreateAddresses(false));
       Connection conn = getConnectionFactory().createConnection();
       Session sess = conn.createSession(false, Session.AUTO_ACKNOWLEDGE);
       try {
          sess.createTopic("TopicThatDoesNotExist");
          ProxyAssertSupport.fail("should throw JMSException");
-      }
-      catch (JMSException e) {
+      } catch (JMSException e) {
          // OK
       }
       conn.close();
@@ -193,8 +191,7 @@ public class SessionTest extends ActiveMQServerTestCase {
       try {
          s.createTopic("TestTopic");
          ProxyAssertSupport.fail("should throw IllegalStateException");
-      }
-      catch (javax.jms.IllegalStateException e) {
+      } catch (javax.jms.IllegalStateException e) {
          // OK
       }
       c.close();
@@ -202,14 +199,14 @@ public class SessionTest extends ActiveMQServerTestCase {
 
    @Test
    public void testCreateTopicWhileQueueWithSameNameExists() throws Exception {
-      getJmsServer().getAddressSettingsRepository().addMatch("#", new AddressSettings().setAutoCreateJmsTopics(false));
+      getJmsServer().getAddressSettingsRepository().addMatch("#", new AddressSettings().setAutoCreateQueues(false));
+      getJmsServer().getAddressSettingsRepository().addMatch("#", new AddressSettings().setAutoCreateAddresses(false));
       Connection conn = getConnectionFactory().createConnection();
       Session sess = conn.createSession(false, Session.AUTO_ACKNOWLEDGE);
       try {
          sess.createTopic("TestQueue");
          ProxyAssertSupport.fail("should throw JMSException");
-      }
-      catch (JMSException e) {
+      } catch (JMSException e) {
          // OK
       }
       conn.close();
@@ -244,8 +241,7 @@ public class SessionTest extends ActiveMQServerTestCase {
          public void run() {
             try {
                m = consumer.receive(3000);
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                exceptionThrown = true;
             }
          }
@@ -290,15 +286,13 @@ public class SessionTest extends ActiveMQServerTestCase {
       try {
          sess.rollback();
          ProxyAssertSupport.fail();
-      }
-      catch (javax.jms.IllegalStateException e) {
+      } catch (javax.jms.IllegalStateException e) {
       }
 
       try {
          sess.commit();
          ProxyAssertSupport.fail();
-      }
-      catch (javax.jms.IllegalStateException e) {
+      } catch (javax.jms.IllegalStateException e) {
       }
 
       conn.close();

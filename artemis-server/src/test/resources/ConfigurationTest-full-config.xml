@@ -15,9 +15,9 @@
   limitations under the License.
 -->
 <configuration
-      xmlns="urn:activemq"
-      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-      xsi:schemaLocation="urn:activemq ../../../../activemq-server/src/main/resources/schema/artemis-server.xsd">
+        xmlns="urn:activemq"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="urn:activemq ../../../../activemq-server/src/main/resources/schema/artemis-server.xsd">
    <core xmlns="urn:activemq:core">
       <name>SomeNameForUseOnTheApplicationServer</name>
       <resolve-protocols>false</resolve-protocols>
@@ -49,6 +49,7 @@
       <message-expiry-scan-period>10111213</message-expiry-scan-period>
       <message-expiry-thread-priority>8</message-expiry-thread-priority>
       <id-cache-size>127</id-cache-size>
+      <journal-datasync>false</journal-datasync>
       <persist-id-cache>true</persist-id-cache>
       <populate-validated-user>true</populate-validated-user>
       <connection-ttl-check-interval>98765</connection-ttl-check-interval>
@@ -56,6 +57,10 @@
       <global-max-size>1234567</global-max-size>
       <max-disk-usage>37</max-disk-usage>
       <disk-scan-period>123</disk-scan-period>
+      <critical-analyzer-policy>HALT</critical-analyzer-policy>
+      <critical-analyzer-check-period>333</critical-analyzer-check-period>
+      <critical-analyzer-timeout>777</critical-analyzer-timeout>
+      <critical-analyzer>false</critical-analyzer>
       <remoting-incoming-interceptors>
          <class-name>org.apache.activemq.artemis.tests.unit.core.config.impl.TestInterceptor1</class-name>
          <class-name>org.apache.activemq.artemis.tests.unit.core.config.impl.TestInterceptor2</class-name>
@@ -120,7 +125,20 @@
             <transformer-class-name>org.foo.Transformer2</transformer-class-name>
             <exclusive>false</exclusive>
          </divert>
+         <divert name="divert3">
+            <routing-name>routing-name2</routing-name>
+            <address>address2</address>
+            <forwarding-address>forwarding-address2</forwarding-address>
+            <filter string="speed &lt; 88"/>
+            <transformer>
+               <class-name>org.foo.DivertTransformer3</class-name>
+               <property key="divertTransformerKey1" value="divertTransformerValue1"/>
+               <property key="divertTransformerKey2" value="divertTransformerValue2"/>
+            </transformer>
+            <exclusive>false</exclusive>
+         </divert>
       </diverts>
+      <amqp-use-core-subscription-naming>true</amqp-use-core-subscription-naming>
       <queues>
          <queue name="queue1">
             <address>address1</address>
@@ -139,7 +157,7 @@
             <forwarding-address>bridge-forwarding-address1</forwarding-address>
             <filter string="sku > 1"/>
             <transformer-class-name>org.foo.BridgeTransformer</transformer-class-name>
-            <min-large-message-size>4</min-large-message-size>
+            <min-large-message-size>4M</min-large-message-size>
             <check-period>31</check-period>
             <connection-ttl>370</connection-ttl>
             <retry-interval>3</retry-interval>
@@ -148,6 +166,7 @@
             <reconnect-attempts>2</reconnect-attempts>
             <failover-on-server-shutdown>false</failover-on-server-shutdown>
             <use-duplicate-detection>true</use-duplicate-detection>
+            <confirmation-window-size>1G</confirmation-window-size>
             <producer-window-size>444</producer-window-size>
             <static-connectors>
                <connector-ref>connector1</connector-ref>
@@ -156,7 +175,18 @@
          <bridge name="bridge2">
             <queue-name>queue2</queue-name>
             <forwarding-address>bridge-forwarding-address2</forwarding-address>
-            <producer-window-size>555</producer-window-size>
+            <producer-window-size>555k</producer-window-size>
+            <discovery-group-ref discovery-group-name="dg1"/>
+         </bridge>
+         <bridge name="bridge3">
+            <queue-name>queue3</queue-name>
+            <forwarding-address>bridge-forwarding-address2</forwarding-address>
+            <transformer>
+               <class-name>org.foo.BridgeTransformer3</class-name>
+               <property key="bridgeTransformerKey1" value="bridgeTransformerValue1"/>
+               <property key="bridgeTransformerKey2" value="bridgeTransformerValue2"/>
+            </transformer>
+            <producer-window-size>555k</producer-window-size>
             <discovery-group-ref discovery-group-name="dg1"/>
          </bridge>
       </bridges>
@@ -229,12 +259,18 @@
       <journal-compact-percentage>33</journal-compact-percentage>
       <journal-compact-min-files>123</journal-compact-min-files>
       <journal-max-io>56546</journal-max-io>
-      <perf-blast-pages>5</perf-blast-pages>
-      <run-sync-speed-test>true</run-sync-speed-test>
+      <journal-file-open-timeout>9876</journal-file-open-timeout>
       <server-dump-interval>5000</server-dump-interval>
       <memory-warning-threshold>95</memory-warning-threshold>
       <memory-measure-interval>54321</memory-measure-interval>
       <large-messages-directory>largemessagesdir</large-messages-directory>
+      <network-check-list>127.0.0.1</network-check-list>
+      <network-check-NIC>some-nick</network-check-NIC>
+      <network-check-period>123</network-check-period>
+      <network-check-timeout>321</network-check-timeout>
+      <network-check-URL-list>www.apache.org</network-check-URL-list>
+      <network-check-ping-command>ping-four</network-check-ping-command>
+      <network-check-ping6-command>ping-six</network-check-ping6-command>
       <security-settings>
          <security-setting match="a1">
             <permission type="createNonDurableQueue" roles="a1.1"/>
@@ -249,7 +285,7 @@
             <dead-letter-address>a1.1</dead-letter-address>
             <expiry-address>a1.2</expiry-address>
             <redelivery-delay>1</redelivery-delay>
-            <max-size-bytes>81781728121878</max-size-bytes>
+            <max-size-bytes>817M</max-size-bytes>
             <page-size-bytes>81738173872337</page-size-bytes>
             <page-max-cache-size>10</page-max-cache-size>
             <message-counter-history-day-limit>4</message-counter-history-day-limit>
@@ -260,6 +296,14 @@
             <auto-delete-jms-queues>true</auto-delete-jms-queues>
             <auto-create-jms-topics>true</auto-create-jms-topics>
             <auto-delete-jms-topics>true</auto-delete-jms-topics>
+            <auto-create-queues>true</auto-create-queues>
+            <auto-delete-queues>true</auto-delete-queues>
+            <auto-create-addresses>true</auto-create-addresses>
+            <auto-delete-addresses>true</auto-delete-addresses>
+            <default-purge-on-no-consumers>false</default-purge-on-no-consumers>
+            <default-max-consumers>5</default-max-consumers>
+            <default-queue-routing-type>ANYCAST</default-queue-routing-type>
+            <default-address-routing-type>MULTICAST</default-address-routing-type>
          </address-setting>
          <address-setting match="a2">
             <dead-letter-address>a2.1</dead-letter-address>
@@ -276,6 +320,14 @@
             <auto-delete-jms-queues>false</auto-delete-jms-queues>
             <auto-create-jms-topics>false</auto-create-jms-topics>
             <auto-delete-jms-topics>false</auto-delete-jms-topics>
+            <auto-create-queues>false</auto-create-queues>
+            <auto-delete-queues>false</auto-delete-queues>
+            <auto-create-addresses>false</auto-create-addresses>
+            <auto-delete-addresses>false</auto-delete-addresses>
+            <default-purge-on-no-consumers>true</default-purge-on-no-consumers>
+            <default-max-consumers>15</default-max-consumers>
+            <default-queue-routing-type>MULTICAST</default-queue-routing-type>
+            <default-address-routing-type>ANYCAST</default-address-routing-type>
          </address-setting>
       </address-settings>
       <resource-limit-settings>
@@ -289,5 +341,41 @@
             <factory-class>org.foo</factory-class>
          </connector-service>
       </connector-services>
+
+      <addresses>
+         <address name="addr1">
+            <anycast>
+               <queue name="q1">
+                  <durable>false</durable>
+                  <filter string="color='blue'"/>
+               </queue>
+               <queue name="q2" max-consumers="-1" purge-on-no-consumers="false">
+                  <durable>true</durable>
+                  <filter string="color='green'"/>
+               </queue>
+            </anycast>
+         </address>
+         <address name="addr2">
+            <multicast>
+               <queue name="q3" max-consumers="10" >
+                  <filter string="color='red'"/>
+               </queue>
+               <queue name="q4" purge-on-no-consumers="true">
+                  <durable>true</durable>
+               </queue>
+            </multicast>
+         </address>
+         <address name="addr2">
+            <multicast>
+               <queue name="q5" max-consumers="1" />
+               <queue name="q6" max-consumers="1" />
+            </multicast>
+            <anycast>
+               <queue name="q7" max-consumers="-1" />
+               <queue name="q8" max-consumers="-1" />
+            </anycast>
+         </address>
+      </addresses>
+
    </core>
 </configuration>

@@ -17,10 +17,14 @@
 package org.apache.activemq.artemis.core.server;
 
 import java.io.File;
+import java.util.Set;
 
+import org.apache.activemq.artemis.api.core.ActiveMQAddressDoesNotExistException;
+import org.apache.activemq.artemis.api.core.ActiveMQAddressExistsException;
 import org.apache.activemq.artemis.api.core.ActiveMQAddressFullException;
 import org.apache.activemq.artemis.api.core.ActiveMQClusterSecurityException;
 import org.apache.activemq.artemis.api.core.ActiveMQConnectionTimedOutException;
+import org.apache.activemq.artemis.api.core.ActiveMQDeleteAddressException;
 import org.apache.activemq.artemis.api.core.ActiveMQDisconnectedException;
 import org.apache.activemq.artemis.api.core.ActiveMQDuplicateMetaDataException;
 import org.apache.activemq.artemis.api.core.ActiveMQException;
@@ -29,12 +33,16 @@ import org.apache.activemq.artemis.api.core.ActiveMQIllegalStateException;
 import org.apache.activemq.artemis.api.core.ActiveMQIncompatibleClientServerException;
 import org.apache.activemq.artemis.api.core.ActiveMQInternalErrorException;
 import org.apache.activemq.artemis.api.core.ActiveMQInvalidFilterExpressionException;
+import org.apache.activemq.artemis.api.core.ActiveMQInvalidQueueConfiguration;
 import org.apache.activemq.artemis.api.core.ActiveMQInvalidTransientQueueUseException;
 import org.apache.activemq.artemis.api.core.ActiveMQNonExistentQueueException;
 import org.apache.activemq.artemis.api.core.ActiveMQQueueExistsException;
+import org.apache.activemq.artemis.api.core.ActiveMQQueueMaxConsumerLimitReached;
 import org.apache.activemq.artemis.api.core.ActiveMQSecurityException;
 import org.apache.activemq.artemis.api.core.ActiveMQSessionCreationException;
+import org.apache.activemq.artemis.api.core.ActiveMQUnexpectedRoutingTypeForAddress;
 import org.apache.activemq.artemis.api.core.DiscoveryGroupConfiguration;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.core.postoffice.Binding;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationSyncFileMessage;
@@ -104,14 +112,17 @@ public interface ActiveMQMessageBundle {
       value = "Did not receive data from {0} within the {1}ms connection TTL. The connection will now be closed.", format = Message.Format.MESSAGE_FORMAT)
    ActiveMQConnectionTimedOutException clientExited(String remoteAddress, long ttl);
 
+   @Message(id = 119015, value = "Must specify a name for each divert. This one will not be deployed.", format = Message.Format.MESSAGE_FORMAT)
+   ActiveMQInternalErrorException divertWithNoName();
+
    @Message(id = 119017, value = "Queue {0} does not exist", format = Message.Format.MESSAGE_FORMAT)
    ActiveMQNonExistentQueueException noSuchQueue(SimpleString queueName);
 
    @Message(id = 119018, value = "Binding already exists {0}", format = Message.Format.MESSAGE_FORMAT)
    ActiveMQQueueExistsException bindingAlreadyExists(Binding binding);
 
-   @Message(id = 119019, value = "Queue already exists {0}", format = Message.Format.MESSAGE_FORMAT)
-   ActiveMQQueueExistsException queueAlreadyExists(SimpleString queueName);
+   @Message(id = 119019, value = "Queue {0} already exists on address {1}", format = Message.Format.MESSAGE_FORMAT)
+   ActiveMQQueueExistsException queueAlreadyExists(SimpleString queueName, SimpleString addressName);
 
    @Message(id = 119020, value = "Invalid filter: {0}", format = Message.Format.MESSAGE_FORMAT)
    ActiveMQInvalidFilterExpressionException invalidFilter(@Cause Throwable e, SimpleString filter);
@@ -146,8 +157,8 @@ public interface ActiveMQMessageBundle {
    @Message(id = 119030, value = "large-message not initialized on server")
    ActiveMQIllegalStateException largeMessageNotInitialised();
 
-   @Message(id = 119031, value = "Unable to validate user", format = Message.Format.MESSAGE_FORMAT)
-   ActiveMQSecurityException unableToValidateUser();
+   @Message(id = 119031, value = "Unable to validate user from {0}. Username: {1}; SSL certificate subject DN: {2}", format = Message.Format.MESSAGE_FORMAT)
+   ActiveMQSecurityException unableToValidateUser(String remoteAddress, String user, String certMessage);
 
    @Message(id = 119032, value = "User: {0} does not have permission=''{1}'' on address {2}", format = Message.Format.MESSAGE_FORMAT)
    ActiveMQSecurityException userNoPermissions(String username, CheckType checkType, String saddress);
@@ -191,8 +202,8 @@ public interface ActiveMQMessageBundle {
    @Message(id = 119046, value = "invalid value: {0} count must be greater than 0", format = Message.Format.MESSAGE_FORMAT)
    IllegalArgumentException greaterThanZero(Integer count);
 
-   @Message(id = 119047, value = "Cannot set Message Counter Sample Period < {0}ms", format = Message.Format.MESSAGE_FORMAT)
-   IllegalArgumentException invalidMessageCounterPeriod(Long period);
+   @Message(id = 119047, value = "invalid value: {0} sample period must be greater than 0", format = Message.Format.MESSAGE_FORMAT)
+   IllegalArgumentException periodMustGreaterThanZero(Long newPeriod);
 
    @Message(id = 119048, value = "invalid new Priority value: {0}. It must be between 0 and 9 (both included)", format = Message.Format.MESSAGE_FORMAT)
    IllegalArgumentException invalidNewPriority(Integer period);
@@ -311,7 +322,7 @@ public interface ActiveMQMessageBundle {
    @Message(id = 119083, value = "Queue {0} has a different filter than requested", format = Message.Format.MESSAGE_FORMAT)
    ActiveMQInvalidTransientQueueUseException queueSubscriptionBelongsToDifferentFilter(SimpleString queueName);
 
-    // this code has to match with version 2.3.x as it's used on integration tests at Wildfly and JBoss EAP
+   // this code has to match with version 2.3.x as it's used on integration tests at Wildfly and JBoss EAP
    @Message(id = 119099, value = "Unable to authenticate cluster user: {0}",
       format = Message.Format.MESSAGE_FORMAT)
    ActiveMQClusterSecurityException unableToValidateClusterUser(String user);
@@ -360,7 +371,7 @@ public interface ActiveMQMessageBundle {
    @Message(id = 119114, value = "Replication synchronization process timed out after waiting {0} milliseconds", format = Message.Format.MESSAGE_FORMAT)
    IllegalStateException replicationSynchronizationTimeout(long timeout);
 
-   @Message(id = 119115, value = "Colocated Policy hasn't different type live and backup", format = Message.Format.MESSAGE_FORMAT)
+   @Message(id = 119115, value = "Colocated Policy hasn''t different type live and backup", format = Message.Format.MESSAGE_FORMAT)
    ActiveMQIllegalStateException liveBackupMismatch();
 
    @Message(id = 119116, value = "Netty Acceptor unavailable", format = Message.Format.MESSAGE_FORMAT)
@@ -375,4 +386,56 @@ public interface ActiveMQMessageBundle {
    @Message(id = 119119, value = "Disk Capacity is Low, cannot produce more messages.")
    ActiveMQIOErrorException diskBeyondLimit();
 
+   @Message(id = 119120, value = "connection with ID {0} closed by management", format = Message.Format.MESSAGE_FORMAT)
+   ActiveMQInternalErrorException connectionWithIDClosedByManagement(String ID);
+
+   @Message(id = 119200, value = "Maximum Consumer Limit Reached on Queue:(address={0},queue={1})", format = Message.Format.MESSAGE_FORMAT)
+   ActiveMQQueueMaxConsumerLimitReached maxConsumerLimitReachedForQueue(SimpleString address, SimpleString queueName);
+
+   @Message(id = 119201, value = "Expected Routing Type {1} but found {2} for address {0}", format = Message.Format.MESSAGE_FORMAT)
+   ActiveMQUnexpectedRoutingTypeForAddress unexpectedRoutingTypeForAddress(SimpleString address, RoutingType expectedRoutingType, Set<RoutingType> supportedRoutingTypes);
+
+   @Message(id = 119202, value = "Invalid Queue Configuration for Queue {0}, Address {1}.  Expected {2} to be {3} but was {4}", format = Message.Format.MESSAGE_FORMAT)
+   ActiveMQInvalidQueueConfiguration invalidQueueConfiguration(SimpleString address, SimpleString queueName, String queuePropertyName, Object expectedValue, Object actualValue);
+
+   @Message(id = 119203, value = "Address Does Not Exist: {0}", format = Message.Format.MESSAGE_FORMAT)
+   ActiveMQAddressDoesNotExistException addressDoesNotExist(SimpleString address);
+
+   @Message(id = 119204, value = "Address already exists: {0}", format = Message.Format.MESSAGE_FORMAT)
+   ActiveMQAddressExistsException addressAlreadyExists(SimpleString address);
+
+   @Message(id = 119205, value = "Address {0} has bindings", format = Message.Format.MESSAGE_FORMAT)
+   ActiveMQDeleteAddressException addressHasBindings(SimpleString address);
+
+   @Message(id = 119206, value = "Queue {0} has invalid max consumer setting: {1}", format = Message.Format.MESSAGE_FORMAT)
+   IllegalArgumentException invalidMaxConsumers(String queueName, int value);
+
+   @Message(id = 119207, value = "Can not create queue with routing type: {0}, Supported routing types for address: {1} are {2}", format = Message.Format.MESSAGE_FORMAT)
+   IllegalArgumentException invalidRoutingTypeForAddress(RoutingType routingType,
+                                                         String address,
+                                                         Set<RoutingType> supportedRoutingTypes);
+
+   @Message(id = 119208, value = "Invalid routing type {0}", format = Message.Format.MESSAGE_FORMAT)
+   IllegalArgumentException invalidRoutingType(String val);
+
+   @Message(id = 119209, value = "Can''t remove routing type {0}, queues exists for address: {1}. Please delete queues before removing this routing type.", format = Message.Format.MESSAGE_FORMAT)
+   IllegalStateException invalidRoutingTypeDelete(RoutingType routingType, String address);
+
+   @Message(id = 119210, value = "Can''t update queue {0} with maxConsumers: {1}. Current consumers are {2}.", format = Message.Format.MESSAGE_FORMAT)
+   IllegalStateException invalidMaxConsumersUpdate(String queueName, int maxConsumers, int consumers);
+
+   @Message(id = 119211, value = "Can''t update queue {0} with routing type: {1}, Supported routing types for address: {2} are {3}", format = Message.Format.MESSAGE_FORMAT)
+   IllegalStateException invalidRoutingTypeUpdate(String queueName,
+                                                  RoutingType routingType,
+                                                  String address,
+                                                  Set<RoutingType> supportedRoutingTypes);
+
+   @Message(id = 119212, value = "Invalid deletion policy type {0}", format = Message.Format.MESSAGE_FORMAT)
+   IllegalArgumentException invalidDeletionPolicyType(String val);
+
+   @Message(id = 119213, value = "User: {0} does not have permission=''{1}'' for queue {2} on address {3}", format = Message.Format.MESSAGE_FORMAT)
+   ActiveMQSecurityException userNoPermissionsQueue(String username, CheckType checkType, String squeue, String saddress);
+
+   @Message(id = 119214, value = "{0} must be a valid percentage value between 0 and 100 or -1 (actual value: {1})", format = Message.Format.MESSAGE_FORMAT)
+   IllegalArgumentException notPercentOrMinusOne(String name, Number val);
 }

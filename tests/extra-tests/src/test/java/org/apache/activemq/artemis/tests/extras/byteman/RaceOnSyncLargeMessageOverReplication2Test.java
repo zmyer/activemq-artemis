@@ -47,8 +47,10 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
-/** This test will add more bytes to the large message while still syncing.
- *  At the time of writing I couldn't replicate any issues, but I'm keeping it here to validate the impl */
+/**
+ * This test will add more bytes to the large message while still syncing.
+ * At the time of writing I couldn't replicate any issues, but I'm keeping it here to validate the impl
+ */
 @RunWith(BMUnitRunner.class)
 public class RaceOnSyncLargeMessageOverReplication2Test extends ActiveMQTestBase {
 
@@ -106,7 +108,7 @@ public class RaceOnSyncLargeMessageOverReplication2Test extends ActiveMQTestBase
       ReplicatedBackupUtils.configureReplicationPair(backupConfig, backupConnector, backupAcceptor, liveConfig, liveConnector, liveAcceptor);
 
       liveServer = createServer(liveConfig);
-      liveServer.getConfiguration().addQueueConfiguration(new CoreQueueConfiguration().setName("jms.queue.Queue").setAddress("jms.queue.Queue"));
+      liveServer.getConfiguration().addQueueConfiguration(new CoreQueueConfiguration().setName("Queue").setAddress("Queue"));
       liveServer.start();
 
       waitForServerToStart(liveServer);
@@ -138,8 +140,7 @@ public class RaceOnSyncLargeMessageOverReplication2Test extends ActiveMQTestBase
       if (connection != null) {
          try {
             connection.close();
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
          }
       }
       if (backupServer != null) {
@@ -188,8 +189,7 @@ public class RaceOnSyncLargeMessageOverReplication2Test extends ActiveMQTestBase
                try {
                   producer.send(message);
                   session.commit();
-               }
-               catch (JMSException expected) {
+               } catch (JMSException expected) {
                   expected.printStackTrace();
                }
             }
@@ -217,12 +217,11 @@ public class RaceOnSyncLargeMessageOverReplication2Test extends ActiveMQTestBase
 
       flagSyncWait.countDown();
 
-      Assert.assertTrue(((SharedNothingBackupActivation)backupServer.getActivation()).waitForBackupSync(10, TimeUnit.SECONDS));
+      Assert.assertTrue(((SharedNothingBackupActivation) backupServer.getActivation()).waitForBackupSync(10, TimeUnit.SECONDS));
 
       waitForRemoteBackup(connection.getSessionFactory(), 30);
 
-
-      liveServer.stop(true);
+      liveServer.fail(true);
 
       Assert.assertTrue(failedOver.await(10, TimeUnit.SECONDS));
 
@@ -248,8 +247,7 @@ public class RaceOnSyncLargeMessageOverReplication2Test extends ActiveMQTestBase
       try {
          flagSyncEntered.countDown();
          flagSyncWait.await(100, TimeUnit.SECONDS);
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          e.printStackTrace();
       }
 
@@ -263,8 +261,7 @@ public class RaceOnSyncLargeMessageOverReplication2Test extends ActiveMQTestBase
             flagChunkEntered.countDown();
             flagChunkWait.await(10, TimeUnit.SECONDS);
          }
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          e.printStackTrace();
       }
    }

@@ -16,12 +16,13 @@
  */
 package org.apache.activemq.artemis.core.server.cluster.ha;
 
+import java.util.Map;
+
 import org.apache.activemq.artemis.api.config.ActiveMQDefaultConfiguration;
+import org.apache.activemq.artemis.core.server.NetworkHealthCheck;
 import org.apache.activemq.artemis.core.server.impl.ActiveMQServerImpl;
 import org.apache.activemq.artemis.core.server.impl.LiveActivation;
 import org.apache.activemq.artemis.core.server.impl.SharedNothingLiveActivation;
-
-import java.util.Map;
 
 public class ReplicatedPolicy implements HAPolicy<LiveActivation> {
 
@@ -40,22 +41,49 @@ public class ReplicatedPolicy implements HAPolicy<LiveActivation> {
    private boolean allowAutoFailBack = ActiveMQDefaultConfiguration.isDefaultAllowAutoFailback();
 
    /*
+   * whether or not this live broker should vote to remain live
+   * */
+   private boolean voteOnReplicationFailure;
+
+   /*
+   * what quorum size to use for voting
+   * */
+   private int quorumSize;
+
+   private int voteRetries;
+
+   private long voteRetryWait;
+
+   /*
    * this are only used as the policy when the server is started as a live after a failover
    * */
    private ReplicaPolicy replicaPolicy;
 
-   public ReplicatedPolicy() {
-      replicaPolicy = new ReplicaPolicy(clusterName, -1, groupName, this);
+   private final NetworkHealthCheck networkHealthCheck;
+
+   public ReplicatedPolicy(NetworkHealthCheck networkHealthCheck) {
+      replicaPolicy = new ReplicaPolicy(networkHealthCheck, this);
+      this.networkHealthCheck = networkHealthCheck;
    }
 
-   public ReplicatedPolicy(boolean checkForLiveServer, String groupName, String clusterName, long initialReplicationSyncTimeout) {
+   public ReplicatedPolicy(boolean checkForLiveServer,
+                           String groupName,
+                           String clusterName,
+                           long initialReplicationSyncTimeout,
+                           NetworkHealthCheck networkHealthCheck,
+                           boolean voteOnReplicationFailure,
+                           int quorumSize,
+                           int voteRetries,
+                           long voteRetryWait) {
       this.checkForLiveServer = checkForLiveServer;
       this.groupName = groupName;
       this.clusterName = clusterName;
       this.initialReplicationSyncTimeout = initialReplicationSyncTimeout;
-      /*
-      * we create this with sensible defaults in case we start after a failover
-      * */
+      this.networkHealthCheck = networkHealthCheck;
+      this.voteOnReplicationFailure = voteOnReplicationFailure;
+      this.quorumSize = quorumSize;
+      this.voteRetries = voteRetries;
+      this.voteRetryWait = voteRetryWait;
    }
 
    public ReplicatedPolicy(boolean checkForLiveServer,
@@ -63,13 +91,21 @@ public class ReplicatedPolicy implements HAPolicy<LiveActivation> {
                            long initialReplicationSyncTimeout,
                            String groupName,
                            String clusterName,
-                           ReplicaPolicy replicaPolicy) {
+                           ReplicaPolicy replicaPolicy,
+                           NetworkHealthCheck networkHealthCheck,
+                           boolean voteOnReplicationFailure,
+                           int quorumSize,
+                           int voteRetries,
+                           long voteRetryWait) {
       this.checkForLiveServer = checkForLiveServer;
       this.clusterName = clusterName;
       this.groupName = groupName;
       this.allowAutoFailBack = allowAutoFailBack;
       this.initialReplicationSyncTimeout = initialReplicationSyncTimeout;
       this.replicaPolicy = replicaPolicy;
+      this.networkHealthCheck = networkHealthCheck;
+      this.voteOnReplicationFailure = voteOnReplicationFailure;
+      this.quorumSize = quorumSize;
    }
 
    public boolean isCheckForLiveServer() {
@@ -111,7 +147,17 @@ public class ReplicatedPolicy implements HAPolicy<LiveActivation> {
 
    public ReplicaPolicy getReplicaPolicy() {
       if (replicaPolicy == null) {
-         replicaPolicy = new ReplicaPolicy(clusterName, -1, groupName, this);
+         replicaPolicy = new ReplicaPolicy(networkHealthCheck, this);
+         replicaPolicy.setQuorumSize(quorumSize);
+         replicaPolicy.setVoteOnReplicationFailure(voteOnReplicationFailure);
+         replicaPolicy.setVoteRetries(voteRetries);
+         replicaPolicy.setVoteRetryWait(voteRetryWait);
+         if (clusterName != null && clusterName.length() > 0) {
+            replicaPolicy.setClusterName(clusterName);
+         }
+         if (groupName != null && groupName.length() > 0) {
+            replicaPolicy.setGroupName(groupName);
+         }
       }
       return replicaPolicy;
    }
@@ -165,11 +211,23 @@ public class ReplicatedPolicy implements HAPolicy<LiveActivation> {
       this.allowAutoFailBack = allowAutoFailBack;
    }
 
+   public boolean isVoteOnReplicationFailure() {
+      return voteOnReplicationFailure;
+   }
+
    @Override
    public LiveActivation createActivation(ActiveMQServerImpl server,
                                           boolean wasLive,
                                           Map<String, Object> activationParams,
                                           ActiveMQServerImpl.ShutdownOnCriticalErrorListener shutdownOnCriticalIO) {
       return new SharedNothingLiveActivation(server, this);
+   }
+
+   public int getQuorumSize() {
+      return quorumSize;
+   }
+
+   public void setQuorumSize(int quorumSize) {
+      this.quorumSize = quorumSize;
    }
 }

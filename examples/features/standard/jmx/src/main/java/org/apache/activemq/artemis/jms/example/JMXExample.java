@@ -16,8 +16,6 @@
  */
 package org.apache.activemq.artemis.jms.example;
 
-import java.util.HashMap;
-
 import javax.jms.MessageConsumer;
 import javax.jms.MessageProducer;
 import javax.jms.Queue;
@@ -33,16 +31,19 @@ import javax.management.remote.JMXConnector;
 import javax.management.remote.JMXConnectorFactory;
 import javax.management.remote.JMXServiceURL;
 import javax.naming.InitialContext;
+import java.util.HashMap;
 
+import org.apache.activemq.artemis.api.core.RoutingType;
+import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.api.core.management.ObjectNameBuilder;
-import org.apache.activemq.artemis.api.jms.management.JMSQueueControl;
+import org.apache.activemq.artemis.api.core.management.QueueControl;
 
 /**
  * An example that shows how to manage ActiveMQ Artemis using JMX.
  */
 public class JMXExample {
 
-   private static final String JMX_URL = "service:jmx:rmi:///jndi/rmi://localhost:3000/jmxrmi";
+   private static final String JMX_URL = "service:jmx:rmi:///jndi/rmi://localhost:1099/jmxrmi";
 
    public static void main(final String[] args) throws Exception {
       QueueConnection connection = null;
@@ -74,21 +75,26 @@ public class JMXExample {
          producer.send(message);
 
          // Step 9. Retrieve the ObjectName of the queue. This is used to identify the server resources to manage
-         ObjectName on = ObjectNameBuilder.DEFAULT.getJMSQueueObjectName(queue.getQueueName());
+         ObjectName on = ObjectNameBuilder.DEFAULT.getQueueObjectName(SimpleString.toSimpleString(queue.getQueueName()), SimpleString.toSimpleString(queue.getQueueName()), RoutingType.ANYCAST);
 
          // Step 10. Create JMX Connector to connect to the server's MBeanServer
-         JMXConnector connector = JMXConnectorFactory.connect(new JMXServiceURL(JMXExample.JMX_URL), new HashMap());
+         //we dont actually need credentials as the guest login i sused but this is how its done
+         HashMap env = new HashMap();
+         String[] creds = {"guest", "guest"};
+         env.put(JMXConnector.CREDENTIALS, creds);
+
+         JMXConnector connector = JMXConnectorFactory.connect(new JMXServiceURL(JMXExample.JMX_URL), env);
 
          // Step 11. Retrieve the MBeanServerConnection
          MBeanServerConnection mbsc = connector.getMBeanServerConnection();
 
-         // Step 12. Create a JMSQueueControl proxy to manage the queue on the server
-         JMSQueueControl queueControl = MBeanServerInvocationHandler.newProxyInstance(mbsc, on, JMSQueueControl.class, false);
+         // Step 12. Create a QueueControl proxy to manage the queue on the server
+         QueueControl queueControl = MBeanServerInvocationHandler.newProxyInstance(mbsc, on, QueueControl.class, false);
          // Step 13. Display the number of messages in the queue
          System.out.println(queueControl.getName() + " contains " + queueControl.getMessageCount() + " messages");
 
          // Step 14. Remove the message sent at step #8
-         System.out.println("message has been removed: " + queueControl.removeMessage(message.getJMSMessageID()));
+         System.out.println("message has been removed: " + queueControl.removeMessages(null));
 
          // Step 15. Display the number of messages in the queue
          System.out.println(queueControl.getName() + " contains " + queueControl.getMessageCount() + " messages");
@@ -106,9 +112,13 @@ public class JMXExample {
          // operation, there is none to consume.
          // The call will timeout after 5000ms and messageReceived will be null
          TextMessage messageReceived = (TextMessage) messageConsumer.receive(5000);
+
+         if (messageReceived != null) {
+            throw new IllegalStateException("message should be null!");
+         }
+
          System.out.println("Received message: " + messageReceived);
-      }
-      finally {
+      } finally {
          // Step 20. Be sure to close the resources!
          if (initialContext != null) {
             initialContext.close();

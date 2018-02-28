@@ -56,7 +56,7 @@ public class PropertiesLoader {
       return Boolean.parseBoolean((String) options.get(name));
    }
 
-   public class FileNameKey {
+   public static final class FileNameKey {
 
       final File file;
       final String absPath;
@@ -106,14 +106,13 @@ public class PropertiesLoader {
          File baseDir = null;
          if (options.get("baseDir") != null) {
             baseDir = new File((String) options.get("baseDir"));
-         }
-         else {
+         } else {
             if (System.getProperty("java.security.auth.login.config") != null) {
                baseDir = new File(System.getProperty("java.security.auth.login.config")).getParentFile();
             }
          }
          if (debug) {
-            logger.debug("Using basedir=" + baseDir.getAbsolutePath());
+            logger.debug("Using basedir=" + (baseDir == null ? null : baseDir.getAbsolutePath()));
          }
          return baseDir;
       }

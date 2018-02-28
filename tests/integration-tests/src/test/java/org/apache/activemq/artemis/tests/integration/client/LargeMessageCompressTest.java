@@ -25,12 +25,12 @@ import java.io.OutputStream;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.activemq.artemis.api.core.Message;
+import org.apache.activemq.artemis.api.core.client.ActiveMQClient;
 import org.apache.activemq.artemis.api.core.client.ClientConsumer;
 import org.apache.activemq.artemis.api.core.client.ClientMessage;
 import org.apache.activemq.artemis.api.core.client.ClientProducer;
 import org.apache.activemq.artemis.api.core.client.ClientSession;
 import org.apache.activemq.artemis.api.core.client.ClientSessionFactory;
-import org.apache.activemq.artemis.api.core.client.ActiveMQClient;
 import org.apache.activemq.artemis.api.core.client.ServerLocator;
 import org.apache.activemq.artemis.core.config.StoreConfiguration;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
@@ -222,7 +222,7 @@ public class LargeMessageCompressTest extends LargeMessageTest {
    // but this will make sure we can work through compressed channels on saving it to stream
    @Test
    public void testHugeStreamingSpacesCompressed() throws Exception {
-      final long messageSize = 1024L * 1024L * 1024L;
+      final long messageSize = 1024L * 1024L;
 
       System.out.println("Message size = " + messageSize);
 
@@ -237,7 +237,7 @@ public class LargeMessageCompressTest extends LargeMessageTest {
 
       ClientSession session = addClientSession(sf.createSession(false, false, false));
 
-      session.createQueue(ADDRESS, ADDRESS);
+      session.createQueue(ADDRESS, ADDRESS, null, true);
 
       ClientProducer producer = session.createProducer(ADDRESS);
 
@@ -262,8 +262,7 @@ public class LargeMessageCompressTest extends LargeMessageTest {
 
             if (count++ < messageSize) {
                return ' ';
-            }
-            else {
+            } else {
                return -1;
             }
          }

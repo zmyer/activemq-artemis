@@ -16,7 +16,6 @@
  */
 package org.apache.activemq.artemis.api.core.client;
 
-import java.net.URI;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.concurrent.ExecutorService;
@@ -134,6 +133,8 @@ public final class ActiveMQClient {
 
    public static final String DEFAULT_CORE_PROTOCOL = "CORE";
 
+   public static final boolean DEFAULT_USE_TOPOLOGY_FOR_LOADBALANCING = true;
+
    public static final String THREAD_POOL_MAX_SIZE_PROPERTY_KEY = "activemq.artemis.client.global.thread.pool.max.size";
 
    public static final String SCHEDULED_THREAD_POOL_SIZE_PROPERTY_KEY = "activemq.artemis.client.global.scheduled.thread.pool.core.size";
@@ -144,7 +145,6 @@ public final class ActiveMQClient {
 
    private static ScheduledExecutorService globalScheduledThreadPool;
 
-
    static {
       initializeGlobalThreadPoolProperties();
    }
@@ -152,7 +152,6 @@ public final class ActiveMQClient {
    public static synchronized void clearThreadPools() {
       clearThreadPools(10, TimeUnit.SECONDS);
    }
-
 
    public static synchronized void clearThreadPools(long time, TimeUnit unit) {
 
@@ -164,40 +163,39 @@ public final class ActiveMQClient {
       }
 
       if (globalThreadPool != null) {
-         globalThreadPool.shutdown();
+         globalThreadPool.shutdownNow();
          try {
             if (!globalThreadPool.awaitTermination(time, unit)) {
                globalThreadPool.shutdownNow();
-               ActiveMQClientLogger.LOGGER.warn("Couldn't finish the client globalThreadPool in less than 10 seconds, interrupting it now");
+               ActiveMQClientLogger.LOGGER.unableToProcessGlobalThreadPoolIn10Sec();
             }
-         }
-         catch (InterruptedException e) {
+         } catch (InterruptedException e) {
             throw new ActiveMQInterruptedException(e);
-         }
-         finally {
+         } finally {
             globalThreadPool = null;
          }
       }
 
       if (globalScheduledThreadPool != null) {
-         globalScheduledThreadPool.shutdown();
+         globalScheduledThreadPool.shutdownNow();
          try {
             if (!globalScheduledThreadPool.awaitTermination(time, unit)) {
                globalScheduledThreadPool.shutdownNow();
-               ActiveMQClientLogger.LOGGER.warn("Couldn't finish the client scheduled in less than 10 seconds, interrupting it now");
+               ActiveMQClientLogger.LOGGER.unableToProcessScheduledlIn10Sec();
             }
-         }
-         catch (InterruptedException e) {
+         } catch (InterruptedException e) {
             throw new ActiveMQInterruptedException(e);
-         }
-         finally {
+         } finally {
             globalScheduledThreadPool = null;
          }
       }
    }
 
-   /** Warning: This method has to be called before any clients or servers is started on the JVM otherwise previous ServerLocator would be broken after this call. */
-   public static synchronized void injectPools(ExecutorService globalThreadPool, ScheduledExecutorService scheduledThreadPool) {
+   /**
+    * Warning: This method has to be called before any clients or servers is started on the JVM otherwise previous ServerLocator would be broken after this call.
+    */
+   public static synchronized void injectPools(ExecutorService globalThreadPool,
+                                               ScheduledExecutorService scheduledThreadPool) {
       if (globalThreadPool == null || scheduledThreadPool == null)
          throw new IllegalArgumentException("thread pools must not be null");
 
@@ -220,8 +218,7 @@ public final class ActiveMQClient {
 
          if (globalThreadPoolSize == -1) {
             globalThreadPool = new ThreadPoolExecutor(0, Integer.MAX_VALUE, 60L, TimeUnit.SECONDS, new SynchronousQueue<Runnable>(), factory);
-         }
-         else {
+         } else {
             globalThreadPool = new ActiveMQThreadPoolExecutor(0, ActiveMQClient.globalThreadPoolSize, 60L, TimeUnit.SECONDS, factory);
          }
       }
@@ -237,7 +234,7 @@ public final class ActiveMQClient {
             }
          });
 
-         globalScheduledThreadPool =  new ScheduledThreadPoolExecutor(ActiveMQClient.globalScheduledThreadPoolSize, factory);
+         globalScheduledThreadPool = new ScheduledThreadPoolExecutor(ActiveMQClient.globalScheduledThreadPoolSize, factory);
       }
       return globalScheduledThreadPool;
    }
@@ -279,7 +276,8 @@ public final class ActiveMQClient {
     */
    public static void setGlobalThreadPoolProperties(int globalThreadMaxPoolSize, int globalScheduledThreadPoolSize) {
 
-      if (globalThreadMaxPoolSize < 2 && globalThreadMaxPoolSize != -1) globalThreadMaxPoolSize = 2;
+      if (globalThreadMaxPoolSize < 2 && globalThreadMaxPoolSize != -1)
+         globalThreadMaxPoolSize = 2;
 
       ActiveMQClient.globalScheduledThreadPoolSize = globalScheduledThreadPoolSize;
       ActiveMQClient.globalThreadPoolSize = globalThreadMaxPoolSize;
@@ -292,7 +290,7 @@ public final class ActiveMQClient {
     */
    public static ServerLocator createServerLocator(final String url) throws Exception {
       ServerLocatorParser parser = new ServerLocatorParser();
-      return parser.newObject(new URI(url), null);
+      return parser.newObject(parser.expandURI(url), null);
    }
 
    /**

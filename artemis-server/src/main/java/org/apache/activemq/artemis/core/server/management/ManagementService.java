@@ -16,12 +16,14 @@
  */
 package org.apache.activemq.artemis.core.server.management;
 
+import javax.management.ObjectName;
 import java.util.Set;
 import java.util.concurrent.ScheduledExecutorService;
 
-import javax.management.ObjectName;
-
 import org.apache.activemq.artemis.api.core.BroadcastGroupConfiguration;
+import org.apache.activemq.artemis.api.core.ICoreMessage;
+import org.apache.activemq.artemis.api.core.Message;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.api.core.TransportConfiguration;
 import org.apache.activemq.artemis.api.core.management.ObjectNameBuilder;
@@ -37,15 +39,15 @@ import org.apache.activemq.artemis.core.postoffice.PostOffice;
 import org.apache.activemq.artemis.core.remoting.server.RemotingService;
 import org.apache.activemq.artemis.core.security.Role;
 import org.apache.activemq.artemis.core.security.SecurityStore;
-import org.apache.activemq.artemis.core.server.Divert;
 import org.apache.activemq.artemis.core.server.ActiveMQComponent;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
+import org.apache.activemq.artemis.core.server.Divert;
 import org.apache.activemq.artemis.core.server.Queue;
 import org.apache.activemq.artemis.core.server.QueueFactory;
-import org.apache.activemq.artemis.core.server.ServerMessage;
 import org.apache.activemq.artemis.core.server.cluster.Bridge;
 import org.apache.activemq.artemis.core.server.cluster.BroadcastGroup;
 import org.apache.activemq.artemis.core.server.cluster.ClusterConnection;
+import org.apache.activemq.artemis.core.server.impl.AddressInfo;
 import org.apache.activemq.artemis.core.settings.HierarchicalRepository;
 import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
 import org.apache.activemq.artemis.core.transaction.ResourceManager;
@@ -66,37 +68,37 @@ public interface ManagementService extends NotificationService, ActiveMQComponen
 
    void setStorageManager(StorageManager storageManager);
 
-   ActiveMQServerControlImpl registerServer(final PostOffice postOffice,
-                                            final SecurityStore securityStore,
-                                            final StorageManager storageManager,
-                                            final Configuration configuration,
-                                            final HierarchicalRepository<AddressSettings> addressSettingsRepository,
-                                            final HierarchicalRepository<Set<Role>> securityRepository,
-                                            final ResourceManager resourceManager,
-                                            final RemotingService remotingService,
-                                            final ActiveMQServer messagingServer,
-                                            final QueueFactory queueFactory,
-                                            final ScheduledExecutorService scheduledThreadPool,
-                                            final PagingManager pagingManager,
-                                            final boolean backup) throws Exception;
+   ActiveMQServerControlImpl registerServer(PostOffice postOffice,
+                                            SecurityStore securityStore,
+                                            StorageManager storageManager,
+                                            Configuration configuration,
+                                            HierarchicalRepository<AddressSettings> addressSettingsRepository,
+                                            HierarchicalRepository<Set<Role>> securityRepository,
+                                            ResourceManager resourceManager,
+                                            RemotingService remotingService,
+                                            ActiveMQServer messagingServer,
+                                            QueueFactory queueFactory,
+                                            ScheduledExecutorService scheduledThreadPool,
+                                            PagingManager pagingManager,
+                                            boolean backup) throws Exception;
 
    void unregisterServer() throws Exception;
 
    void registerInJMX(ObjectName objectName, Object managedResource) throws Exception;
 
-   void unregisterFromJMX(final ObjectName objectName) throws Exception;
+   void unregisterFromJMX(ObjectName objectName) throws Exception;
 
    void registerInRegistry(String resourceName, Object managedResource);
 
-   void unregisterFromRegistry(final String resourceName);
+   void unregisterFromRegistry(String resourceName);
 
-   void registerAddress(SimpleString address) throws Exception;
+   void registerAddress(AddressInfo addressInfo) throws Exception;
 
    void unregisterAddress(SimpleString address) throws Exception;
 
    void registerQueue(Queue queue, SimpleString address, StorageManager storageManager) throws Exception;
 
-   void unregisterQueue(SimpleString name, SimpleString address) throws Exception;
+   void unregisterQueue(SimpleString name, SimpleString address, RoutingType routingType) throws Exception;
 
    void registerAcceptor(Acceptor acceptor, TransportConfiguration configuration) throws Exception;
 
@@ -104,7 +106,7 @@ public interface ManagementService extends NotificationService, ActiveMQComponen
 
    void registerDivert(Divert divert, DivertConfiguration config) throws Exception;
 
-   void unregisterDivert(SimpleString name) throws Exception;
+   void unregisterDivert(SimpleString name, SimpleString address) throws Exception;
 
    void registerBroadcastGroup(BroadcastGroup broadcastGroup,
                                BroadcastGroupConfiguration configuration) throws Exception;
@@ -127,5 +129,5 @@ public interface ManagementService extends NotificationService, ActiveMQComponen
 
    Object[] getResources(Class<?> resourceType);
 
-   ServerMessage handleMessage(ServerMessage message) throws Exception;
+   ICoreMessage handleMessage(Message message) throws Exception;
 }

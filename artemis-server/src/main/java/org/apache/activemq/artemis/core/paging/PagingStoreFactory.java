@@ -18,6 +18,7 @@ package org.apache.activemq.artemis.core.paging;
 
 import java.util.List;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ScheduledExecutorService;
 
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.core.io.SequentialFileFactory;
@@ -26,6 +27,7 @@ import org.apache.activemq.artemis.core.persistence.StorageManager;
 import org.apache.activemq.artemis.core.server.files.FileStoreMonitor;
 import org.apache.activemq.artemis.core.settings.HierarchicalRepository;
 import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
+import org.apache.activemq.artemis.utils.actors.ArtemisExecutor;
 
 /**
  * The integration point between the PagingManger and the File System (aka SequentialFiles)
@@ -34,7 +36,10 @@ public interface PagingStoreFactory {
 
    PagingStore newStore(SimpleString address, AddressSettings addressSettings);
 
-   PageCursorProvider newCursorProvider(PagingStore store, StorageManager storageManager, AddressSettings addressSettings, Executor executor);
+   PageCursorProvider newCursorProvider(PagingStore store,
+                                        StorageManager storageManager,
+                                        AddressSettings addressSettings,
+                                        ArtemisExecutor executor);
 
    void stop() throws InterruptedException;
 
@@ -45,5 +50,15 @@ public interface PagingStoreFactory {
    SequentialFileFactory newFileFactory(SimpleString address) throws Exception;
 
    void injectMonitor(FileStoreMonitor monitor) throws Exception;
+
+   default ScheduledExecutorService getScheduledExecutor() {
+      return null;
+   }
+
+   default Executor newExecutor() {
+      return null;
+   }
+
+
 
 }

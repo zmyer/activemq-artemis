@@ -16,6 +16,17 @@
  */
 package org.apache.activemq.artemis.tests.integration.client;
 
+import javax.jms.BytesMessage;
+import javax.jms.Connection;
+import javax.jms.DeliveryMode;
+import javax.jms.MessageConsumer;
+import javax.jms.MessageProducer;
+import javax.jms.Session;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.api.core.TransportConfiguration;
 import org.apache.activemq.artemis.api.core.client.ClientSession;
 import org.apache.activemq.artemis.api.core.client.ClientSessionFactory;
@@ -26,21 +37,15 @@ import org.apache.activemq.artemis.core.config.Configuration;
 import org.apache.activemq.artemis.core.remoting.impl.netty.NettyConnectorFactory;
 import org.apache.activemq.artemis.core.remoting.impl.netty.TransportConstants;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
+import org.apache.activemq.artemis.api.core.RoutingType;
+import org.apache.activemq.artemis.core.settings.impl.AddressFullMessagePolicy;
+import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
 import org.apache.activemq.artemis.jms.client.ActiveMQConnectionFactory;
 import org.apache.activemq.artemis.jms.client.ActiveMQDestination;
 import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
+import org.apache.activemq.artemis.tests.util.Wait;
 import org.junit.Assert;
 import org.junit.Test;
-
-import javax.jms.BytesMessage;
-import javax.jms.Connection;
-import javax.jms.DeliveryMode;
-import javax.jms.MessageConsumer;
-import javax.jms.MessageProducer;
-import javax.jms.Session;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * -- https://issues.jboss.org/browse/HORNETQ-746
@@ -92,6 +97,15 @@ public class JmsNettyNioStressTest extends ActiveMQTestBase {
       TransportConfiguration transportConfig = new TransportConfiguration(ActiveMQTestBase.NETTY_ACCEPTOR_FACTORY, params);
       Configuration config = createBasicConfig().setJMXManagementEnabled(false).clearAcceptorConfigurations().addAcceptorConfiguration(transportConfig);
       ActiveMQServer server = createServer(true, config);
+
+
+      server.getAddressSettingsRepository().clear();
+      AddressSettings defaultSetting = new AddressSettings().setPageSizeBytes(AddressSettings.DEFAULT_PAGE_SIZE).
+         setMaxSizeBytes(AddressSettings.DEFAULT_MAX_SIZE_BYTES).setAddressFullMessagePolicy(AddressFullMessagePolicy.PAGE).
+         setAutoDeleteAddresses(false).setAutoCreateAddresses(true).setAutoCreateQueues(false);
+
+      server.getAddressSettingsRepository().addMatch("#", defaultSetting);
+
       server.getConfiguration().setThreadPoolMaxSize(2);
       server.start();
 
@@ -109,9 +123,9 @@ public class JmsNettyNioStressTest extends ActiveMQTestBase {
       final int numberOfMessages = 100;
 
       // these must all be the same
-      final int numProducers = 30;
-      final int numConsumerProducers = 30;
-      final int numConsumers = 30;
+      final int numProducers = 5;
+      final int numConsumerProducers = 5;
+      final int numConsumers = 5;
 
       // each produce, consume+produce and consume increments this counter
       final AtomicInteger totalCount = new AtomicInteger(0);
@@ -128,8 +142,15 @@ public class JmsNettyNioStressTest extends ActiveMQTestBase {
       // create the 2 queues used in the test
       ClientSessionFactory sf = locator.createSessionFactory(transpConf);
       ClientSession session = sf.createTransactedSession();
-      session.createQueue("jms.queue.queue", "jms.queue.queue");
-      session.createQueue("jms.queue.queue2", "jms.queue.queue2");
+      session.createAddress(SimpleString.toSimpleString("queue"), RoutingType.ANYCAST, false);
+      session.createAddress(SimpleString.toSimpleString("queue2"), RoutingType.ANYCAST, false);
+
+      Assert.assertTrue(session.addressQuery(SimpleString.toSimpleString("queue")).isExists());
+      Assert.assertTrue(session.addressQuery(SimpleString.toSimpleString("queue2")).isExists());
+      session.createQueue("queue", RoutingType.ANYCAST, "queue");
+      session.createQueue("queue2", RoutingType.ANYCAST, "queue2");
+      Assert.assertTrue(session.addressQuery(SimpleString.toSimpleString("queue")).isExists());
+      Assert.assertTrue(session.addressQuery(SimpleString.toSimpleString("queue2")).isExists());
       session.commit();
       sf.close();
       session.close();
@@ -146,6 +167,7 @@ public class JmsNettyNioStressTest extends ActiveMQTestBase {
       connectionConsumer = cf.createConnection();
       connectionConsumer.start();
 
+      session.close();
       // these threads produce messages on the the first queue
       for (int i = 0; i < numProducers; i++) {
          new Thread() {
@@ -156,7 +178,7 @@ public class JmsNettyNioStressTest extends ActiveMQTestBase {
                try {
                   session = connectionProducer.createSession(true, Session.SESSION_TRANSACTED);
                   MessageProducer messageProducer = session.createProducer(ActiveMQDestination.createQueue("queue"));
-                  messageProducer.setDeliveryMode(DeliveryMode.PERSISTENT);
+                  messageProducer.setDeliveryMode(DeliveryMode.NON_PERSISTENT);
 
                   for (int i = 0; i < numberOfMessages; i++) {
                      BytesMessage message = session.createBytesMessage();
@@ -169,16 +191,13 @@ public class JmsNettyNioStressTest extends ActiveMQTestBase {
 
                      totalCount.incrementAndGet();
                   }
-               }
-               catch (Exception e) {
+               } catch (Exception e) {
                   throw new RuntimeException(e);
-               }
-               finally {
+               } finally {
                   if (session != null) {
                      try {
                         session.close();
-                     }
-                     catch (Exception e) {
+                     } catch (Exception e) {
                         e.printStackTrace();
                      }
                   }
@@ -197,7 +216,7 @@ public class JmsNettyNioStressTest extends ActiveMQTestBase {
                   session = connectionConsumerProducer.createSession(true, Session.SESSION_TRANSACTED);
                   MessageConsumer consumer = session.createConsumer(ActiveMQDestination.createQueue("queue"));
                   MessageProducer messageProducer = session.createProducer(ActiveMQDestination.createQueue("queue2"));
-                  messageProducer.setDeliveryMode(DeliveryMode.PERSISTENT);
+                  messageProducer.setDeliveryMode(DeliveryMode.NON_PERSISTENT);
                   for (int i = 0; i < numberOfMessages; i++) {
                      BytesMessage message = (BytesMessage) consumer.receive(5000);
                      if (message == null) {
@@ -212,16 +231,13 @@ public class JmsNettyNioStressTest extends ActiveMQTestBase {
 
                      totalCount.incrementAndGet();
                   }
-               }
-               catch (Exception e) {
+               } catch (Exception e) {
                   throw new RuntimeException(e);
-               }
-               finally {
+               } finally {
                   if (session != null) {
                      try {
                         session.close();
-                     }
-                     catch (Exception e) {
+                     } catch (Exception e) {
                         e.printStackTrace();
                      }
                   }
@@ -248,16 +264,13 @@ public class JmsNettyNioStressTest extends ActiveMQTestBase {
 
                      totalCount.incrementAndGet();
                   }
-               }
-               catch (Exception e) {
+               } catch (Exception e) {
                   throw new RuntimeException(e);
-               }
-               finally {
+               } finally {
                   if (session != null) {
                      try {
                         session.close();
-                     }
-                     catch (Exception e) {
+                     } catch (Exception e) {
                         e.printStackTrace();
                      }
                   }
@@ -266,15 +279,8 @@ public class JmsNettyNioStressTest extends ActiveMQTestBase {
          }.start();
       }
 
-      // check that the overall transaction count reaches the expected number,
-      // which would indicate that the system didn't stall
-      int timeoutCounter = 0;
-      int maxSecondsToWait = 60;
-      while (timeoutCounter < maxSecondsToWait && totalCount.get() < totalExpectedCount) {
-         timeoutCounter++;
-         Thread.sleep(1000);
-         System.out.println("Not done yet.. " + (maxSecondsToWait - timeoutCounter) + "; " + totalCount.get());
-      }
+      Wait.waitFor(() -> totalExpectedCount == totalCount.get(), 60000, 100);
+
       System.out.println("Done.." + totalCount.get() + ", expected " + totalExpectedCount);
       Assert.assertEquals("Possible deadlock", totalExpectedCount, totalCount.get());
       System.out.println("After assert");

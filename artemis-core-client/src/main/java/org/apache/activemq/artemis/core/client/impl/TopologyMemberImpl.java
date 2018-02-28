@@ -16,14 +16,16 @@
  */
 package org.apache.activemq.artemis.core.client.impl;
 
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.Map;
+
 import org.apache.activemq.artemis.api.core.Pair;
 import org.apache.activemq.artemis.api.core.TransportConfiguration;
 import org.apache.activemq.artemis.api.core.client.TopologyMember;
 import org.apache.activemq.artemis.core.remoting.impl.netty.TransportConstants;
 import org.apache.activemq.artemis.spi.core.protocol.RemotingConnection;
 import org.apache.activemq.artemis.utils.ConfigurationHelper;
-
-import java.util.Map;
 
 public final class TopologyMemberImpl implements TopologyMember {
 
@@ -115,8 +117,7 @@ public final class TopologyMemberImpl implements TopologyMember {
    public boolean isMember(TransportConfiguration configuration) {
       if (getConnector().getA() != null && getConnector().getA().isSameParams(configuration) || getConnector().getB() != null && getConnector().getB().isSameParams(configuration)) {
          return true;
-      }
-      else {
+      } else {
          return false;
       }
    }
@@ -128,6 +129,22 @@ public final class TopologyMemberImpl implements TopologyMember {
       String host = ConfigurationHelper.getStringProperty(TransportConstants.HOST_PROP_NAME, "localhost", props);
       int port = ConfigurationHelper.getIntProperty(TransportConstants.PORT_PROP_NAME, 0, props);
       return "tcp://" + host + ":" + port;
+   }
+
+   public URI toBackupURI() {
+      TransportConfiguration backupConnector = getBackup();
+      if (backupConnector == null) {
+         return null;
+      }
+      Map<String, Object> props = backupConnector.getParams();
+      String host = ConfigurationHelper.getStringProperty(TransportConstants.HOST_PROP_NAME, "localhost", props);
+      int port = ConfigurationHelper.getIntProperty(TransportConstants.PORT_PROP_NAME, 0, props);
+      boolean sslEnabled = ConfigurationHelper.getBooleanProperty(TransportConstants.SSL_ENABLED_PROP_NAME, false, props);
+      try {
+         return new URI("tcp://" + host + ":" + port + "?" + TransportConstants.SSL_ENABLED_PROP_NAME + "=" + sslEnabled);
+      } catch (URISyntaxException e) {
+         return null;
+      }
    }
 
    @Override

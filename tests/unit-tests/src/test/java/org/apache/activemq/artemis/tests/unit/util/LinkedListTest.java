@@ -23,8 +23,8 @@ import java.util.NoSuchElementException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
-import org.apache.activemq.artemis.utils.LinkedListImpl;
-import org.apache.activemq.artemis.utils.LinkedListIterator;
+import org.apache.activemq.artemis.utils.collections.LinkedListImpl;
+import org.apache.activemq.artemis.utils.collections.LinkedListIterator;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -176,8 +176,7 @@ public class LinkedListTest extends ActiveMQTestBase {
                while (ref.get() != null) {
                   toOME.add("sdlfkjshadlfkjhas dlfkjhas dlfkjhads lkjfhads lfkjhads flkjashdf " + someCount++);
                }
-            }
-            catch (Throwable expectedThrowable) {
+            } catch (Throwable expectedThrowable) {
             }
 
             toOME.clear();
@@ -310,8 +309,7 @@ public class LinkedListTest extends ActiveMQTestBase {
          iter.remove();
 
          fail("Should throw NoSuchElementException");
-      }
-      catch (NoSuchElementException e) {
+      } catch (NoSuchElementException e) {
          // OK
       }
    }
@@ -417,8 +415,7 @@ public class LinkedListTest extends ActiveMQTestBase {
          iter.next();
 
          fail("Should throw NoSuchElementException");
-      }
-      catch (NoSuchElementException e) {
+      } catch (NoSuchElementException e) {
          // OK
       }
    }
@@ -433,8 +430,7 @@ public class LinkedListTest extends ActiveMQTestBase {
          iter.remove();
 
          fail("Should throw NoSuchElementException");
-      }
-      catch (NoSuchElementException e) {
+      } catch (NoSuchElementException e) {
          // OK
       }
 
@@ -448,8 +444,7 @@ public class LinkedListTest extends ActiveMQTestBase {
          iter.remove();
 
          fail("Should throw NoSuchElementException");
-      }
-      catch (NoSuchElementException e) {
+      } catch (NoSuchElementException e) {
          // OK
       }
 
@@ -473,8 +468,7 @@ public class LinkedListTest extends ActiveMQTestBase {
          iter.remove();
 
          fail("Should throw NoSuchElementException");
-      }
-      catch (NoSuchElementException e) {
+      } catch (NoSuchElementException e) {
          // OK
       }
 
@@ -486,8 +480,7 @@ public class LinkedListTest extends ActiveMQTestBase {
          iter.remove();
 
          fail("Should throw NoSuchElementException");
-      }
-      catch (NoSuchElementException e) {
+      } catch (NoSuchElementException e) {
          // OK
       }
 
@@ -668,8 +661,7 @@ public class LinkedListTest extends ActiveMQTestBase {
       try {
          iter.remove();
          fail("Should throw exception");
-      }
-      catch (NoSuchElementException e) {
+      } catch (NoSuchElementException e) {
       }
 
       iter = list.iterator();
@@ -755,8 +747,7 @@ public class LinkedListTest extends ActiveMQTestBase {
       for (int i = 0; i < num; i++) {
          if (i % 2 == 0) {
             list.addHead(i);
-         }
-         else {
+         } else {
             list.addTail(i);
          }
          assertEquals(1, list.size());
@@ -811,8 +802,7 @@ public class LinkedListTest extends ActiveMQTestBase {
 
       try {
          iter.next();
-      }
-      catch (NoSuchElementException e) {
+      } catch (NoSuchElementException e) {
       }
 
       for (int i = 0; i < num; i++) {

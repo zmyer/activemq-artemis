@@ -16,10 +16,16 @@
  */
 package org.apache.activemq.artemis.core.protocol.core.impl;
 
+import java.util.Map;
+
+import org.apache.activemq.artemis.api.core.ActiveMQClusterSecurityException;
 import org.apache.activemq.artemis.api.core.ActiveMQException;
 import org.apache.activemq.artemis.api.core.ActiveMQExceptionType;
 import org.apache.activemq.artemis.api.core.ActiveMQInternalErrorException;
+import org.apache.activemq.artemis.api.core.ActiveMQSecurityException;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.api.core.SimpleString;
+import org.apache.activemq.artemis.core.persistence.OperationContext;
 import org.apache.activemq.artemis.core.protocol.core.Channel;
 import org.apache.activemq.artemis.core.protocol.core.ChannelHandler;
 import org.apache.activemq.artemis.core.protocol.core.CoreRemotingConnection;
@@ -37,7 +43,9 @@ import org.apache.activemq.artemis.core.security.ActiveMQPrincipal;
 import org.apache.activemq.artemis.core.server.ActiveMQMessageBundle;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.core.server.ActiveMQServerLogger;
+import org.apache.activemq.artemis.core.server.ServerProducer;
 import org.apache.activemq.artemis.core.server.ServerSession;
+import org.apache.activemq.artemis.core.server.impl.ServerProducerImpl;
 import org.apache.activemq.artemis.core.version.Version;
 import org.jboss.logging.Logger;
 
@@ -136,11 +144,10 @@ public class ActiveMQPacketHandler implements ChannelHandler {
                                        "Server will not accept create session requests");
          }*/
 
-         if (connection.getClientVersion() == 0) {
-            connection.setClientVersion(request.getVersion());
-         }
-         else if (connection.getClientVersion() != request.getVersion()) {
-            ActiveMQServerLogger.LOGGER.incompatibleVersionAfterConnect(request.getVersion(), connection.getClientVersion());
+         if (connection.getChannelVersion() == 0) {
+            connection.setChannelVersion(request.getVersion());
+         } else if (connection.getChannelVersion() != request.getVersion()) {
+            ActiveMQServerLogger.LOGGER.incompatibleVersionAfterConnect(request.getVersion(), connection.getChannelVersion());
          }
 
          Channel channel = connection.getChannel(request.getSessionChannelID(), request.getWindowSize());
@@ -151,29 +158,35 @@ public class ActiveMQPacketHandler implements ChannelHandler {
             activeMQPrincipal = connection.getDefaultActiveMQPrincipal();
          }
 
-         ServerSession session = server.createSession(request.getName(), activeMQPrincipal == null ? request.getUsername() : activeMQPrincipal.getUserName(), activeMQPrincipal == null ? request.getPassword() : activeMQPrincipal.getPassword(), request.getMinLargeMessageSize(), connection, request.isAutoCommitSends(), request.isAutoCommitAcks(), request.isPreAcknowledge(), request.isXA(), request.getDefaultAddress(),
-                                                      new CoreSessionCallback(request.getName(), protocolManager, channel, connection), true);
+         OperationContext sessionOperationContext = server.newOperationContext();
 
-         ServerSessionPacketHandler handler = new ServerSessionPacketHandler(session, server.getStorageManager(), channel);
+         Map<SimpleString, RoutingType> routingTypeMap = protocolManager.getPrefixes();
+
+         CoreSessionCallback sessionCallback = new CoreSessionCallback(request.getName(), protocolManager, channel, connection);
+         ServerSession session = server.createSession(request.getName(), activeMQPrincipal == null ? request.getUsername() : activeMQPrincipal.getUserName(), activeMQPrincipal == null ? request.getPassword() : activeMQPrincipal.getPassword(), request.getMinLargeMessageSize(), connection, request.isAutoCommitSends(), request.isAutoCommitAcks(), request.isPreAcknowledge(), request.isXA(), request.getDefaultAddress(), sessionCallback, true, sessionOperationContext, routingTypeMap);
+         ServerProducer serverProducer = new ServerProducerImpl(session.getName(), "CORE", request.getDefaultAddress());
+         session.addProducer(serverProducer);
+         ServerSessionPacketHandler handler = new ServerSessionPacketHandler(server, protocolManager, session, server.getStorageManager(), channel);
          channel.setHandler(handler);
+         sessionCallback.setSessionHandler(handler);
 
          // TODO - where is this removed?
          protocolManager.addSessionHandler(request.getName(), handler);
 
          response = new CreateSessionResponseMessage(server.getVersion().getIncrementingVersion());
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQClusterSecurityException | ActiveMQSecurityException e) {
+         ActiveMQServerLogger.LOGGER.securityProblemWhileCreatingSession(e.getMessage());
+         response = new ActiveMQExceptionMessage(e);
+      } catch (ActiveMQException e) {
          if (e.getType() == ActiveMQExceptionType.INCOMPATIBLE_CLIENT_SERVER_VERSIONS) {
             incompatibleVersion = true;
             logger.debug("Sending ActiveMQException after Incompatible client", e);
-         }
-         else {
+         } else {
             ActiveMQServerLogger.LOGGER.failedToCreateSession(e);
          }
 
          response = new ActiveMQExceptionMessage(e);
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          ActiveMQServerLogger.LOGGER.failedToCreateSession(e);
 
          response = new ActiveMQExceptionMessage(new ActiveMQInternalErrorException());
@@ -184,8 +197,7 @@ public class ActiveMQPacketHandler implements ChannelHandler {
       // are not compatible
       if (incompatibleVersion) {
          channel1.sendAndFlush(response);
-      }
-      else {
+      } else {
          channel1.send(response);
       }
    }
@@ -206,8 +218,7 @@ public class ActiveMQPacketHandler implements ChannelHandler {
          // HORNETQ-720 XXX ataylor?
          if (/*!server.checkActivate() || */ sessionHandler == null) {
             response = new ReattachSessionResponseMessage(-1, false);
-         }
-         else {
+         } else {
             if (sessionHandler.getChannel().getConfirmationWindowSize() == -1) {
                // Even though session exists, we can't reattach since confi window size == -1,
                // i.e. we don't have a resend cache for commands, so we just close the old session
@@ -219,16 +230,14 @@ public class ActiveMQPacketHandler implements ChannelHandler {
                sessionHandler.close();
 
                response = new ReattachSessionResponseMessage(-1, false);
-            }
-            else {
+            } else {
                // Reconnect the channel to the new connection
                int serverLastConfirmedCommandID = sessionHandler.transferConnection(connection, request.getLastConfirmedCommandID());
 
                response = new ReattachSessionResponseMessage(serverLastConfirmedCommandID, true);
             }
          }
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          ActiveMQServerLogger.LOGGER.failedToReattachSession(e);
 
          response = new ActiveMQExceptionMessage(new ActiveMQInternalErrorException());
@@ -239,9 +248,8 @@ public class ActiveMQPacketHandler implements ChannelHandler {
 
    private void handleCreateQueue(final CreateQueueMessage request) {
       try {
-         server.createQueue(request.getAddress(), request.getQueueName(), request.getFilterString(), request.isDurable(), request.isTemporary());
-      }
-      catch (Exception e) {
+         server.createQueue(request.getAddress(), null, request.getQueueName(), request.getFilterString(), request.isDurable(), request.isTemporary());
+      } catch (Exception e) {
          ActiveMQServerLogger.LOGGER.failedToHandleCreateQueue(e);
       }
    }

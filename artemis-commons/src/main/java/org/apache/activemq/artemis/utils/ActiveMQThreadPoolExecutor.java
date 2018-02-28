@@ -17,10 +17,10 @@
 package org.apache.activemq.artemis.utils;
 
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /*
  * ActiveMQThreadPoolExecutor: a special ThreadPoolExecutor that combines
@@ -29,81 +29,33 @@ import java.util.concurrent.atomic.AtomicInteger;
  * and will be removed after idling for a specified keep time.
  * But in contrast to a standard cached executor, tasks are queued if the
  * maximum pool size if reached, instead of rejected.
- *
- * This is achieved by using a specialized blocking queue, which checks the
- * state of the associated executor in the offer method to decide whether to
- * queue a task or have the executor create another thread.
- *
- * Since the thread pool's execute method is reentrant, more than one caller
- * could try to offer a task into the queue. There is a small chance that
- * (a few) more threads are created as it should be limited by max pool size.
- * To allow for such a case not to reject a task, the underlying thread pool
- * executor is not limited. Only the offer method checks the configured limit.
  */
 public class ActiveMQThreadPoolExecutor extends ThreadPoolExecutor {
-   @SuppressWarnings("serial")
-   private static class ThreadPoolQueue extends LinkedBlockingQueue<Runnable> {
-      private ActiveMQThreadPoolExecutor executor = null;
 
-      public void setExecutor(ActiveMQThreadPoolExecutor executor) {
-         this.executor = executor;
+   // Handler executed when a task is submitted and a new thread cannot be created (because maxSize was reached)
+   // It queues the task on the executors's queue (using the add() method, see ThreadPoolQueue class below)
+   private static final RejectedExecutionHandler QUEUE_EXECUTION_HANDLER = (r, e) -> {
+      if (!e.isShutdown()) {
+         e.getQueue().add(r);
       }
+   };
+
+   // A specialized LinkedBlockingQueue that takes new elements by calling add() but not offer()
+   // This is to force the ThreadPoolExecutor to always create new threads and never queue
+   private static class ThreadPoolQueue extends LinkedBlockingQueue<Runnable> {
 
       @Override
       public boolean offer(Runnable runnable) {
-         int poolSize = executor.getPoolSize();
+         return false;
+      }
 
-         // If the are less threads than the configured maximum, then the tasks is
-         // only queued if there are some idle threads that can run that tasks.
-         // We have to add the queue size, since some tasks might just have been queued
-         // but not yet taken by an idle thread.
-         if (poolSize < executor.getMaximumPoolSize() && (size() + executor.getActive()) >= poolSize)
-            return false;
-
-         return super.offer(runnable);
+      @Override
+      public boolean add(Runnable runnable) {
+         return super.offer( runnable );
       }
    }
 
-   private int maxPoolSize;
-
-   // count the active threads with before-/afterExecute, since the .getActiveCount is not very
-   // efficient.
-   private final AtomicInteger active = new AtomicInteger(0);
-
    public ActiveMQThreadPoolExecutor(int coreSize, int maxSize, long keep, TimeUnit keepUnits, ThreadFactory factory) {
-      this(coreSize, maxSize, keep, keepUnits, new ThreadPoolQueue(), factory);
-   }
-
-   // private constructor is needed to inject 'this' into the ThreadPoolQueue instance
-   private ActiveMQThreadPoolExecutor(int coreSize, int maxSize, long keep, TimeUnit keepUnits, ThreadPoolQueue myQueue, ThreadFactory factory) {
-      super(coreSize, Integer.MAX_VALUE, keep, keepUnits, myQueue, factory);
-      maxPoolSize = maxSize;
-      myQueue.setExecutor(this);
-   }
-
-   private int getActive() {
-      return active.get();
-   }
-
-   @Override
-   public int getMaximumPoolSize() {
-      return maxPoolSize;
-   }
-
-   @Override
-   public void setMaximumPoolSize(int maxSize) {
-      maxPoolSize = maxSize;
-   }
-
-   @Override
-   protected void beforeExecute(Thread thread, Runnable runnable) {
-      super.beforeExecute(thread, runnable);
-      active.incrementAndGet();
-   }
-
-   @Override
-   protected void afterExecute(Runnable runnable, Throwable throwable) {
-      active.decrementAndGet();
-      super.afterExecute(runnable, throwable);
+      super( coreSize, maxSize, keep, keepUnits, new ThreadPoolQueue(), factory, QUEUE_EXECUTION_HANDLER );
    }
 }

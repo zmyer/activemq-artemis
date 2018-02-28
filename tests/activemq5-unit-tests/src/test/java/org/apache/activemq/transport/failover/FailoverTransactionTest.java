@@ -6,7 +6,7 @@
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,26 +15,6 @@
  * limitations under the License.
  */
 package org.apache.activemq.transport.failover;
-
-import org.apache.activemq.ActiveMQConnection;
-import org.apache.activemq.ActiveMQConnectionFactory;
-import org.apache.activemq.ActiveMQMessageConsumer;
-import org.apache.activemq.AutoFailTestSupport;
-import org.apache.activemq.artemis.core.protocol.openwire.OpenWireConnection;
-import org.apache.activemq.artemis.jms.server.embedded.EmbeddedJMS;
-import org.apache.activemq.broker.artemiswrapper.OpenwireArtemisBaseTest;
-import org.apache.activemq.transport.TransportListener;
-import org.apache.activemq.util.SocketProxy;
-import org.jboss.byteman.contrib.bmunit.BMRule;
-import org.jboss.byteman.contrib.bmunit.BMRules;
-import org.jboss.byteman.contrib.bmunit.BMUnitRunner;
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import javax.jms.Connection;
 import javax.jms.JMSException;
@@ -59,6 +39,26 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import org.apache.activemq.ActiveMQConnection;
+import org.apache.activemq.ActiveMQConnectionFactory;
+import org.apache.activemq.ActiveMQMessageConsumer;
+import org.apache.activemq.AutoFailTestSupport;
+import org.apache.activemq.artemis.core.protocol.openwire.OpenWireConnection;
+import org.apache.activemq.artemis.jms.server.embedded.EmbeddedJMS;
+import org.apache.activemq.broker.artemiswrapper.OpenwireArtemisBaseTest;
+import org.apache.activemq.transport.TransportListener;
+import org.apache.activemq.util.SocketProxy;
+import org.jboss.byteman.contrib.bmunit.BMRule;
+import org.jboss.byteman.contrib.bmunit.BMRules;
+import org.jboss.byteman.contrib.bmunit.BMUnitRunner;
+import org.junit.After;
+import org.junit.Assert;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 // see https://issues.apache.org/activemq/browse/AMQ-2473
 
@@ -136,15 +136,12 @@ public class FailoverTransactionTest extends OpenwireArtemisBaseTest {
 
    @Test
    @BMRules(
-           rules = {
-                   @BMRule(
-                           name = "set no return response and stop the broker",
-                           targetClass = "org.apache.activemq.artemis.core.protocol.openwire.OpenWireConnection$CommandProcessor",
-                           targetMethod = "processCommitTransactionOnePhase",
-                           targetLocation = "EXIT",
-                           action = "org.apache.activemq.transport.failover.FailoverTransactionTest.holdResponseAndStopBroker($0)")
-           }
-   )
+      rules = {@BMRule(
+         name = "set no return response and stop the broker",
+         targetClass = "org.apache.activemq.artemis.core.protocol.openwire.OpenWireConnection$CommandProcessor",
+         targetMethod = "processCommitTransactionOnePhase",
+         targetLocation = "EXIT",
+         action = "org.apache.activemq.transport.failover.FailoverTransactionTest.holdResponseAndStopBroker($0)")})
    public void testFailoverCommitReplyLost() throws Exception {
       LOG.info(this + " running test testFailoverCommitReplyLost");
 
@@ -170,8 +167,7 @@ public class FailoverTransactionTest extends OpenwireArtemisBaseTest {
             LOG.info("doing async commit...");
             try {
                session.commit();
-            }
-            catch (JMSException e) {
+            } catch (JMSException e) {
                Assert.assertTrue(e instanceof TransactionRolledBackException);
                LOG.info("got commit exception: ", e);
             }
@@ -231,16 +227,13 @@ public class FailoverTransactionTest extends OpenwireArtemisBaseTest {
 
    @Test
    @BMRules(
-           rules = {
-                   @BMRule(
-                           name = "set no return response and stop the broker",
-                           targetClass = "org.apache.activemq.artemis.core.protocol.openwire.OpenWireConnection$CommandProcessor",
-                           targetMethod = "processMessage",
-                           targetLocation = "EXIT",
-                           binding = "owconn:OpenWireConnection = $0; context = owconn.getContext()",
-                           action = "org.apache.activemq.transport.failover.FailoverTransactionTest.holdResponseAndStopBroker($0)")
-           }
-   )
+      rules = {@BMRule(
+         name = "set no return response and stop the broker",
+         targetClass = "org.apache.activemq.artemis.core.protocol.openwire.OpenWireConnection$CommandProcessor",
+         targetMethod = "processMessage",
+         targetLocation = "EXIT",
+         binding = "owconn:OpenWireConnection = $0; context = owconn.getContext()",
+         action = "org.apache.activemq.transport.failover.FailoverTransactionTest.holdResponseAndStopBroker($0)")})
    public void testFailoverSendReplyLost() throws Exception {
       LOG.info(this + " running test testFailoverSendReplyLost");
       broker = createBroker();
@@ -263,8 +256,7 @@ public class FailoverTransactionTest extends OpenwireArtemisBaseTest {
             LOG.info("doing async send...");
             try {
                produceMessage(session, destination);
-            }
-            catch (JMSException e) {
+            } catch (JMSException e) {
                //assertTrue(e instanceof TransactionRolledBackException);
                LOG.error("got send exception: ", e);
                Assert.fail("got unexpected send exception" + e);
@@ -316,15 +308,12 @@ public class FailoverTransactionTest extends OpenwireArtemisBaseTest {
 
    @Test
    @BMRules(
-           rules = {
-                   @BMRule(
-                           name = "set no return response and stop the broker",
-                           targetClass = "org.apache.activemq.artemis.core.protocol.openwire.OpenWireConnection$CommandProcessor",
-                           targetMethod = "processMessage",
-                           targetLocation = "EXIT",
-                           action = "org.apache.activemq.transport.failover.FailoverTransactionTest.holdResponseAndStopProxyOnFirstSend($0)")
-           }
-   )
+      rules = {@BMRule(
+         name = "set no return response and stop the broker",
+         targetClass = "org.apache.activemq.artemis.core.protocol.openwire.OpenWireConnection$CommandProcessor",
+         targetMethod = "processMessage",
+         targetLocation = "EXIT",
+         action = "org.apache.activemq.transport.failover.FailoverTransactionTest.holdResponseAndStopProxyOnFirstSend($0)")})
    public void testFailoverConnectionSendReplyLost() throws Exception {
       LOG.info(this + " running test testFailoverConnectionSendReplyLost");
       broker = createBroker();
@@ -352,8 +341,7 @@ public class FailoverTransactionTest extends OpenwireArtemisBaseTest {
             LOG.info("doing async send...");
             try {
                produceMessage(session, destination);
-            }
-            catch (JMSException e) {
+            } catch (JMSException e) {
                //assertTrue(e instanceof TransactionRolledBackException);
                LOG.info("got send exception: ", e);
             }
@@ -397,6 +385,7 @@ public class FailoverTransactionTest extends OpenwireArtemisBaseTest {
       LOG.info("Received: " + msg);
       Assert.assertNull("no messges left dangling but got: " + msg, msg);
       connection.close();
+      proxy.close();
    }
 
    @Test
@@ -514,39 +503,38 @@ public class FailoverTransactionTest extends OpenwireArtemisBaseTest {
             Assert.assertNotNull("Failed to get message: " + count, received);
          }
          session.commit();
-      }
-      finally {
+      } finally {
          connection.close();
       }
 
       Assert.assertTrue("connectionconsumer did not get a message", connectionConsumerGotOne.await(10, TimeUnit.SECONDS));
    }
 
-//   @Test
-//   @BMRules(
-//           rules = {
-//                   @BMRule(
-//                           name = "set no return response and stop the broker",
-//                           targetClass = "org.apache.activemq.artemis.core.protocol.openwire.OpenWireConnection$CommandProcessor",
-//                           targetMethod = "processMessageAck",
-//                           targetLocation = "ENTRY",
-//                           action = "org.apache.activemq.transport.failover.FailoverTransactionTest.holdResponseAndStopBroker($0)")
-//           }
-//   )
-//   public void testFailoverConsumerAckLost() throws Exception {
-//      LOG.info(this + " running test testFailoverConsumerAckLost");
-//      // as failure depends on hash order of state tracker recovery, do a few times
-//      for (int i = 0; i < 3; i++) {
-//         try {
-//            LOG.info("Iteration: " + i);
-//            doTestFailoverConsumerAckLost(i);
-//         }
-//         finally {
-//            stopBroker();
-//         }
-//      }
-//   }
-//
+   //   @Test
+   //   @BMRules(
+   //           rules = {
+   //                   @BMRule(
+   //                           name = "set no return response and stop the broker",
+   //                           targetClass = "org.apache.activemq.artemis.core.protocol.openwire.OpenWireConnection$CommandProcessor",
+   //                           targetMethod = "processMessageAck",
+   //                           targetLocation = "ENTRY",
+   //                           action = "org.apache.activemq.transport.failover.FailoverTransactionTest.holdResponseAndStopBroker($0)")
+   //           }
+   //   )
+   //   public void testFailoverConsumerAckLost() throws Exception {
+   //      LOG.info(this + " running test testFailoverConsumerAckLost");
+   //      // as failure depends on hash order of state tracker recovery, do a few times
+   //      for (int i = 0; i < 3; i++) {
+   //         try {
+   //            LOG.info("Iteration: " + i);
+   //            doTestFailoverConsumerAckLost(i);
+   //         }
+   //         finally {
+   //            stopBroker();
+   //         }
+   //      }
+   //   }
+   //
    public void doTestFailoverConsumerAckLost(final int pauseSeconds) throws Exception {
       broker = createBroker();
       broker.start();
@@ -614,22 +602,19 @@ public class FailoverTransactionTest extends OpenwireArtemisBaseTest {
                   LOG.info("committing consumer1 session: " + receivedMessages.size() + " messsage(s)");
                   try {
                      consumerSession1.commit();
-                  }
-                  catch (JMSException expectedSometimes) {
+                  } catch (JMSException expectedSometimes) {
                      LOG.info("got exception ex on commit", expectedSometimes);
                      if (expectedSometimes instanceof TransactionRolledBackException) {
                         gotTransactionRolledBackException.set(true);
                         // ok, message one was not replayed so we expect the rollback
-                     }
-                     else {
+                     } else {
                         throw expectedSometimes;
                      }
 
                   }
                   commitDoneLatch.countDown();
                   LOG.info("done async commit");
-               }
-               catch (Exception e) {
+               } catch (Exception e) {
                   e.printStackTrace();
                }
             }
@@ -656,8 +641,7 @@ public class FailoverTransactionTest extends OpenwireArtemisBaseTest {
          LOG.info("post: from consumer1 received: " + msg);
          if (gotTransactionRolledBackException.get()) {
             Assert.assertNotNull("should be available again after commit rollback ex", msg);
-         }
-         else {
+         } else {
             Assert.assertNull("should be nothing left for consumer as receive should have committed", msg);
          }
          consumerSession1.commit();
@@ -670,8 +654,7 @@ public class FailoverTransactionTest extends OpenwireArtemisBaseTest {
             Assert.assertNotNull("got second message on consumer2", msg);
             consumerSession2.commit();
          }
-      }
-      finally {
+      } finally {
          for (Connection c : connections) {
             c.close();
          }
@@ -700,8 +683,7 @@ public class FailoverTransactionTest extends OpenwireArtemisBaseTest {
          }
          LOG.info("Sweep received: " + msg);
          Assert.assertNull("no messges left dangling but got: " + msg, msg);
-      }
-      finally {
+      } finally {
          connection.close();
          broker.stop();
       }
@@ -709,15 +691,12 @@ public class FailoverTransactionTest extends OpenwireArtemisBaseTest {
 
    @Test
    @BMRules(
-           rules = {
-                   @BMRule(
-                           name = "set no return response and stop the broker",
-                           targetClass = "org.apache.activemq.artemis.core.protocol.openwire.OpenWireConnection$CommandProcessor",
-                           targetMethod = "processRemoveConsumer",
-                           targetLocation = "ENTRY",
-                           action = "org.apache.activemq.transport.failover.FailoverTransactionTest.stopBrokerOnCounter()")
-           }
-   )
+      rules = {@BMRule(
+         name = "set no return response and stop the broker",
+         targetClass = "org.apache.activemq.artemis.core.protocol.openwire.OpenWireConnection$CommandProcessor",
+         targetMethod = "processRemoveConsumer",
+         targetLocation = "ENTRY",
+         action = "org.apache.activemq.transport.failover.FailoverTransactionTest.stopBrokerOnCounter()")})
    public void testPoolingNConsumesAfterReconnect() throws Exception {
       LOG.info(this + " running test testPoolingNConsumesAfterReconnect");
       count = 0;
@@ -788,10 +767,8 @@ public class FailoverTransactionTest extends OpenwireArtemisBaseTest {
 
                            LOG.info("calling close() " + ((ActiveMQMessageConsumer) localConsumer).getConsumerId());
                            localConsumer.close();
-                        }
-                        catch (NoSuchElementException nse) {
-                        }
-                        catch (Exception ignored) {
+                        } catch (NoSuchElementException nse) {
+                        } catch (Exception ignored) {
                            LOG.error("Ex on: " + ((ActiveMQMessageConsumer) localConsumer).getConsumerId(), ignored);
                         }
                      }
@@ -833,8 +810,7 @@ public class FailoverTransactionTest extends OpenwireArtemisBaseTest {
          LOG.info("post: from consumer1 received: " + msg);
          Assert.assertNotNull("got message after failover", msg);
          msg.acknowledge();
-      }
-      finally {
+      } finally {
          executorService.shutdown();
          for (Connection c : connections) {
             c.close();
@@ -876,16 +852,15 @@ public class FailoverTransactionTest extends OpenwireArtemisBaseTest {
          try {
             consumerSession.commit();
             Assert.fail("expected transaction rolledback ex");
-         }
-         catch (TransactionRolledBackException expected) {
+         } catch (TransactionRolledBackException expected) {
          }
 
          broker.stop();
          broker = createBroker();
          broker.start();
+
          Assert.assertNotNull("should get rolledback message from original restarted broker", consumer.receive(20000));
-      }
-      finally {
+      } finally {
          connection.close();
       }
    }
@@ -899,46 +874,57 @@ public class FailoverTransactionTest extends OpenwireArtemisBaseTest {
       ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory("failover:(" + url + ")?jms.consumerFailoverRedeliveryWaitPeriod=30000");
       configureConnectionFactory(cf);
       Connection connection = cf.createConnection();
-      connection.start();
-      final Session producerSession = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
-      final Queue destination = producerSession.createQueue(QUEUE_NAME);
-      final Session consumerSession = connection.createSession(true, Session.SESSION_TRANSACTED);
-      MessageConsumer consumer = consumerSession.createConsumer(destination);
+      try {
+         connection.start();
+         final Session producerSession = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
+         final Queue destination = producerSession.createQueue(QUEUE_NAME);
+         final Session consumerSession = connection.createSession(true, Session.SESSION_TRANSACTED);
+         MessageConsumer consumer = consumerSession.createConsumer(destination);
 
-      produceMessage(producerSession, destination);
-      Message msg = consumer.receive(20000);
-      if (msg == null) {
-         AutoFailTestSupport.dumpAllThreads("missing-");
-      }
-      Assert.assertNotNull("got message just produced", msg);
-
-      broker.stop();
-      broker = createBroker();
-      broker.start();
-
-      final CountDownLatch commitDone = new CountDownLatch(1);
-      // will block pending re-deliveries
-      new Thread() {
-         @Override
-         public void run() {
-            LOG.info("doing async commit...");
-            try {
-               consumerSession.commit();
-               commitDone.countDown();
-            }
-            catch (JMSException ignored) {
-            }
+         produceMessage(producerSession, destination);
+         Message msg = consumer.receive(20000);
+         if (msg == null) {
+            AutoFailTestSupport.dumpAllThreads("missing-");
          }
-      }.start();
+         Assert.assertNotNull("got message just produced", msg);
 
-      broker.stop();
-      broker = createBroker();
-      broker.start();
+         broker.stop();
+         broker = createBroker();
+         broker.start();
 
-      Assert.assertTrue("commit was successful", commitDone.await(30, TimeUnit.SECONDS));
+         final CountDownLatch commitDone = new CountDownLatch(1);
+         final CountDownLatch gotException = new CountDownLatch(1);
+         // will block pending re-deliveries
+         new Thread() {
+            @Override
+            public void run() {
+               LOG.info("doing async commit...");
+               try {
+                  consumerSession.commit();
+                  commitDone.countDown();
+               }
+               catch (JMSException ignored) {
+                  System.out.println("--->err: got exfeption:");
+                  ignored.printStackTrace();
+                  gotException.countDown();
+               }
+               finally {
+                  commitDone.countDown();
+               }
+            }
+         }.start();
 
-      Assert.assertNull("should not get committed message", consumer.receive(5000));
-      connection.close();
+         broker.stop();
+         broker = createBroker();
+         broker.start();
+
+         Assert.assertTrue("commit was successful", commitDone.await(30, TimeUnit.SECONDS));
+         Assert.assertTrue("got exception on commit", gotException.await(30, TimeUnit.SECONDS));
+
+         Assert.assertNotNull("should get failed committed message", consumer.receive(5000));
+      } finally {
+         connection.close();
+      }
    }
 
    @Test
@@ -980,11 +966,9 @@ public class FailoverTransactionTest extends OpenwireArtemisBaseTest {
             LOG.info("doing async commit...");
             try {
                consumerSession.commit();
-            }
-            catch (JMSException ex) {
+            } catch (JMSException ex) {
                exceptions.add(ex);
-            }
-            finally {
+            } finally {
                commitDone.countDown();
             }
          }
@@ -1000,8 +984,7 @@ public class FailoverTransactionTest extends OpenwireArtemisBaseTest {
       if (exceptions.isEmpty()) {
          LOG.info("commit succeeded, message was redelivered to the correct consumer after restart so commit was fine");
          Assert.assertNull("consumer2 not get a second message consumed by 1", consumer2.receive(2000));
-      }
-      else {
+      } else {
          LOG.info("commit failed, consumer2 should get it", exceptions.get(0));
          Assert.assertNotNull("consumer2 got message", consumer2.receive(2000));
          consumerSession.commit();
@@ -1029,11 +1012,9 @@ public class FailoverTransactionTest extends OpenwireArtemisBaseTest {
                try {
                   broker.stop();
                   broker = null;
-               }
-               catch (Exception e) {
+               } catch (Exception e) {
                   e.printStackTrace();
-               }
-               finally {
+               } finally {
                   brokerStopLatch.countDown();
                }
             }
@@ -1052,8 +1033,7 @@ public class FailoverTransactionTest extends OpenwireArtemisBaseTest {
                   LOG.info("Stopping connection post send...");
                   try {
                      proxy.close();
-                  }
-                  catch (Exception e) {
+                  } catch (Exception e) {
                      e.printStackTrace();
                   }
                }
@@ -1076,11 +1056,9 @@ public class FailoverTransactionTest extends OpenwireArtemisBaseTest {
                         broker = null;
                      }
                      LOG.info("broker stopped.");
-                  }
-                  catch (Exception e) {
+                  } catch (Exception e) {
                      e.printStackTrace();
-                  }
-                  finally {
+                  } finally {
                      brokerStopLatch.countDown();
                   }
                }

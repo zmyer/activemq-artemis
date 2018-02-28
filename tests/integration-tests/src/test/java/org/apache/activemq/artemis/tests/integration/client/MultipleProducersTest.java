@@ -25,13 +25,14 @@ import javax.jms.Queue;
 import javax.jms.Session;
 
 import org.apache.activemq.artemis.api.core.SimpleString;
+import org.apache.activemq.artemis.api.core.management.QueueControl;
 import org.apache.activemq.artemis.api.core.management.ResourceNames;
-import org.apache.activemq.artemis.api.jms.management.JMSQueueControl;
 import org.apache.activemq.artemis.core.settings.HierarchicalRepository;
 import org.apache.activemq.artemis.core.settings.impl.AddressFullMessagePolicy;
 import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
 import org.apache.activemq.artemis.core.settings.impl.SlowConsumerPolicy;
 import org.apache.activemq.artemis.tests.util.JMSTestBase;
+import org.apache.activemq.artemis.tests.util.Wait;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
@@ -43,12 +44,12 @@ public class MultipleProducersTest extends JMSTestBase {
    public Queue queueTwo = null;
    public Session session = null;
 
-   public SimpleString dlq = new SimpleString("jms.queue.DLQ");
-   public SimpleString expiryQueue = new SimpleString("jms.queue.ExpiryQueue");
+   public SimpleString dlq = new SimpleString("DLQ");
+   public SimpleString expiryQueue = new SimpleString("ExpiryQueue");
 
-   public SimpleString queueOneName = new SimpleString("jms.queue.queueOne");
-   public SimpleString queueTwoName = new SimpleString("jms.queue.queueTwo");
-   public JMSQueueControl control = null;
+   public SimpleString queueOneName = new SimpleString("queueOne");
+   public SimpleString queueTwoName = new SimpleString("queueTwo");
+   public QueueControl control = null;
    public long queueOneMsgCount = 0;
    public long queueTwoMsgCount = 0;
 
@@ -73,7 +74,7 @@ public class MultipleProducersTest extends JMSTestBase {
       addressSettings.setDeadLetterAddress(expiryQueue);
       addressSettings.setRedeliveryDelay(0);
       addressSettings.setMessageCounterHistoryDayLimit(2);
-      addressSettings.setLastValueQueue(false);
+      addressSettings.setDefaultLastValueQueue(false);
       addressSettings.setMaxDeliveryAttempts(10);
       addressSettings.setMaxSizeBytes(1048576);
       addressSettings.setPageCacheMaxSize(5);
@@ -94,9 +95,8 @@ public class MultipleProducersTest extends JMSTestBase {
          while (true) {
             sendMessage(queueOne, session);
          }
-      }
-      catch (Throwable t) {
-//         t.printStackTrace();
+      } catch (Throwable t) {
+         //         t.printStackTrace();
          // expected
       }
 
@@ -115,8 +115,7 @@ public class MultipleProducersTest extends JMSTestBase {
       try {
          sendMessage(queueOne, session);
          Assert.fail("Exception expected");
-      }
-      catch (Exception t) {
+      } catch (Exception t) {
       }
 
       // send 5 message to queueTwo
@@ -129,7 +128,7 @@ public class MultipleProducersTest extends JMSTestBase {
       // after draining queueOne send 5 message to queueOne
       queueTwoMsgCount = server.locateQueue(queueTwoName).getMessageCount();
 
-      control = (JMSQueueControl) server.getManagementService().getResource(ResourceNames.JMS_QUEUE + queueOne.getQueueName());
+      control = (QueueControl) server.getManagementService().getResource(ResourceNames.QUEUE + queueOne.getQueueName());
 
       control.removeMessages(null);
 
@@ -142,6 +141,9 @@ public class MultipleProducersTest extends JMSTestBase {
       session.close();
 
       conn.close();
+
+      Wait.waitFor(() -> server.locateQueue(queueOneName).getMessageCount() == 5);
+      Wait.waitFor(() -> server.locateQueue(queueTwoName).getMessageCount() == 5);
 
       queueOneMsgCount = server.locateQueue(queueOneName).getMessageCount();
 
@@ -163,8 +165,7 @@ public class MultipleProducersTest extends JMSTestBase {
          mp.setTimeToLive(Message.DEFAULT_TIME_TO_LIVE);
 
          mp.send(session.createTextMessage("This is message for " + queue.getQueueName()));
-      }
-      finally {
+      } finally {
 
          mp.close();
       }

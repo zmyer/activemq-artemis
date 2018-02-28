@@ -16,6 +16,7 @@
  */
 package org.apache.activemq.artemis.core.server;
 
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.api.core.SimpleString;
 
 public class QueueQueryResult {
@@ -36,7 +37,19 @@ public class QueueQueryResult {
 
    private boolean temporary;
 
-   private boolean autoCreateJmsQueues;
+   private boolean autoCreateQueues;
+
+   private boolean autoCreated;
+
+   private boolean purgeOnNoConsumers;
+
+   private RoutingType routingType;
+
+   private int maxConsumers;
+
+   private Boolean exclusive;
+
+   private Boolean lastValue;
 
    public QueueQueryResult(final SimpleString name,
                            final SimpleString address,
@@ -45,19 +58,14 @@ public class QueueQueryResult {
                            final SimpleString filterString,
                            final int consumerCount,
                            final long messageCount,
-                           final boolean autoCreateJmsQueues) {
-      this(name, address, durable, temporary, filterString, consumerCount, messageCount, autoCreateJmsQueues, true);
-   }
-
-   public QueueQueryResult(final SimpleString name,
-                           final SimpleString address,
-                           final boolean durable,
-                           final boolean temporary,
-                           final SimpleString filterString,
-                           final int consumerCount,
-                           final long messageCount,
-                           final boolean autoCreateJmsQueues,
-                           final boolean exists) {
+                           final boolean autoCreateQueues,
+                           final boolean exists,
+                           final boolean autoCreated,
+                           final boolean purgeOnNoConsumers,
+                           final RoutingType routingType,
+                           final int maxConsumers,
+                           final Boolean exclusive,
+                           final Boolean lastValue) {
       this.durable = durable;
 
       this.temporary = temporary;
@@ -72,9 +80,21 @@ public class QueueQueryResult {
 
       this.name = name;
 
-      this.autoCreateJmsQueues = autoCreateJmsQueues;
+      this.autoCreateQueues = autoCreateQueues;
 
       this.exists = exists;
+
+      this.autoCreated = autoCreated;
+
+      this.purgeOnNoConsumers = purgeOnNoConsumers;
+
+      this.routingType = routingType;
+
+      this.maxConsumers = maxConsumers;
+
+      this.exclusive = exclusive;
+
+      this.lastValue = lastValue;
    }
 
    public boolean isExists() {
@@ -109,8 +129,35 @@ public class QueueQueryResult {
       return temporary;
    }
 
-   public boolean isAutoCreateJmsQueues() {
-      return autoCreateJmsQueues;
+   public boolean isAutoCreateQueues() {
+      return autoCreateQueues;
    }
 
+   public boolean isAutoCreated() {
+      return autoCreated;
+   }
+
+   public boolean isPurgeOnNoConsumers() {
+      return purgeOnNoConsumers;
+   }
+
+   public RoutingType getRoutingType() {
+      return routingType;
+   }
+
+   public int getMaxConsumers() {
+      return maxConsumers;
+   }
+
+   public void setAddress(SimpleString address) {
+      this.address = address;
+   }
+
+   public Boolean isExclusive() {
+      return exclusive;
+   }
+
+   public Boolean isLastValue() {
+      return lastValue;
+   }
 }

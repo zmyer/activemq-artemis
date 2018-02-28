@@ -26,21 +26,23 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.activemq.artemis.api.core.ActiveMQException;
+import org.apache.activemq.artemis.api.core.Message;
 import org.apache.activemq.artemis.api.core.Pair;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.core.io.IOCallback;
 import org.apache.activemq.artemis.core.io.SequentialFile;
 import org.apache.activemq.artemis.core.journal.Journal;
 import org.apache.activemq.artemis.core.journal.JournalLoadInformation;
-import org.apache.activemq.artemis.core.message.impl.MessageInternal;
 import org.apache.activemq.artemis.core.paging.PageTransactionInfo;
 import org.apache.activemq.artemis.core.paging.PagedMessage;
 import org.apache.activemq.artemis.core.paging.PagingManager;
 import org.apache.activemq.artemis.core.paging.PagingStore;
 import org.apache.activemq.artemis.core.paging.cursor.PagePosition;
+import org.apache.activemq.artemis.core.persistence.AddressBindingInfo;
 import org.apache.activemq.artemis.core.persistence.GroupingInfo;
 import org.apache.activemq.artemis.core.persistence.OperationContext;
 import org.apache.activemq.artemis.core.persistence.QueueBindingInfo;
+import org.apache.activemq.artemis.core.persistence.QueueStatus;
 import org.apache.activemq.artemis.core.persistence.StorageManager;
 import org.apache.activemq.artemis.core.persistence.config.PersistedAddressSetting;
 import org.apache.activemq.artemis.core.persistence.config.PersistedRoles;
@@ -51,9 +53,9 @@ import org.apache.activemq.artemis.core.replication.ReplicationManager;
 import org.apache.activemq.artemis.core.server.LargeServerMessage;
 import org.apache.activemq.artemis.core.server.MessageReference;
 import org.apache.activemq.artemis.core.server.RouteContextList;
-import org.apache.activemq.artemis.core.server.ServerMessage;
 import org.apache.activemq.artemis.core.server.files.FileStoreMonitor;
 import org.apache.activemq.artemis.core.server.group.impl.GroupBinding;
+import org.apache.activemq.artemis.core.server.impl.AddressInfo;
 import org.apache.activemq.artemis.core.server.impl.JournalLoader;
 import org.apache.activemq.artemis.core.transaction.ResourceManager;
 import org.apache.activemq.artemis.core.transaction.Transaction;
@@ -120,8 +122,7 @@ public class TransactionImplTest extends ActiveMQTestBase {
          try {
             tx.commit();
             Assert.fail("Exception expected!");
-         }
-         catch (ActiveMQException expected) {
+         } catch (ActiveMQException expected) {
          }
       }
 
@@ -229,7 +230,12 @@ public class TransactionImplTest extends ActiveMQTestBase {
       }
 
       @Override
-      public void stop(boolean ioCriticalError) throws Exception {
+      public void updateQueueBinding(long tx, Binding binding) throws Exception {
+
+      }
+
+      @Override
+      public void stop(boolean ioCriticalError, boolean sendFailover) throws Exception {
 
       }
 
@@ -240,6 +246,16 @@ public class TransactionImplTest extends ActiveMQTestBase {
 
       @Override
       public void pageDeleted(SimpleString storeName, int pageNumber) {
+
+      }
+
+      @Override
+      public long storeQueueStatus(long queueID, QueueStatus status) throws Exception {
+         return 0;
+      }
+
+      @Override
+      public void deleteQueueStatus(long recordID) throws Exception {
 
       }
 
@@ -311,7 +327,7 @@ public class TransactionImplTest extends ActiveMQTestBase {
       }
 
       @Override
-      public void storeMessage(ServerMessage message) throws Exception {
+      public void storeMessage(Message message) throws Exception {
 
       }
 
@@ -356,7 +372,7 @@ public class TransactionImplTest extends ActiveMQTestBase {
       }
 
       @Override
-      public void storeMessageTransactional(long txID, ServerMessage message) throws Exception {
+      public void storeMessageTransactional(long txID, Message message) throws Exception {
 
       }
 
@@ -427,7 +443,7 @@ public class TransactionImplTest extends ActiveMQTestBase {
       }
 
       @Override
-      public LargeServerMessage createLargeMessage(long id, MessageInternal message) throws Exception {
+      public LargeServerMessage createLargeMessage(long id, Message message) throws Exception {
          return null;
       }
 
@@ -477,11 +493,6 @@ public class TransactionImplTest extends ActiveMQTestBase {
       }
 
       @Override
-      public void updatePageTransaction(PageTransactionInfo pageTransaction, int depage) throws Exception {
-
-      }
-
-      @Override
       public void deletePageTransactional(long recordID) throws Exception {
 
       }
@@ -519,8 +530,19 @@ public class TransactionImplTest extends ActiveMQTestBase {
       }
 
       @Override
+      public void addAddressBinding(long tx, AddressInfo addressInfo) throws Exception {
+
+      }
+
+      @Override
+      public void deleteAddressBinding(long tx, long addressBindingID) throws Exception {
+
+      }
+
+      @Override
       public JournalLoadInformation loadBindingJournal(List<QueueBindingInfo> queueBindingInfos,
-                                                       List<GroupingInfo> groupingInfos) throws Exception {
+                                                       List<GroupingInfo> groupingInfos,
+                                                       List<AddressBindingInfo> addressBindingInfos) throws Exception {
          return null;
       }
 
@@ -565,12 +587,12 @@ public class TransactionImplTest extends ActiveMQTestBase {
       }
 
       @Override
-      public long storePageCounter(long txID, long queueID, long value) throws Exception {
+      public long storePageCounter(long txID, long queueID, long value, long size) throws Exception {
          return 0;
       }
 
       @Override
-      public long storePendingCounter(long queueID, long pageID, int inc) throws Exception {
+      public long storePendingCounter(long queueID, long pageID) throws Exception {
          return 0;
       }
 
@@ -590,12 +612,12 @@ public class TransactionImplTest extends ActiveMQTestBase {
       }
 
       @Override
-      public long storePageCounterInc(long txID, long queueID, int add) throws Exception {
+      public long storePageCounterInc(long txID, long queueID, int add, long size) throws Exception {
          return 0;
       }
 
       @Override
-      public long storePageCounterInc(long queueID, int add) throws Exception {
+      public long storePageCounterInc(long queueID, int add, long size) throws Exception {
          return 0;
       }
 
@@ -620,7 +642,7 @@ public class TransactionImplTest extends ActiveMQTestBase {
 
       @Override
       public boolean addToPage(PagingStore store,
-                               ServerMessage msg,
+                               Message msg,
                                Transaction tx,
                                RouteContextList listCtx) throws Exception {
          return false;

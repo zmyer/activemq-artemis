@@ -19,6 +19,7 @@ package org.apache.activemq.artemis.api.jms.management;
 import javax.jms.JMSException;
 import javax.jms.Message;
 
+import org.apache.activemq.artemis.api.core.client.ClientMessage;
 import org.apache.activemq.artemis.api.core.management.ManagementHelper;
 import org.apache.activemq.artemis.jms.client.ActiveMQMessage;
 
@@ -27,7 +28,7 @@ import org.apache.activemq.artemis.jms.client.ActiveMQMessage;
  */
 public class JMSManagementHelper {
 
-   private static org.apache.activemq.artemis.api.core.Message getCoreMessage(final Message jmsMessage) {
+   private static ClientMessage getCoreMessage(final Message jmsMessage) {
       if (jmsMessage instanceof ActiveMQMessage == false) {
          throw new IllegalArgumentException("Cannot send a foreign message as a management message " + jmsMessage.getClass().getName());
       }
@@ -64,8 +65,7 @@ public class JMSManagementHelper {
                                              final String operationName) throws JMSException {
       try {
          ManagementHelper.putOperationInvocation(JMSManagementHelper.getCoreMessage(message), resourceName, operationName);
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          throw JMSManagementHelper.convertFromException(e);
       }
    }
@@ -94,8 +94,7 @@ public class JMSManagementHelper {
                                              final Object... parameters) throws JMSException {
       try {
          ManagementHelper.putOperationInvocation(JMSManagementHelper.getCoreMessage(message), resourceName, operationName, parameters);
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          throw JMSManagementHelper.convertFromException(e);
       }
    }

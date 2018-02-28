@@ -43,8 +43,7 @@ public class XMLConfigurationUtil {
          double val = XMLUtil.parseDouble(nl.item(0));
          validator.validate(name, val);
          return val;
-      }
-      else {
+      } else {
          validator.validate(name, def);
          return def;
       }
@@ -59,8 +58,7 @@ public class XMLConfigurationUtil {
          String val = nl.item(0).getTextContent().trim();
          validator.validate(name, val);
          return val;
-      }
-      else {
+      } else {
          validator.validate(name, def);
          return def;
       }
@@ -75,8 +73,22 @@ public class XMLConfigurationUtil {
          long val = XMLUtil.parseLong(nl.item(0));
          validator.validate(name, val);
          return val;
+      } else {
+         validator.validate(name, def);
+         return def;
       }
-      else {
+   }
+
+   public static final Long getTextBytesAsLongBytes(final Element e,
+                                    final String name,
+                                    final long def,
+                                    final Validators.Validator validator) {
+      NodeList nl = e.getElementsByTagName(name);
+      if (nl.getLength() > 0) {
+         long val = ByteUtil.convertTextBytes(nl.item(0).getTextContent().trim());
+         validator.validate(name, val);
+         return val;
+      } else {
          validator.validate(name, def);
          return def;
       }
@@ -91,19 +103,24 @@ public class XMLConfigurationUtil {
          int val = XMLUtil.parseInt(nl.item(0));
          validator.validate(name, val);
          return val;
-      }
-      else {
+      } else {
          validator.validate(name, def);
          return def;
       }
    }
 
-   public static final Boolean getBoolean(final Element e, final String name, final boolean def) {
+   public static final Integer getTextBytesAsIntBytes(final Element e,
+                                          final String name,
+                                          final int def,
+                                          final Validators.Validator validator) {
+      return getTextBytesAsLongBytes(e, name, def, validator).intValue();
+   }
+
+   public static final Boolean getBoolean(final Element e, final String name, final Boolean def) {
       NodeList nl = e.getElementsByTagName(name);
       if (nl.getLength() > 0) {
          return XMLUtil.parseBoolean(nl.item(0));
-      }
-      else {
+      } else {
          return def;
       }
    }
@@ -112,8 +129,7 @@ public class XMLConfigurationUtil {
       NodeList nl = e.getElementsByTagName(name);
       if (nl.getLength() > 0) {
          return true;
-      }
-      else {
+      } else {
          return false;
       }
    }

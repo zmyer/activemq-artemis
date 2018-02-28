@@ -9,10 +9,6 @@ What is Apache ActiveMQ Artemis?
 -   Apache ActiveMQ Artemis is an example of Message Oriented Middleware (MoM). For a
     description of MoMs and other messaging concepts please see the [Messaging Concepts](messaging-concepts.md).
 
--   For answers to more questions about what Apache ActiveMQ Artemis is and what it
-    isn't please visit the [FAQs wiki
-    page](todo).
-
 Why use Apache ActiveMQ Artemis? Here are just a few of the reasons:
 
 -   100% open source software. Apache ActiveMQ Artemis is licensed using the Apache
@@ -32,7 +28,7 @@ Why use Apache ActiveMQ Artemis? Here are just a few of the reasons:
     messaging system, and others you won't find anywhere else.
 
 -   Elegant, clean-cut design with minimal third party dependencies. Run
-    ActiveMQ Artemis stand-alone, run it in integrated in your favourite JEE
+    ActiveMQ Artemis stand-alone, run it in integrated in your favourite Java EE
     application server, or run it embedded inside your own product. It's
     up to you.
 

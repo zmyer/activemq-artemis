@@ -20,6 +20,7 @@ import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
 import org.apache.activemq.artemis.core.paging.PagedMessage;
 import org.apache.activemq.artemis.core.paging.impl.PagedMessageImpl;
 import org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl;
+import org.apache.activemq.artemis.utils.DataConstants;
 
 public class ReplicationPageWriteMessage extends PacketImpl {
 
@@ -40,6 +41,13 @@ public class ReplicationPageWriteMessage extends PacketImpl {
    // Public --------------------------------------------------------
 
    @Override
+   public int expectedEncodeSize() {
+      return PACKET_HEADERS_SIZE +
+             DataConstants.SIZE_INT + // buffer.writeInt(pageNumber);
+             pagedMessage.getEncodeSize(); //  pagedMessage.encode(buffer);
+   }
+
+   @Override
    public void encodeRest(final ActiveMQBuffer buffer) {
       buffer.writeInt(pageNumber);
       pagedMessage.encode(buffer);
@@ -48,7 +56,7 @@ public class ReplicationPageWriteMessage extends PacketImpl {
    @Override
    public void decodeRest(final ActiveMQBuffer buffer) {
       pageNumber = buffer.readInt();
-      pagedMessage = new PagedMessageImpl();
+      pagedMessage = new PagedMessageImpl(null);
       pagedMessage.decode(buffer);
    }
 
@@ -89,8 +97,7 @@ public class ReplicationPageWriteMessage extends PacketImpl {
       if (pagedMessage == null) {
          if (other.pagedMessage != null)
             return false;
-      }
-      else if (!pagedMessage.equals(other.pagedMessage))
+      } else if (!pagedMessage.equals(other.pagedMessage))
          return false;
       return true;
    }

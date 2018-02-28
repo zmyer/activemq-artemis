@@ -22,12 +22,14 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
 import org.apache.activemq.artemis.api.core.ActiveMQException;
 import org.apache.activemq.artemis.api.core.ActiveMQRemoteDisconnectException;
 import org.apache.activemq.artemis.api.core.Interceptor;
 import org.apache.activemq.artemis.api.core.SimpleString;
+import org.apache.activemq.artemis.api.core.client.ActiveMQClient;
 import org.apache.activemq.artemis.core.client.ActiveMQClientLogger;
 import org.apache.activemq.artemis.core.protocol.core.Channel;
 import org.apache.activemq.artemis.core.protocol.core.CoreRemotingConnection;
@@ -43,6 +45,7 @@ import org.apache.activemq.artemis.utils.SimpleIDGenerator;
 import org.jboss.logging.Logger;
 
 public class RemotingConnectionImpl extends AbstractRemotingConnection implements CoreRemotingConnection {
+
    private static final Logger logger = Logger.getLogger(RemotingConnectionImpl.class);
 
    private final PacketDecoder packetDecoder;
@@ -61,7 +64,7 @@ public class RemotingConnectionImpl extends AbstractRemotingConnection implement
 
    private final boolean client;
 
-   private int clientVersion;
+   private int channelVersion;
 
    private volatile SimpleIDGenerator idGenerator = new SimpleIDGenerator(CHANNEL_ID.USER.id);
 
@@ -128,6 +131,10 @@ public class RemotingConnectionImpl extends AbstractRemotingConnection implement
       this.nodeID = nodeID;
 
       transportConnection.setProtocolConnection(this);
+
+      if (logger.isTraceEnabled()) {
+         logger.trace("RemotingConnectionImpl created: " + this);
+      }
    }
 
    // RemotingConnection implementation
@@ -135,28 +142,23 @@ public class RemotingConnectionImpl extends AbstractRemotingConnection implement
 
    @Override
    public String toString() {
-      return "RemotingConnectionImpl [clientID=" + clientID +
-         ", nodeID=" +
-         nodeID +
-         ", transportConnection=" +
-         getTransportConnection() +
-         "]";
+      return "RemotingConnectionImpl [ID=" + getID() + ", clientID=" + clientID + ", nodeID=" + nodeID + ", transportConnection=" + getTransportConnection() + "]";
    }
 
    /**
-    * @return the clientVersion
+    * @return the channelVersion
     */
    @Override
-   public int getClientVersion() {
-      return clientVersion;
+   public int getChannelVersion() {
+      return channelVersion;
    }
 
    /**
-    * @param clientVersion the clientVersion to set
+    * @param clientVersion the channelVersion to set
     */
    @Override
-   public void setClientVersion(int clientVersion) {
-      this.clientVersion = clientVersion;
+   public void setChannelVersion(int clientVersion) {
+      this.channelVersion = clientVersion;
    }
 
    @Override
@@ -198,9 +200,8 @@ public class RemotingConnectionImpl extends AbstractRemotingConnection implement
 
       try {
          transportConnection.forceClose();
-      }
-      catch (Throwable e) {
-         ActiveMQClientLogger.LOGGER.warn(e.getMessage(), e);
+      } catch (Throwable e) {
+         ActiveMQClientLogger.LOGGER.failedForceClose(e);
       }
 
       // Then call the listeners
@@ -231,6 +232,11 @@ public class RemotingConnectionImpl extends AbstractRemotingConnection implement
    }
 
    @Override
+   public boolean blockUntilWritable(int size, long timeout) {
+      return transportConnection.blockUntilWritable(size, timeout, TimeUnit.MILLISECONDS);
+   }
+
+   @Override
    public void disconnect(final boolean criticalError) {
       disconnect(null, criticalError);
    }
@@ -247,8 +253,7 @@ public class RemotingConnectionImpl extends AbstractRemotingConnection implement
 
       if (!criticalError) {
          removeAllChannels();
-      }
-      else {
+      } else {
          // We can't hold a lock if a critical error is happening...
          // as other threads will be holding the lock while hanging on IO
          channels.clear();
@@ -265,8 +270,7 @@ public class RemotingConnectionImpl extends AbstractRemotingConnection implement
 
       if (channel0.supports(PacketImpl.DISCONNECT_V2)) {
          disconnect = new DisconnectMessage_V2(nodeID, scaleDownNodeID);
-      }
-      else {
+      } else {
          disconnect = new DisconnectMessage(nodeID);
       }
       channel0.sendAndFlush(disconnect);
@@ -343,25 +347,41 @@ public class RemotingConnectionImpl extends AbstractRemotingConnection implement
       return false;
    }
 
+   /**
+    * Returns the name of the protocol for this Remoting Connection
+    *
+    * @return
+    */
+   @Override
+   public String getProtocolName() {
+      return ActiveMQClient.DEFAULT_CORE_PROTOCOL;
+   }
+
    // Buffer Handler implementation
    // ----------------------------------------------------
    @Override
    public void bufferReceived(final Object connectionID, final ActiveMQBuffer buffer) {
       try {
-         final Packet packet = packetDecoder.decode(buffer);
+         final Packet packet = packetDecoder.decode(buffer, this);
 
          if (logger.isTraceEnabled()) {
-            logger.trace("handling packet " + packet);
+            logger.trace("RemotingConnectionID=" + getID() + " handling packet " + packet);
          }
 
          dataReceived = true;
+
          doBufferReceived(packet);
 
          super.bufferReceived(connectionID, buffer);
-      }
-      catch (Exception e) {
+      } catch (Throwable e) {
          ActiveMQClientLogger.LOGGER.errorDecodingPacket(e);
+         throw new IllegalStateException(e);
       }
+   }
+
+   @Override
+   public String getTransportLocalAddress() {
+      return getTransportConnection().getLocalAddress();
    }
 
    private void doBufferReceived(final Packet packet) {
@@ -395,17 +415,9 @@ public class RemotingConnectionImpl extends AbstractRemotingConnection implement
       }
    }
 
-   public void setClientID(String cID) {
-      clientID = cID;
-   }
-
-   public String getClientID() {
-      return clientID;
-   }
-
    @Override
    public void killMessage(SimpleString nodeID) {
-      if (clientVersion < DisconnectConsumerWithKillMessage.VERSION_INTRODUCED) {
+      if (channelVersion < DisconnectConsumerWithKillMessage.VERSION_INTRODUCED) {
          return;
       }
       Channel clientChannel = getChannel(1, -1);

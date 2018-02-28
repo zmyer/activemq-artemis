@@ -21,7 +21,6 @@ import javax.naming.InitialContext;
 import javax.naming.NamingException;
 import java.util.Hashtable;
 
-import org.apache.activemq.artemis.api.core.management.ResourceNames;
 import org.apache.activemq.artemis.common.AbstractAdmin;
 import org.apache.activemq.artemis.jndi.ActiveMQInitialContextFactory;
 
@@ -31,8 +30,6 @@ public class ActiveMQCoreAdmin extends AbstractAdmin {
 
    Hashtable<String, String> jndiProps = new Hashtable<>();
 
-
-
    public ActiveMQCoreAdmin() {
       super();
       jndiProps.put(Context.INITIAL_CONTEXT_FACTORY, ActiveMQInitialContextFactory.class.getCanonicalName());
@@ -41,8 +38,7 @@ public class ActiveMQCoreAdmin extends AbstractAdmin {
          env.put("java.naming.factory.initial", "org.apache.activemq.artemis.jndi.ActiveMQInitialContextFactory");
          env.put("java.naming.provider.url", "tcp://localhost:61616");
          context = new InitialContext(env);
-      }
-      catch (NamingException e) {
+      } catch (NamingException e) {
          e.printStackTrace();
       }
    }
@@ -60,18 +56,7 @@ public class ActiveMQCoreAdmin extends AbstractAdmin {
 
    @Override
    public void createConnectionFactory(final String name) {
-      createConnection(name, 0);
       jndiProps.put("connectionFactory." + name, "tcp://127.0.0.1:61616?type=CF");
-
-   }
-
-   private void createConnection(final String name, final int cfType) {
-      try {
-         invokeSyncOperation(ResourceNames.JMS_SERVER, "createConnectionFactory", name, false, false, cfType, "netty", name);
-      }
-      catch (Exception e) {
-         throw new IllegalStateException(e);
-      }
 
    }
 
@@ -88,7 +73,6 @@ public class ActiveMQCoreAdmin extends AbstractAdmin {
 
    @Override
    public void createQueueConnectionFactory(final String name) {
-      createConnection(name, 1);
       jndiProps.put("connectionFactory." + name, "tcp://127.0.0.1:61616?type=QUEUE_CF");
    }
 
@@ -100,19 +84,12 @@ public class ActiveMQCoreAdmin extends AbstractAdmin {
 
    @Override
    public void createTopicConnectionFactory(final String name) {
-      createConnection(name, 2);
       jndiProps.put("connectionFactory." + name, "tcp://127.0.0.1:61616?type=TOPIC_CF");
    }
 
    @Override
    public void deleteConnectionFactory(final String name) {
-      try {
-         invokeSyncOperation(ResourceNames.JMS_SERVER, "destroyConnectionFactory", name);
-         jndiProps.remove("connectionFactory." + name);
-      }
-      catch (Exception e) {
-         throw new IllegalStateException(e);
-      }
+      jndiProps.remove("connectionFactory." + name);
    }
 
    @Override

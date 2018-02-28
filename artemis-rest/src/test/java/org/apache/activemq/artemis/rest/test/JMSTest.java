@@ -30,10 +30,10 @@ import java.io.Serializable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.activemq.artemis.rest.HttpHeaderProperty;
-import org.apache.activemq.artemis.rest.Jms;
 import org.apache.activemq.artemis.jms.client.ActiveMQDestination;
 import org.apache.activemq.artemis.jms.client.ActiveMQJMSConnectionFactory;
+import org.apache.activemq.artemis.rest.HttpHeaderProperty;
+import org.apache.activemq.artemis.rest.Jms;
 import org.apache.activemq.artemis.rest.queue.QueueDeployment;
 import org.jboss.resteasy.client.ClientRequest;
 import org.jboss.resteasy.client.ClientResponse;
@@ -106,7 +106,7 @@ public class JMSTest extends MessageTestBase {
    }
 
    public static Destination createDestination(String dest) {
-      ActiveMQDestination destination = (ActiveMQDestination) ActiveMQDestination.fromAddress(dest);
+      ActiveMQDestination destination = (ActiveMQDestination) ActiveMQDestination.fromPrefixedName(dest);
       System.out.println("SimpleAddress: " + destination.getSimpleAddress());
       return destination;
    }
@@ -125,8 +125,7 @@ public class JMSTest extends MessageTestBase {
          message.setObject(object);
 
          producer.send(message);
-      }
-      finally {
+      } finally {
          conn.close();
       }
    }
@@ -142,8 +141,7 @@ public class JMSTest extends MessageTestBase {
          try {
             order = Jms.getEntity(message, Order.class);
             messageID = message.getJMSMessageID();
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             e.printStackTrace();
          }
          latch.countDown();
@@ -152,8 +150,9 @@ public class JMSTest extends MessageTestBase {
 
    @Test
    public void testJmsConsumer() throws Exception {
-      String queueName = ActiveMQDestination.createQueueAddressFromName("testQueue2").toString();
-      System.out.println("Queue name: " + queueName);
+      String queueName = "testQueue2";
+      String prefixedQueueName = ActiveMQDestination.createQueueAddressFromName(queueName).toString();
+      System.out.println("Queue name: " + prefixedQueueName);
       QueueDeployment deployment = new QueueDeployment();
       deployment.setDuplicatesAllowed(true);
       deployment.setDurableSend(false);
@@ -162,7 +161,7 @@ public class JMSTest extends MessageTestBase {
       Connection conn = connectionFactory.createConnection();
       try {
          Session session = conn.createSession(false, Session.AUTO_ACKNOWLEDGE);
-         Destination destination = createDestination(queueName);
+         Destination destination = createDestination(prefixedQueueName);
          MessageConsumer consumer = session.createConsumer(destination);
          consumer.setMessageListener(new Listener());
          conn.start();
@@ -191,16 +190,16 @@ public class JMSTest extends MessageTestBase {
             Assert.assertEquals(order, Listener.order);
             Assert.assertNotNull(Listener.messageID);
          }
-      }
-      finally {
+      } finally {
          conn.close();
       }
    }
 
    @Test
    public void testJmsProducer() throws Exception {
-      String queueName = ActiveMQDestination.createQueueAddressFromName("testQueue").toString();
-      System.out.println("Queue name: " + queueName);
+      String queueName = "testQueue";
+      String prefixedQueueName = ActiveMQDestination.createQueueAddressFromName(queueName).toString();
+      System.out.println("Queue name: " + prefixedQueueName);
       QueueDeployment deployment = new QueueDeployment();
       deployment.setDuplicatesAllowed(true);
       deployment.setDurableSend(false);
@@ -224,7 +223,7 @@ public class JMSTest extends MessageTestBase {
          Order order = new Order();
          order.setName("1");
          order.setAmount("$5.00");
-         publish(queueName, order, null);
+         publish(prefixedQueueName, order, null);
 
          ClientResponse<?> res = consumeNext.request().header("Accept-Wait", "2").accept("application/xml").post(String.class);
          Assert.assertEquals(200, res.getStatus());
@@ -241,7 +240,7 @@ public class JMSTest extends MessageTestBase {
          Order order = new Order();
          order.setName("1");
          order.setAmount("$5.00");
-         publish(queueName, order, null);
+         publish(prefixedQueueName, order, null);
 
          ClientResponse<?> res = consumeNext.request().header("Accept-Wait", "2").accept("application/json").post(String.class);
          Assert.assertEquals(200, res.getStatus());
@@ -258,7 +257,7 @@ public class JMSTest extends MessageTestBase {
          Order order = new Order();
          order.setName("2");
          order.setAmount("$15.00");
-         publish(queueName, order, "application/xml");
+         publish(prefixedQueueName, order, "application/xml");
 
          ClientResponse<?> res = consumeNext.request().header("Accept-Wait", "2").post(String.class);
          Assert.assertEquals(200, res.getStatus());

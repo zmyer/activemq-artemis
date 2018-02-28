@@ -33,7 +33,7 @@ import org.apache.activemq.artemis.jms.client.ActiveMQConnectionFactory;
  * This examples demonstrates the use of ActiveMQ Artemis "Diverts" to transparently divert or copy messages
  * from one address to another.
  *
- * Please see the readme.html for more information.
+ * Please see the readme for more information.
  */
 public class DivertExample {
 
@@ -199,8 +199,7 @@ public class DivertExample {
 
          System.out.println("Received forwarded price update on server 2: " + priceUpdate2.getText());
          System.out.println("Time of forward: " + priceUpdate2.getLongProperty("time_of_forward"));
-      }
-      finally {
+      } finally {
          if (connectionLondon != null) {
             connectionLondon.close();
          }

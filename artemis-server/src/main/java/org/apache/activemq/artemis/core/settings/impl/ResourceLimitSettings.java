@@ -17,12 +17,12 @@
 
 package org.apache.activemq.artemis.core.settings.impl;
 
+import java.io.Serializable;
+
 import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.core.journal.EncodingSupport;
 import org.apache.activemq.artemis.utils.BufferHelper;
-
-import java.io.Serializable;
 
 public class ResourceLimitSettings implements Serializable, EncodingSupport {
 
@@ -140,6 +140,26 @@ public class ResourceLimitSettings implements Serializable, EncodingSupport {
       //      result = prime * result + ((maxQueueSizeBytes == null) ? 0 : maxQueueSizeBytes.hashCode());
       //      result = prime * result + ((queueNameRegex == null) ? 0 : queueNameRegex.hashCode());
       return result;
+   }
+
+   @Override
+   public boolean equals(Object o) {
+      if (this == o) {
+         return true;
+      }
+      if (o == null || getClass() != o.getClass()) {
+         return false;
+      }
+
+      ResourceLimitSettings that = (ResourceLimitSettings) o;
+
+      if (match != null ? !match.equals(that.match) : that.match != null) {
+         return false;
+      }
+      if (maxConnections != null ? !maxConnections.equals(that.maxConnections) : that.maxConnections != null) {
+         return false;
+      }
+      return maxQueues != null ? maxQueues.equals(that.maxQueues) : that.maxQueues == null;
    }
 
    /* (non-Javadoc)

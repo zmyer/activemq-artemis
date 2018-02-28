@@ -38,12 +38,12 @@ import org.apache.activemq.artemis.api.core.JGroupsPropertiesBroadcastEndpointFa
 import org.apache.activemq.artemis.api.core.TransportConfiguration;
 import org.apache.activemq.artemis.api.core.UDPBroadcastEndpointFactory;
 import org.apache.activemq.artemis.api.jms.JMSFactoryType;
-import org.apache.activemq.artemis.tests.util.JMSTestBase;
-import org.apache.activemq.artemis.utils.RandomUtil;
 import org.apache.activemq.artemis.core.remoting.impl.netty.TransportConstants;
 import org.apache.activemq.artemis.jms.client.ActiveMQConnectionFactory;
 import org.apache.activemq.artemis.jms.server.config.ConnectionFactoryConfiguration;
 import org.apache.activemq.artemis.jms.server.config.impl.ConnectionFactoryConfigurationImpl;
+import org.apache.activemq.artemis.tests.util.JMSTestBase;
+import org.apache.activemq.artemis.utils.RandomUtil;
 import org.apache.commons.beanutils.BeanUtilsBean;
 import org.junit.Assert;
 import org.junit.Before;
@@ -225,7 +225,8 @@ public class ConnectionFactorySerializationTest extends JMSTestBase {
       ArrayList<String> connectorNames = new ArrayList<>();
       connectorNames.add(main.getName());
       connectorNames.add(main2.getName());
-      ConnectionFactoryConfiguration configuration = new ConnectionFactoryConfigurationImpl().setName("MyConnectionFactory").setHA(b).setConnectorNames(connectorNames).setClientID("clientID").setClientFailureCheckPeriod(-1).setConnectionTTL(-2).setFactoryType(JMSFactoryType.CF).setCallTimeout(-3).setCallFailoverTimeout(-4).setCacheLargeMessagesClient(b).setMinLargeMessageSize(-5).setConsumerWindowSize(-6).setConsumerMaxRate(-7).setConfirmationWindowSize(-8).setProducerWindowSize(-9).setProducerMaxRate(-10).setBlockOnAcknowledge(b).setBlockOnDurableSend(b).setBlockOnNonDurableSend(b).setAutoGroup(b).setPreAcknowledge(b).setLoadBalancingPolicyClassName("foobar").setTransactionBatchSize(-11).setDupsOKBatchSize(-12).setUseGlobalPools(b).setScheduledThreadPoolMaxSize(-13).setThreadPoolMaxSize(-14).setRetryInterval(-15).setRetryIntervalMultiplier(-16).setMaxRetryInterval(-17).setReconnectAttempts(-18).setFailoverOnInitialConnection(b).setGroupID("groupID");
+      ConnectionFactoryConfiguration configuration = new ConnectionFactoryConfigurationImpl().setName("MyConnectionFactory").setHA(b).setConnectorNames(connectorNames).setClientID("clientID").setClientFailureCheckPeriod(-1).setConnectionTTL(-2).setFactoryType(JMSFactoryType.CF).setCallTimeout(-3).setCallFailoverTimeout(-4).setCacheLargeMessagesClient(b).setMinLargeMessageSize(-5).setConsumerWindowSize(-6).setConsumerMaxRate(-7).setConfirmationWindowSize(-8).setProducerWindowSize(-9).setProducerMaxRate(-10).setBlockOnAcknowledge(b).setBlockOnDurableSend(b).setBlockOnNonDurableSend(b).setAutoGroup(b).setPreAcknowledge(b).setLoadBalancingPolicyClassName("foobar").setTransactionBatchSize(-11).setDupsOKBatchSize(-12).setUseGlobalPools(b).setScheduledThreadPoolMaxSize(-13).setThreadPoolMaxSize(-14).setRetryInterval(-15).setRetryIntervalMultiplier(-16).setMaxRetryInterval(-17).setReconnectAttempts(-18).setFailoverOnInitialConnection(b).setGroupID("groupID")
+              .setInitialMessagePacketSize(1499);
 
       jmsServer.createConnectionFactory(false, configuration, "/MyConnectionFactory");
    }
@@ -240,18 +241,15 @@ public class ConnectionFactorySerializationTest extends JMSTestBase {
                String value = RandomUtil.randomString();
                bean.setProperty(factory, descriptor.getName(), value);
                sb.append("&").append(descriptor.getName()).append("=").append(value);
-            }
-            else if (descriptor.getPropertyType() == int.class) {
+            } else if (descriptor.getPropertyType() == int.class) {
                int value = RandomUtil.randomPositiveInt();
                bean.setProperty(factory, descriptor.getName(), value);
                sb.append("&").append(descriptor.getName()).append("=").append(value);
-            }
-            else if (descriptor.getPropertyType() == long.class) {
+            } else if (descriptor.getPropertyType() == long.class) {
                long value = RandomUtil.randomPositiveLong();
                bean.setProperty(factory, descriptor.getName(), value);
                sb.append("&").append(descriptor.getName()).append("=").append(value);
-            }
-            else if (descriptor.getPropertyType() == double.class) {
+            } else if (descriptor.getPropertyType() == double.class) {
                double value = RandomUtil.randomDouble();
                bean.setProperty(factory, descriptor.getName(), value);
                sb.append("&").append(descriptor.getName()).append("=").append(value);
@@ -295,8 +293,7 @@ public class ConnectionFactorySerializationTest extends JMSTestBase {
       InetAddress addr;
       try {
          addr = InetAddress.getLocalHost();
-      }
-      catch (ArrayIndexOutOfBoundsException e) {  //this is workaround for mac osx bug see AS7-3223 and JGRP-1404
+      } catch (ArrayIndexOutOfBoundsException e) {  //this is workaround for mac osx bug see AS7-3223 and JGRP-1404
          addr = InetAddress.getByName(null);
       }
       return addr;

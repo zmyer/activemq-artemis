@@ -27,6 +27,7 @@ import org.apache.activemq.artemis.api.core.client.ClientMessage;
 import org.apache.activemq.artemis.api.core.client.ClientProducer;
 import org.apache.activemq.artemis.api.core.client.ClientSession;
 import org.apache.activemq.artemis.core.config.Configuration;
+import org.apache.activemq.artemis.core.config.StoreConfiguration;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.core.server.ActiveMQServers;
 import org.apache.activemq.artemis.core.server.Queue;
@@ -35,9 +36,17 @@ import org.apache.activemq.artemis.core.settings.impl.AddressFullMessagePolicy;
 import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 
+@RunWith(Parameterized.class)
 public class GlobalPagingTest extends PagingTest {
+
+   public GlobalPagingTest(StoreConfiguration.StoreType storeType, boolean mapped) {
+      super(storeType, mapped);
+   }
 
    @Override
    @Before
@@ -47,10 +56,10 @@ public class GlobalPagingTest extends PagingTest {
 
    @Override
    protected ActiveMQServer createServer(final boolean realFiles,
-                                               final Configuration configuration,
-                                               final long pageSize,
-                                               final long maxAddressSize,
-                                               final Map<String, AddressSettings> settings) {
+                                         final Configuration configuration,
+                                         final long pageSize,
+                                         final long maxAddressSize,
+                                         final Map<String, AddressSettings> settings) {
       ActiveMQServer server = addServer(ActiveMQServers.newActiveMQServer(configuration, realFiles));
 
       if (settings != null) {
@@ -67,10 +76,15 @@ public class GlobalPagingTest extends PagingTest {
       return server;
    }
 
-
+   // test doesn't make sense on GlobalPaging due to configuration issues
+   @Test @Ignore @Override
+   public void testPurge() throws Exception {
+   }
 
    @Test
    public void testPagingOverFullDisk() throws Exception {
+      if (storeType == StoreConfiguration.StoreType.DATABASE) return;
+
       clearDataRecreateServerDirs();
 
       Configuration config = createDefaultInVMConfig().setJournalSyncNonTransactional(false);
@@ -80,7 +94,7 @@ public class GlobalPagingTest extends PagingTest {
 
       server.start();
 
-      ActiveMQServerImpl serverImpl = (ActiveMQServerImpl)server;
+      ActiveMQServerImpl serverImpl = (ActiveMQServerImpl) server;
       serverImpl.getMonitor().stop(); // stop the scheduled executor, we will do it manually only
       serverImpl.getMonitor().tick();
 
@@ -106,7 +120,6 @@ public class GlobalPagingTest extends PagingTest {
          bb.put(getSamplebyte(j));
       }
 
-
       Queue queue = server.locateQueue(ADDRESS);
       queue.getPageSubscription().getPagingStore().forceAnotherPage();
 
@@ -117,11 +130,11 @@ public class GlobalPagingTest extends PagingTest {
       serverImpl.getMonitor().tick();
 
       Thread t = new Thread() {
+         @Override
          public void run() {
             try {
                sendFewMessages(numberOfMessages, session, producer, body);
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                e.printStackTrace();
             }
          }
@@ -136,7 +149,6 @@ public class GlobalPagingTest extends PagingTest {
       serverImpl.getMonitor().setMaxUsage(1).tick();
       t.join(5000);
       Assert.assertFalse(t.isAlive());
-
 
       session.start();
 

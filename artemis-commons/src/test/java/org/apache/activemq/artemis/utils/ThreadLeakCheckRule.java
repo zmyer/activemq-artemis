@@ -28,23 +28,23 @@ import java.util.concurrent.TimeUnit;
 
 import org.jboss.logging.Logger;
 import org.junit.Assert;
-import org.junit.rules.ExternalResource;
+import org.junit.rules.TestWatcher;
+import org.junit.runner.Description;
 
 /**
  * This is useful to make sure you won't have leaking threads between tests
  */
-public class ThreadLeakCheckRule extends ExternalResource {
+public class ThreadLeakCheckRule extends TestWatcher {
+
    private static Logger log = Logger.getLogger(ThreadLeakCheckRule.class);
 
    private static Set<String> knownThreads = new HashSet<>();
 
-   boolean enabled = true;
+   protected boolean enabled = true;
 
-   private Map<Thread, StackTraceElement[]> previousThreads;
+   protected boolean testFailed = false;
 
-   public void disable() {
-      enabled = false;
-   }
+   protected Map<Thread, StackTraceElement[]> previousThreads;
 
    /**
     * Override to set up your specific external resource.
@@ -52,25 +52,41 @@ public class ThreadLeakCheckRule extends ExternalResource {
     * @throws if setup fails (which will disable {@code after}
     */
    @Override
-   protected void before() throws Throwable {
+   protected void starting(Description description) {
       // do nothing
 
       previousThreads = Thread.getAllStackTraces();
 
    }
 
+   public void disable() {
+      enabled = false;
+   }
+
+   @Override
+   protected void failed(Throwable e, Description description) {
+      this.testFailed = true;
+   }
+
+   @Override
+   protected void succeeded(Description description) {
+      this.testFailed = false;
+   }
+
    /**
     * Override to tear down your specific external resource.
     */
    @Override
-   protected void after() {
+   protected void finished(Description description) {
+      log.debug("checking thread enabled? " + enabled + " testFailed? " + testFailed);
       try {
          if (enabled) {
             boolean failed = true;
 
             boolean failedOnce = false;
 
-            long timeout = System.currentTimeMillis() + 60000;
+            // if the test failed.. there's no point on waiting a full minute.. we will report it once and go
+            long timeout = System.currentTimeMillis() + (testFailed ? 1000 : 60000);
             while (failed && timeout > System.currentTimeMillis()) {
                failed = checkThread();
 
@@ -79,26 +95,29 @@ public class ThreadLeakCheckRule extends ExternalResource {
                   forceGC();
                   try {
                      Thread.sleep(500);
-                  }
-                  catch (Throwable e) {
+                  } catch (Throwable e) {
                   }
                }
             }
 
             if (failed) {
-               Assert.fail("Thread leaked");
-            }
-            else if (failedOnce) {
+               if (!testFailed) {
+                  //we only fail on thread leak if test passes.
+                  Assert.fail("Thread leaked");
+               } else {
+                  System.out.println("***********************************************************************");
+                  System.out.println("             The test failed and there is a leak");
+                  System.out.println("***********************************************************************");
+               }
+            } else if (failedOnce) {
                System.out.println("******************** Threads cleared after retries ********************");
                System.out.println();
             }
 
-         }
-         else {
+         } else {
             enabled = true;
          }
-      }
-      finally {
+      } finally {
          // clearing just to help GC
          previousThreads = null;
       }
@@ -125,16 +144,14 @@ public class ThreadLeakCheckRule extends ExternalResource {
          System.runFinalization();
          try {
             finalized.await(100, TimeUnit.MILLISECONDS);
-         }
-         catch (InterruptedException e) {
+         } catch (InterruptedException e) {
          }
       }
 
       if (dumbReference.get() != null) {
          failedGCCalls++;
          log.info("It seems that GC is disabled at your VM");
-      }
-      else {
+      } else {
          // a success would reset the count
          failedGCCalls = 0;
       }
@@ -154,8 +171,7 @@ public class ThreadLeakCheckRule extends ExternalResource {
          System.gc();
          try {
             Thread.sleep(500);
-         }
-         catch (InterruptedException e) {
+         } catch (InterruptedException e) {
          }
       }
    }
@@ -175,7 +191,6 @@ public class ThreadLeakCheckRule extends ExternalResource {
 
       if (postThreads != null && previousThreads != null && postThreads.size() > previousThreads.size()) {
 
-
          for (Thread aliveThread : postThreads.keySet()) {
             if (aliveThread.isAlive() && !isExpectedThread(aliveThread) && !previousThreads.containsKey(aliveThread)) {
                if (!failedThread) {
@@ -189,6 +204,7 @@ public class ThreadLeakCheckRule extends ExternalResource {
                for (StackTraceElement el : elements) {
                   System.out.println(el);
                }
+               aliveThread.interrupt();
             }
 
          }
@@ -197,10 +213,8 @@ public class ThreadLeakCheckRule extends ExternalResource {
          }
       }
 
-
       return failedThread;
    }
-
 
    /**
     * if it's an expected thread... we will just move along ignoring it
@@ -216,50 +230,41 @@ public class ThreadLeakCheckRule extends ExternalResource {
 
       if (threadName.contains("SunPKCS11")) {
          return true;
-      }
-      else if (threadName.contains("Attach Listener")) {
+      } else if (threadName.contains("Keep-Alive-Timer")) {
          return true;
-      }
-      else if ((javaVendor.contains("IBM") || isSystemThread) && threadName.equals("process reaper")) {
+      } else if (threadName.contains("Attach Listener")) {
          return true;
-      }
-      else if ((javaVendor.contains("IBM") || isSystemThread) && threadName.equals("ClassCache Reaper")) {
+      } else if ((javaVendor.contains("IBM") || isSystemThread) && threadName.equals("process reaper")) {
          return true;
-      }
-      else if (javaVendor.contains("IBM") && threadName.equals("MemoryPoolMXBean notification dispatcher")) {
+      } else if ((javaVendor.contains("IBM") || isSystemThread) && threadName.equals("ClassCache Reaper")) {
          return true;
-      }
-      else if (threadName.contains("globalEventExecutor")) {
+      } else if (javaVendor.contains("IBM") && threadName.equals("MemoryPoolMXBean notification dispatcher")) {
          return true;
-      }
-      else if (threadName.contains("threadDeathWatcher")) {
+      } else if (threadName.contains("globalEventExecutor")) {
          return true;
-      }
-      else if (threadName.contains("netty-threads")) {
+      } else if (threadName.contains("threadDeathWatcher")) {
+         return true;
+      } else if (threadName.contains("netty-threads")) {
          // This is ok as we use EventLoopGroup.shutdownGracefully() which will shutdown things with a bit of delay
          // if the EventLoop's are still busy.
          return true;
-      }
-      else if (threadName.contains("threadDeathWatcher")) {
+      } else if (threadName.contains("threadDeathWatcher")) {
          //another netty thread
          return true;
-      }
-      else if (threadName.contains("Abandoned connection cleanup thread")) {
+      } else if (threadName.contains("Abandoned connection cleanup thread")) {
          // MySQL Engine checks for abandoned connections
          return true;
-      }
-      else if (threadName.contains("hawtdispatch")) {
+      } else if (threadName.contains("hawtdispatch") || (group != null && group.getName().contains("hawtdispatch"))) {
          // Static workers used by MQTT client.
          return true;
-      }
-      else {
+      } else {
          for (StackTraceElement element : thread.getStackTrace()) {
             if (element.getClassName().contains("org.jboss.byteman.agent.TransformListener")) {
                return true;
             }
          }
 
-         for (String known: knownThreads) {
+         for (String known : knownThreads) {
             if (threadName.contains(known)) {
                return true;
             }
@@ -268,7 +273,6 @@ public class ThreadLeakCheckRule extends ExternalResource {
          return false;
       }
    }
-
 
    protected static class DumbReference {
 

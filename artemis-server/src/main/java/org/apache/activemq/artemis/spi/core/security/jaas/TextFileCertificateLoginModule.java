@@ -27,8 +27,8 @@ import java.util.Set;
 /**
  * A LoginModule allowing for SSL certificate based authentication based on
  * Distinguished Names (DN) stored in text files. The DNs are parsed using a
- * Properties class where each line is <user_name>=<user_DN>. This class also
- * uses a group definition file where each line is <role_name>=<user_name_1>,<user_name_2>,etc.
+ * Properties class where each line is &lt;user_name&gt;=&lt;user_DN&gt;. This class also
+ * uses a group definition file where each line is &lt;role_name&gt;=&lt;user_name_1&gt;,&lt;user_name_2&gt;,etc.
  * The user and role files' locations must be specified in the
  * org.apache.activemq.jaas.textfiledn.user and
  * org.apache.activemq.jaas.textfiledn.role properties respectively. NOTE: This
@@ -47,7 +47,10 @@ public class TextFileCertificateLoginModule extends CertificateLoginModule {
     * Performs initialization of file paths. A standard JAAS override.
     */
    @Override
-   public void initialize(Subject subject, CallbackHandler callbackHandler, Map<String, ?> sharedState, Map<String, ?> options) {
+   public void initialize(Subject subject,
+                          CallbackHandler callbackHandler,
+                          Map<String, ?> sharedState,
+                          Map<String, ?> options) {
       super.initialize(subject, callbackHandler, sharedState, options);
       usersByDn = load(USER_FILE_PROP_NAME, "", options).invertedPropertiesMap();
       rolesByUser = load(ROLE_FILE_PROP_NAME, "", options).invertedPropertiesValuesMap();

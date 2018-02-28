@@ -16,6 +16,10 @@
  */
 package org.apache.activemq.artemis.tests.integration.server;
 
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Map;
+
 import org.apache.activemq.artemis.api.core.Message;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.api.core.client.ActiveMQClient;
@@ -37,10 +41,6 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
-
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Map;
 
 @RunWith(value = Parameterized.class)
 public class ScaleDownTest extends ClusterTestBase {
@@ -163,7 +163,7 @@ public class ScaleDownTest extends ClusterTestBase {
       for (Map.Entry<SimpleString, Binding> entry : servers[0].getPostOffice().getAllBindings().entrySet()) {
          String temp = entry.getValue().getAddress().toString();
 
-         if (temp.startsWith("sf.") && temp.endsWith(servers[1].getNodeID().toString())) {
+         if (temp.startsWith(servers[1].getInternalNamingPrefix() + "sf.") && temp.endsWith(servers[1].getNodeID().toString())) {
             // we found the sf queue for the other node
             // need to pause the sfQueue here
             ((LocalQueueBinding) entry.getValue()).getQueue().pause();
@@ -425,7 +425,7 @@ public class ScaleDownTest extends ClusterTestBase {
 
       while (!servers[0].getPagingManager().getPageStore(new SimpleString(addressName)).isPaging()) {
          for (int i = 0; i < CHUNK_SIZE; i++) {
-            Message message = session.createMessage(true);
+            ClientMessage message = session.createMessage(true);
             message.getBodyBuffer().writeBytes(new byte[1024]);
             producer.send(message);
             messageCount++;
@@ -463,7 +463,7 @@ public class ScaleDownTest extends ClusterTestBase {
 
       while (!servers[0].getPagingManager().getPageStore(new SimpleString(addressName)).isPaging()) {
          for (int i = 0; i < CHUNK_SIZE; i++) {
-            Message message = session.createMessage(true);
+            ClientMessage message = session.createMessage(true);
             message.getBodyBuffer().writeBytes(new byte[1024]);
             message.putIntProperty("order", i);
             producer.send(message);
@@ -519,8 +519,7 @@ public class ScaleDownTest extends ClusterTestBase {
          if (i % 2 == 0) {
             message = consumers[0].getConsumer().receive(250);
             compare = "0";
-         }
-         else {
+         } else {
             message = consumers[1].getConsumer().receive(250);
             compare = "1";
          }

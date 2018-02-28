@@ -20,7 +20,6 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-import org.apache.activemq.artemis.api.core.ActiveMQException;
 import org.apache.activemq.artemis.core.client.ActiveMQClientLogger;
 import org.apache.activemq.artemis.core.client.ActiveMQClientMessageBundle;
 
@@ -35,12 +34,10 @@ public class ConfigurationHelper {
 
       if (prop == null) {
          return def;
-      }
-      else {
+      } else {
          if (prop instanceof String == false) {
             return prop.toString();
-         }
-         else {
+         } else {
             return (String) prop;
          }
       }
@@ -54,18 +51,15 @@ public class ConfigurationHelper {
 
       if (prop == null) {
          return def;
-      }
-      else {
+      } else {
          // The resource adapter will aways send Strings, hence the conversion here
          if (prop instanceof String) {
             return Integer.valueOf((String) prop);
-         }
-         else if (prop instanceof Number == false) {
+         } else if (prop instanceof Number == false) {
             ActiveMQClientLogger.LOGGER.propertyNotInteger(propName, prop.getClass().getName());
 
             return def;
-         }
-         else {
+         } else {
             return ((Number) prop).intValue();
          }
       }
@@ -80,18 +74,15 @@ public class ConfigurationHelper {
 
       if (prop == null) {
          return def;
-      }
-      else {
+      } else {
          // The resource adapter will aways send Strings, hence the conversion here
          if (prop instanceof String) {
             return Long.valueOf((String) prop);
-         }
-         else if (prop instanceof Number == false) {
+         } else if (prop instanceof Number == false) {
             ActiveMQClientLogger.LOGGER.propertyNotLong(propName, prop.getClass().getName());
 
             return def;
-         }
-         else {
+         } else {
             return ((Number) prop).longValue();
          }
       }
@@ -106,18 +97,15 @@ public class ConfigurationHelper {
 
       if (prop == null) {
          return def;
-      }
-      else {
+      } else {
          // The resource adapter will aways send Strings, hence the conversion here
          if (prop instanceof String) {
             return Boolean.valueOf((String) prop);
-         }
-         else if (prop instanceof Boolean == false) {
+         } else if (prop instanceof Boolean == false) {
             ActiveMQClientLogger.LOGGER.propertyNotBoolean(propName, prop.getClass().getName());
 
             return def;
-         }
-         else {
+         } else {
             return (Boolean) prop;
          }
       }
@@ -175,28 +163,10 @@ public class ConfigurationHelper {
 
       String value = prop.toString();
       Boolean useMask = (Boolean) props.get(defaultMaskPassword);
-      if (useMask == null || (!useMask)) {
-         return value;
-      }
-
       final String classImpl = (String) props.get(defaultPasswordCodec);
-
-      if (classImpl == null) {
-         throw ActiveMQClientMessageBundle.BUNDLE.noCodec();
-      }
-
-      SensitiveDataCodec<String> codec = null;
       try {
-         codec = PasswordMaskingUtil.getCodec(classImpl);
-      }
-      catch (ActiveMQException e1) {
-         throw ActiveMQClientMessageBundle.BUNDLE.failedToGetDecoder(e1);
-      }
-
-      try {
-         return codec.decode(value);
-      }
-      catch (Exception e) {
+         return PasswordMaskingUtil.resolveMask(useMask, value, classImpl);
+      } catch (Exception e) {
          throw ActiveMQClientMessageBundle.BUNDLE.errordecodingPassword(e);
       }
    }
@@ -208,8 +178,7 @@ public class ConfigurationHelper {
       Object prop = props.get(name);
       if (prop == null) {
          return def;
-      }
-      else {
+      } else {
          String value = prop.toString();
          return Double.parseDouble(value);
       }

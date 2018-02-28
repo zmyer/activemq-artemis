@@ -6,7 +6,7 @@
  * (the "License"); you may not use this file except in compliance with
  * the License. You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -39,14 +39,21 @@ public class ServerUtil {
       return startServer(artemisInstance, serverName, 0, 0);
    }
 
+   /**
+    * @param artemisInstance
+    * @param serverName      it will be used on logs
+    * @param id              it will be used to add on the port
+    * @param timeout
+    * @return
+    * @throws Exception
+    */
    public static Process startServer(String artemisInstance, String serverName, int id, int timeout) throws Exception {
       boolean IS_WINDOWS = System.getProperty("os.name").toLowerCase().trim().startsWith("win");
 
       ProcessBuilder builder = null;
       if (IS_WINDOWS) {
          builder = new ProcessBuilder("cmd", "/c", "artemis.cmd", "run");
-      }
-      else {
+      } else {
          builder = new ProcessBuilder("./artemis", "run");
       }
 
@@ -86,8 +93,7 @@ public class ServerUtil {
          try (ActiveMQConnectionFactory cf = ActiveMQJMSClient.createConnectionFactory(uri, null)) {
             cf.createConnection().close();
             System.out.println("server " + uri + " started");
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             System.out.println("awaiting server " + uri + " start at ");
             Thread.sleep(500);
             continue;
@@ -160,14 +166,12 @@ public class ServerUtil {
                if (print) {
                   if (sendToErr) {
                      System.err.println(logName + "-err:" + line);
-                  }
-                  else {
+                  } else {
                      System.out.println(logName + "-out:" + line);
                   }
                }
             }
-         }
-         catch (IOException e) {
+         } catch (IOException e) {
             // ok, stream closed
          }
       }

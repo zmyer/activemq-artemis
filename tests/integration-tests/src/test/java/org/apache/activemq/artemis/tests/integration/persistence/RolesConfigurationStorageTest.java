@@ -16,17 +16,15 @@
  */
 package org.apache.activemq.artemis.tests.integration.persistence;
 
-import org.apache.activemq.artemis.core.config.StoreConfiguration;
-import org.junit.Before;
-
-import org.junit.Test;
-
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import org.apache.activemq.artemis.api.core.SimpleString;
+import org.apache.activemq.artemis.core.config.StoreConfiguration;
 import org.apache.activemq.artemis.core.persistence.config.PersistedRoles;
+import org.junit.Before;
+import org.junit.Test;
 
 public class RolesConfigurationStorageTest extends StorageManagerTestBase {
 
@@ -52,9 +50,9 @@ public class RolesConfigurationStorageTest extends StorageManagerTestBase {
    public void testStoreSecuritySettings() throws Exception {
       createStorage();
 
-      addSetting(new PersistedRoles("a#", "a1", "a1", "a1", "a1", "a1", "a1", "a1", "a1"));
+      addSetting(new PersistedRoles("a#", "a1", "a1", "a1", "a1", "a1", "a1", "a1", "a1", "a1", "a1"));
 
-      addSetting(new PersistedRoles("a2", "a1", null, "a1", "a1", "a1", "a1", "a1", "a1"));
+      addSetting(new PersistedRoles("a2", "a1", null, "a1", "a1", "a1", "a1", "a1", "a1", "a1", "a1"));
 
       journal.stop();
 
@@ -64,9 +62,9 @@ public class RolesConfigurationStorageTest extends StorageManagerTestBase {
 
       checkSettings();
 
-      addSetting(new PersistedRoles("a2", "a1", null, "a1", "a1", "a1", "a1", "a1", "a1"));
+      addSetting(new PersistedRoles("a2", "a1", null, "a1", "a1", "a1", "a1", "a1", "a1", "a1", "a1"));
 
-      addSetting(new PersistedRoles("a3", "a1", null, "a1", "a1", "a1", "a1", "a1", "a1"));
+      addSetting(new PersistedRoles("a3", "a1", null, "a1", "a1", "a1", "a1", "a1", "a1", "a1", "a1"));
 
       checkSettings();
 
@@ -80,6 +78,33 @@ public class RolesConfigurationStorageTest extends StorageManagerTestBase {
 
       journal = null;
 
+   }
+
+   @Test
+   public void testStoreSecuritySettings2() throws Exception {
+      createStorage();
+
+      checkSettings();
+
+      journal.stop();
+
+      createStorage();
+
+      checkSettings();
+
+      addSetting(new PersistedRoles("a#", "a1", "a1", "a1", "a1", "a1", "a1", "a1", "a1", "a1", "a1"));
+
+      journal.stop();
+
+      createStorage();
+
+      checkSettings();
+
+      journal.stop();
+
+      createStorage();
+
+      checkSettings();
    }
 
    /**

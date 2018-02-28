@@ -26,7 +26,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.activemq.artemis.api.core.ActiveMQException;
-import org.apache.activemq.artemis.api.core.Message;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.api.core.client.ClientConsumer;
 import org.apache.activemq.artemis.api.core.client.ClientMessage;
@@ -34,14 +33,14 @@ import org.apache.activemq.artemis.api.core.client.ClientProducer;
 import org.apache.activemq.artemis.api.core.client.ClientSession;
 import org.apache.activemq.artemis.api.core.client.ClientSessionFactory;
 import org.apache.activemq.artemis.api.core.client.ServerLocator;
-import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.apache.activemq.artemis.core.config.Configuration;
 import org.apache.activemq.artemis.core.config.impl.ConfigurationImpl;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.core.server.MessageReference;
 import org.apache.activemq.artemis.core.server.Queue;
 import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
-import org.apache.activemq.artemis.utils.LinkedListIterator;
+import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
+import org.apache.activemq.artemis.utils.collections.LinkedListIterator;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
@@ -177,8 +176,7 @@ public class PagingSendTest extends ActiveMQTestBase {
 
                sessionProducer.commit();
 
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                e.printStackTrace();
                errors.incrementAndGet();
             }
@@ -290,7 +288,7 @@ public class PagingSendTest extends ActiveMQTestBase {
       List<String> messageIds = new ArrayList<>();
       ClientProducer producer = session.createProducer(queueAddr);
       for (int i = 0; i < batchSize; i++) {
-         Message message = session.createMessage(true);
+         ClientMessage message = session.createMessage(true);
          message.getBodyBuffer().writeBytes(new byte[1024]);
          String id = UUID.randomUUID().toString();
          message.putStringProperty("id", id);
@@ -309,7 +307,7 @@ public class PagingSendTest extends ActiveMQTestBase {
     * duplicates that may have happened before this point).
     */
    public void checkBatchMessagesAreNotPagedTwice(Queue queue) throws Exception {
-      LinkedListIterator<MessageReference> pageIterator = queue.totalIterator();
+      LinkedListIterator<MessageReference> pageIterator = queue.browserIterator();
 
       Set<String> messageOrderSet = new HashSet<>();
 
@@ -345,7 +343,7 @@ public class PagingSendTest extends ActiveMQTestBase {
     * duplicates that may have happened before this point).
     */
    protected int processCountThroughIterator(Queue queue) throws Exception {
-      LinkedListIterator<MessageReference> pageIterator = queue.totalIterator();
+      LinkedListIterator<MessageReference> pageIterator = queue.browserIterator();
 
       int count = 0;
       while (pageIterator.hasNext()) {

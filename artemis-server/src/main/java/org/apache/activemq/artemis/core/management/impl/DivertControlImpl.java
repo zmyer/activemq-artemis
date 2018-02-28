@@ -19,6 +19,9 @@ package org.apache.activemq.artemis.core.management.impl;
 import javax.management.MBeanAttributeInfo;
 import javax.management.MBeanOperationInfo;
 
+import java.util.Map;
+
+import org.apache.activemq.artemis.api.core.JsonUtil;
 import org.apache.activemq.artemis.api.core.management.DivertControl;
 import org.apache.activemq.artemis.core.config.DivertConfiguration;
 import org.apache.activemq.artemis.core.persistence.StorageManager;
@@ -53,8 +56,7 @@ public class DivertControlImpl extends AbstractControl implements DivertControl 
       clearIO();
       try {
          return configuration.getAddress();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -64,8 +66,7 @@ public class DivertControlImpl extends AbstractControl implements DivertControl 
       clearIO();
       try {
          return configuration.getFilterString();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -75,8 +76,7 @@ public class DivertControlImpl extends AbstractControl implements DivertControl 
       clearIO();
       try {
          return configuration.getForwardingAddress();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -86,8 +86,7 @@ public class DivertControlImpl extends AbstractControl implements DivertControl 
       clearIO();
       try {
          return divert.getRoutingName().toString();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -96,9 +95,33 @@ public class DivertControlImpl extends AbstractControl implements DivertControl 
    public String getTransformerClassName() {
       clearIO();
       try {
-         return configuration.getTransformerClassName();
+         return configuration.getTransformerConfiguration() == null ? null : configuration.getTransformerConfiguration().getClassName();
+      } finally {
+         blockOnIO();
       }
-      finally {
+   }
+
+   @Override
+   public String getTransformerPropertiesAsJSON() {
+      return JsonUtil.toJsonObject(getTransformerProperties()).toString();
+   }
+
+   @Override
+   public Map<String, String> getTransformerProperties() {
+      clearIO();
+      try {
+         return configuration.getTransformerConfiguration() == null ? null : configuration.getTransformerConfiguration().getProperties();
+      } finally {
+         blockOnIO();
+      }
+   }
+
+   @Override
+   public String getRoutingType() {
+      clearIO();
+      try {
+         return configuration.getRoutingType().toString();
+      } finally {
          blockOnIO();
       }
    }
@@ -108,8 +131,7 @@ public class DivertControlImpl extends AbstractControl implements DivertControl 
       clearIO();
       try {
          return divert.getUniqueName().toString();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -119,8 +141,7 @@ public class DivertControlImpl extends AbstractControl implements DivertControl 
       clearIO();
       try {
          return divert.isExclusive();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }

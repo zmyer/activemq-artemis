@@ -31,6 +31,7 @@ import org.apache.activemq.artemis.utils.uri.BeanSupport;
 import org.apache.activemq.artemis.utils.uri.SchemaConstants;
 
 public class TCPServerLocatorSchema extends AbstractServerLocatorSchema {
+
    @Override
    public String getSchemaName() {
       return SchemaConstants.TCP;
@@ -44,10 +45,9 @@ public class TCPServerLocatorSchema extends AbstractServerLocatorSchema {
       TransportConfiguration[] tcs = new TransportConfiguration[configurations.size()];
       configurations.toArray(tcs);
       if (options.isHa()) {
-         return ActiveMQClient.createServerLocatorWithHA(tcs);
-      }
-      else {
-         return ActiveMQClient.createServerLocatorWithoutHA(tcs);
+         return BeanSupport.setData(uri, ActiveMQClient.createServerLocatorWithHA(tcs), query);
+      } else {
+         return BeanSupport.setData(uri, ActiveMQClient.createServerLocatorWithoutHA(tcs), query);
       }
    }
 
@@ -109,8 +109,7 @@ public class TCPServerLocatorSchema extends AbstractServerLocatorSchema {
       if (query == null) {
          cb = new StringBuilder();
          empty = true;
-      }
-      else {
+      } else {
          cb = new StringBuilder(query);
          empty = false;
       }
@@ -119,8 +118,7 @@ public class TCPServerLocatorSchema extends AbstractServerLocatorSchema {
          if (entry.getValue() != null) {
             if (!empty) {
                cb.append("&");
-            }
-            else {
+            } else {
                empty = false;
             }
             cb.append(BeanSupport.encodeURI(entry.getKey()));

@@ -23,6 +23,7 @@ import org.apache.activemq.artemis.api.core.client.ClientMessage;
 import org.apache.activemq.artemis.api.core.client.ClientProducer;
 import org.apache.activemq.artemis.api.core.client.ClientSession;
 import org.apache.activemq.artemis.api.core.client.ClientSessionFactory;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.core.server.cluster.ClusterConnection;
 import org.apache.activemq.artemis.core.server.cluster.MessageFlowRecord;
 import org.apache.activemq.artemis.core.server.cluster.impl.ClusterConnectionImpl;
@@ -35,6 +36,7 @@ import org.junit.Test;
 public class ExpireWhileLoadBalanceTest extends ClusterTestBase {
 
    @Before
+   @Override
    public void setUp() throws Exception {
       super.setUp();
 
@@ -73,8 +75,8 @@ public class ExpireWhileLoadBalanceTest extends ClusterTestBase {
 
       for (int i = 0; i <= 2; i++) {
          createQueue(i, "queues.testaddress", "queue0", null, true);
-         getServer(i).createQueue(expiryQueue, expiryQueue, null, true, false);
-         getServer(i).getAddressSettingsRepository().addMatch("queues.*", as);
+         getServer(i).createQueue(expiryQueue, RoutingType.ANYCAST, expiryQueue, null, true, false);
+         getServer(i).getAddressSettingsRepository().addMatch("#", as);
 
       }
 

@@ -120,6 +120,8 @@ public final class ActiveMQRASessionFactoryImpl extends ActiveMQConnectionForCon
     */
    private final Set<TemporaryTopic> tempTopics = new HashSet<>();
 
+   private boolean allowLocalTransaction;
+
    /**
     * Constructor
     *
@@ -137,8 +139,7 @@ public final class ActiveMQRASessionFactoryImpl extends ActiveMQConnectionForCon
 
       if (cm == null) {
          this.cm = new ActiveMQRAConnectionManager();
-      }
-      else {
+      } else {
          this.cm = cm;
       }
 
@@ -653,8 +654,7 @@ public final class ActiveMQRASessionFactoryImpl extends ActiveMQConnectionForCon
             ActiveMQRASession session = i.next();
             try {
                session.closeSession();
-            }
-            catch (Throwable t) {
+            } catch (Throwable t) {
                ActiveMQRALogger.LOGGER.trace("Error closing session", t);
             }
             i.remove();
@@ -669,8 +669,7 @@ public final class ActiveMQRASessionFactoryImpl extends ActiveMQConnectionForCon
                   ActiveMQRALogger.LOGGER.trace("Closing temporary queue " + temp + " for " + this);
                }
                temp.delete();
-            }
-            catch (Throwable t) {
+            } catch (Throwable t) {
                ActiveMQRALogger.LOGGER.trace("Error deleting temporary queue", t);
             }
             i.remove();
@@ -685,8 +684,7 @@ public final class ActiveMQRASessionFactoryImpl extends ActiveMQConnectionForCon
                   ActiveMQRALogger.LOGGER.trace("Closing temporary topic " + temp + " for " + this);
                }
                temp.delete();
-            }
-            catch (Throwable t) {
+            } catch (Throwable t) {
                ActiveMQRALogger.LOGGER.trace("Error deleting temporary queue", t);
             }
             i.remove();
@@ -829,28 +827,36 @@ public final class ActiveMQRASessionFactoryImpl extends ActiveMQConnectionForCon
                // If the session
                // is transacted, returns SESSION_TRANSACTED.
                acknowledgeMode = Session.SESSION_TRANSACTED;
-            }
-            //In the Java EE web or EJB container, when there is no active JTA transaction in progress
-            // The argument {@code transacted} is ignored.
-            else {
-               //The session will always be non-transacted,
-               transacted = false;
-               switch (acknowledgeMode) {
-                  //using one of the two acknowledgement modes AUTO_ACKNOWLEDGE and DUPS_OK_ACKNOWLEDGE.
-                  case Session.AUTO_ACKNOWLEDGE:
-                  case Session.DUPS_OK_ACKNOWLEDGE:
-                     //plus our own
-                  case ActiveMQJMSConstants.INDIVIDUAL_ACKNOWLEDGE:
-                  case ActiveMQJMSConstants.PRE_ACKNOWLEDGE:
-                     break;
-                  //The value {@code Session.CLIENT_ACKNOWLEDGE} may not be used.
-                  case Session.CLIENT_ACKNOWLEDGE:
-                     throw ActiveMQRABundle.BUNDLE.invalidClientAcknowledgeModeRuntime();
-                     //same with this although the spec doesn't explicitly say
-                  case Session.SESSION_TRANSACTED:
-                     throw ActiveMQRABundle.BUNDLE.invalidSessionTransactedModeRuntime();
-                  default:
-                     throw ActiveMQRABundle.BUNDLE.invalidAcknowledgeMode(acknowledgeMode);
+            } else {
+               //In the Java EE web or EJB container, when there is no active JTA transaction in progress
+               // The argument {@code transacted} is ignored.
+
+               //The session will always be non-transacted, unless allow-local-transactions is true
+               if (transacted && mcf.isAllowLocalTransactions()) {
+                  acknowledgeMode = Session.SESSION_TRANSACTED;
+               } else {
+                  transacted = false;
+                  switch (acknowledgeMode) {
+                     //using one of the two acknowledgement modes AUTO_ACKNOWLEDGE and DUPS_OK_ACKNOWLEDGE.
+                     case Session.AUTO_ACKNOWLEDGE:
+                     case Session.DUPS_OK_ACKNOWLEDGE:
+                        //plus our own
+                     case ActiveMQJMSConstants.INDIVIDUAL_ACKNOWLEDGE:
+                     case ActiveMQJMSConstants.PRE_ACKNOWLEDGE:
+                        break;
+                     //The value {@code Session.CLIENT_ACKNOWLEDGE} may not be used.
+                     case Session.CLIENT_ACKNOWLEDGE:
+                        throw ActiveMQRABundle.BUNDLE.invalidClientAcknowledgeModeRuntime();
+                        //same with this although the spec doesn't explicitly say
+                     case Session.SESSION_TRANSACTED:
+                        if (!mcf.isAllowLocalTransactions()) {
+                           throw ActiveMQRABundle.BUNDLE.invalidSessionTransactedModeRuntimeAllowLocal();
+                        }
+                        transacted = true;
+                        break;
+                     default:
+                        throw ActiveMQRABundle.BUNDLE.invalidAcknowledgeMode(acknowledgeMode);
+                  }
                }
             }
 
@@ -880,23 +886,19 @@ public final class ActiveMQRASessionFactoryImpl extends ActiveMQConnectionForCon
                sessions.add(session);
 
                return session;
-            }
-            catch (Throwable t) {
+            } catch (Throwable t) {
                try {
                   session.close();
-               }
-               catch (Throwable ignored) {
+               } catch (Throwable ignored) {
                }
                if (t instanceof Exception) {
                   throw (Exception) t;
-               }
-               else {
+               } else {
                   throw new RuntimeException("Unexpected error: ", t);
                }
             }
          }
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          Throwable current = e;
          while (current != null && !(current instanceof JMSException)) {
             current = current.getCause();
@@ -904,8 +906,7 @@ public final class ActiveMQRASessionFactoryImpl extends ActiveMQConnectionForCon
 
          if (current != null && current instanceof JMSException) {
             throw (JMSException) current;
-         }
-         else {
+         } else {
             JMSException je = new JMSException("Could not create a session: " + e.getMessage());
             je.setLinkedException(e);
             je.initCause(e);
@@ -935,8 +936,7 @@ public final class ActiveMQRASessionFactoryImpl extends ActiveMQConnectionForCon
          Transaction tx = null;
          try {
             tx = tm.getTransaction();
-         }
-         catch (SystemException e) {
+         } catch (SystemException e) {
             //assume false
          }
          inJtaTx = tx != null;

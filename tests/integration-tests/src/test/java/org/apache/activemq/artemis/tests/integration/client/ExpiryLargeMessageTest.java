@@ -26,12 +26,13 @@ import org.apache.activemq.artemis.api.core.client.ClientProducer;
 import org.apache.activemq.artemis.api.core.client.ClientSession;
 import org.apache.activemq.artemis.api.core.client.ClientSessionFactory;
 import org.apache.activemq.artemis.api.core.client.ServerLocator;
-import org.apache.activemq.artemis.tests.integration.IntegrationTestLogger;
-import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.core.server.Queue;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.core.settings.impl.AddressFullMessagePolicy;
 import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
+import org.apache.activemq.artemis.tests.integration.IntegrationTestLogger;
+import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.junit.Test;
 
 /**
@@ -73,11 +74,11 @@ public class ExpiryLargeMessageTest extends ActiveMQTestBase {
 
       server.start();
 
-      server.createQueue(EXPIRY, EXPIRY, null, true, false);
+      server.createQueue(EXPIRY, RoutingType.ANYCAST, EXPIRY, null, true, false);
 
-      server.createQueue(DLQ, DLQ, null, true, false);
+      server.createQueue(DLQ, RoutingType.ANYCAST, DLQ, null, true, false);
 
-      server.createQueue(MY_QUEUE, MY_QUEUE, null, true, false);
+      server.createQueue(MY_QUEUE, RoutingType.ANYCAST, MY_QUEUE, null, true, false);
 
       ServerLocator locator = createInVMNonHALocator();
 
@@ -103,8 +104,7 @@ public class ExpiryLargeMessageTest extends ActiveMQTestBase {
          if (i % 2 == 0) {
             message.putBooleanProperty("tst-large", false);
             message.getBodyBuffer().writeBytes(bufferSample);
-         }
-         else {
+         } else {
             message.putBooleanProperty("tst-large", true);
             message.setBodyInputStream(createFakeLargeStream(messageSize));
          }
@@ -256,11 +256,11 @@ public class ExpiryLargeMessageTest extends ActiveMQTestBase {
 
       server.start();
 
-      server.createQueue(EXPIRY, EXPIRY, null, true, false);
+      server.createQueue(EXPIRY, RoutingType.ANYCAST, EXPIRY, null, true, false);
 
-      server.createQueue(DLQ, DLQ, null, true, false);
+      server.createQueue(DLQ, RoutingType.ANYCAST, DLQ, null, true, false);
 
-      server.createQueue(MY_QUEUE, MY_QUEUE, null, true, false);
+      server.createQueue(MY_QUEUE, RoutingType.ANYCAST, MY_QUEUE, null, true, false);
 
       ServerLocator locator = createInVMNonHALocator();
 

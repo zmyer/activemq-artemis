@@ -32,6 +32,7 @@ import org.apache.activemq.artemis.core.config.Configuration;
 import org.apache.activemq.artemis.core.config.CoreQueueConfiguration;
 import org.apache.activemq.artemis.core.config.DivertConfiguration;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.jms.client.ActiveMQConnection;
 import org.apache.activemq.artemis.jms.client.ActiveMQConnectionFactory;
 import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
@@ -46,9 +47,9 @@ import org.junit.Test;
 public class ReplicationWithDivertTest extends ActiveMQTestBase {
 
    public static final String JMS_SOURCE_QUEUE = "Queue";
-   public static final String SOURCE_QUEUE = "jms.queue." + JMS_SOURCE_QUEUE;
+   public static final String SOURCE_QUEUE = JMS_SOURCE_QUEUE;
    public static final String JMS_TARGET_QUEUE = "DestQueue";
-   public static final String TARGET_QUEUE = "jms.queue." + JMS_TARGET_QUEUE;
+   public static final String TARGET_QUEUE = JMS_TARGET_QUEUE;
    public static int messageChunkCount = 0;
 
    private static ActiveMQServer backupServer;
@@ -98,16 +99,14 @@ public class ReplicationWithDivertTest extends ActiveMQTestBase {
       backupConfig = createDefaultInVMConfig().setBindingsDirectory(getBindingsDir(0, true)).
          setJournalDirectory(getJournalDir(0, true)).setPagingDirectory(getPageDir(0, true)).
          setLargeMessagesDirectory(getLargeMessagesDir(0, true));
-      backupConfig.addQueueConfiguration(new CoreQueueConfiguration().setAddress(SOURCE_QUEUE).setName(SOURCE_QUEUE));
-      backupConfig.addQueueConfiguration(new CoreQueueConfiguration().setAddress(TARGET_QUEUE).setName(TARGET_QUEUE));
-
+      backupConfig.addQueueConfiguration(new CoreQueueConfiguration().setAddress(SOURCE_QUEUE).setName(SOURCE_QUEUE).setRoutingType(RoutingType.ANYCAST));
+      backupConfig.addQueueConfiguration(new CoreQueueConfiguration().setAddress(TARGET_QUEUE).setName(TARGET_QUEUE).setRoutingType(RoutingType.ANYCAST));
 
       DivertConfiguration divertConfiguration = new DivertConfiguration().setName("Test").setAddress(SOURCE_QUEUE).setForwardingAddress(TARGET_QUEUE).setRoutingName("Test");
 
-
       liveConfig = createDefaultInVMConfig();
-      liveConfig.addQueueConfiguration(new CoreQueueConfiguration().setAddress(SOURCE_QUEUE).setName(SOURCE_QUEUE).setDurable(true));
-      liveConfig.addQueueConfiguration(new CoreQueueConfiguration().setAddress(TARGET_QUEUE).setName(TARGET_QUEUE).setDurable(true));
+      liveConfig.addQueueConfiguration(new CoreQueueConfiguration().setAddress(SOURCE_QUEUE).setName(SOURCE_QUEUE).setDurable(true).setRoutingType(RoutingType.ANYCAST));
+      liveConfig.addQueueConfiguration(new CoreQueueConfiguration().setAddress(TARGET_QUEUE).setName(TARGET_QUEUE).setDurable(true).setRoutingType(RoutingType.ANYCAST));
       liveConfig.addDivertConfiguration(divertConfiguration);
 
       backupConfig.addDivertConfiguration(divertConfiguration);
@@ -150,8 +149,7 @@ public class ReplicationWithDivertTest extends ActiveMQTestBase {
       if (connection != null) {
          try {
             connection.close();
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
          }
       }
       if (backupServer != null) {
@@ -191,8 +189,7 @@ public class ReplicationWithDivertTest extends ActiveMQTestBase {
                      producer.send(message);
                      session.commit();
                   }
-               }
-               catch (JMSException expected) {
+               } catch (JMSException expected) {
                   expected.printStackTrace();
                }
             }
@@ -223,7 +220,7 @@ public class ReplicationWithDivertTest extends ActiveMQTestBase {
       }
 
       Assert.assertFalse(t.isAlive());
-      liveServer.stop(true);
+      liveServer.fail(true);
       Assert.assertTrue(failedOver.await(10, TimeUnit.SECONDS));
 
       {

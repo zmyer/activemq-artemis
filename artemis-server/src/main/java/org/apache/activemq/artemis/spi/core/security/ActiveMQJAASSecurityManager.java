@@ -19,7 +19,6 @@ package org.apache.activemq.artemis.spi.core.security;
 import javax.security.auth.Subject;
 import javax.security.auth.login.LoginContext;
 import javax.security.auth.login.LoginException;
-import javax.security.cert.X509Certificate;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.security.Principal;
@@ -28,15 +27,16 @@ import java.util.Iterator;
 import java.util.Set;
 
 import org.apache.activemq.artemis.core.config.impl.SecurityConfiguration;
-import org.apache.activemq.artemis.core.remoting.impl.netty.NettyConnection;
 import org.apache.activemq.artemis.core.security.CheckType;
 import org.apache.activemq.artemis.core.security.Role;
+import org.apache.activemq.artemis.core.server.ActiveMQServerLogger;
 import org.apache.activemq.artemis.spi.core.protocol.RemotingConnection;
 import org.apache.activemq.artemis.spi.core.security.jaas.JaasCallbackHandler;
 import org.apache.activemq.artemis.spi.core.security.jaas.RolePrincipal;
 import org.apache.activemq.artemis.spi.core.security.jaas.UserPrincipal;
-import org.apache.activemq.artemis.utils.CertificateUtil;
 import org.jboss.logging.Logger;
+
+import static org.apache.activemq.artemis.core.remoting.CertificateUtil.getCertsFromConnection;
 
 /**
  * This implementation delegates to the JAAS security interfaces.
@@ -73,7 +73,10 @@ public class ActiveMQJAASSecurityManager implements ActiveMQSecurityManager3 {
       this.configuration = configuration;
    }
 
-   public ActiveMQJAASSecurityManager(String configurationName, String certificateConfigurationName, SecurityConfiguration configuration, SecurityConfiguration certificateConfiguration) {
+   public ActiveMQJAASSecurityManager(String configurationName,
+                                      String certificateConfigurationName,
+                                      SecurityConfiguration configuration,
+                                      SecurityConfiguration certificateConfiguration) {
       this.configurationName = configurationName;
       this.configuration = configuration;
       this.certificateConfigurationName = certificateConfigurationName;
@@ -86,11 +89,10 @@ public class ActiveMQJAASSecurityManager implements ActiveMQSecurityManager3 {
    }
 
    @Override
-   public String validateUser(final String user, final String password, X509Certificate[] certificates) {
+   public String validateUser(final String user, final String password, RemotingConnection remotingConnection) {
       try {
-         return getUserFromSubject(getAuthenticatedSubject(user, password, certificates));
-      }
-      catch (LoginException e) {
+         return getUserFromSubject(getAuthenticatedSubject(user, password, remotingConnection));
+      } catch (LoginException e) {
          if (logger.isDebugEnabled()) {
             logger.debug("Couldn't validate user", e);
          }
@@ -116,20 +118,15 @@ public class ActiveMQJAASSecurityManager implements ActiveMQSecurityManager3 {
 
    @Override
    public String validateUserAndRole(final String user,
-                                      final String password,
-                                      final Set<Role> roles,
-                                      final CheckType checkType,
-                                      final String address,
-                                      final RemotingConnection connection) {
-      X509Certificate[] certificates = null;
-      if (connection != null && connection.getTransportConnection() instanceof NettyConnection) {
-         certificates = CertificateUtil.getCertsFromChannel(((NettyConnection) connection.getTransportConnection()).getChannel());
-      }
+                                     final String password,
+                                     final Set<Role> roles,
+                                     final CheckType checkType,
+                                     final String address,
+                                     final RemotingConnection remotingConnection) {
       Subject localSubject;
       try {
-         localSubject = getAuthenticatedSubject(user, password, certificates);
-      }
-      catch (LoginException e) {
+         localSubject = getAuthenticatedSubject(user, password, remotingConnection);
+      } catch (LoginException e) {
          if (logger.isDebugEnabled()) {
             logger.debug("Couldn't validate user", e);
          }
@@ -145,9 +142,8 @@ public class ActiveMQJAASSecurityManager implements ActiveMQSecurityManager3 {
          Set<Principal> rolesForSubject = new HashSet<>();
          try {
             rolesForSubject.addAll(localSubject.getPrincipals(Class.forName(rolePrincipalClass).asSubclass(Principal.class)));
-         }
-         catch (Exception e) {
-            logger.info("Can't find roles for the subject", e);
+         } catch (Exception e) {
+            ActiveMQServerLogger.LOGGER.failedToFindRolesForTheSubject(e);
          }
          if (rolesForSubject.size() > 0 && rolesWithPermission.size() > 0) {
             Iterator<Principal> rolesForSubjectIter = rolesForSubject.iterator();
@@ -168,22 +164,33 @@ public class ActiveMQJAASSecurityManager implements ActiveMQSecurityManager3 {
 
       if (authorized) {
          return getUserFromSubject(localSubject);
-      }
-      else {
+      } else {
          return null;
       }
    }
 
-   private Subject getAuthenticatedSubject(final String user, final String password, final X509Certificate[] certificates) throws LoginException {
+   private Subject getAuthenticatedSubject(final String user,
+                                           final String password,
+                                           final RemotingConnection remotingConnection) throws LoginException {
       LoginContext lc;
-      if (certificateConfigurationName != null && certificateConfigurationName.length() > 0 && certificates != null) {
-         lc = new LoginContext(certificateConfigurationName, null, new JaasCallbackHandler(user, password, certificates), certificateConfiguration);
+      ClassLoader currentLoader = Thread.currentThread().getContextClassLoader();
+      ClassLoader thisLoader = this.getClass().getClassLoader();
+      try {
+         if (thisLoader != currentLoader) {
+            Thread.currentThread().setContextClassLoader(thisLoader);
+         }
+         if (certificateConfigurationName != null && certificateConfigurationName.length() > 0 && getCertsFromConnection(remotingConnection) != null) {
+            lc = new LoginContext(certificateConfigurationName, null, new JaasCallbackHandler(user, password, remotingConnection), certificateConfiguration);
+         } else {
+            lc = new LoginContext(configurationName, null, new JaasCallbackHandler(user, password, remotingConnection), configuration);
+         }
+         lc.login();
+         return lc.getSubject();
+      } finally {
+         if (thisLoader != currentLoader) {
+            Thread.currentThread().setContextClassLoader(currentLoader);
+         }
       }
-      else {
-         lc = new LoginContext(configurationName, null, new JaasCallbackHandler(user, password, certificates), configuration);
-      }
-      lc.login();
-      return lc.getSubject();
    }
 
    private Set<RolePrincipal> getPrincipalsInRole(final CheckType checkType, final Set<Role> roles) {
@@ -192,9 +199,8 @@ public class ActiveMQJAASSecurityManager implements ActiveMQSecurityManager3 {
          if (checkType.hasRole(role)) {
             try {
                principals.add(createGroupPrincipal(role.getName(), rolePrincipalClass));
-            }
-            catch (Exception e) {
-               logger.info("Can't add role principal", e);
+            } catch (Exception e) {
+               ActiveMQServerLogger.LOGGER.failedAddRolePrincipal(e);
             }
          }
       }
@@ -276,8 +282,7 @@ public class ActiveMQJAASSecurityManager implements ActiveMQSecurityManager3 {
       }
       if (i < constructors.length) {
          instance = constructors[i].newInstance(param);
-      }
-      else {
+      } else {
          instance = cls.newInstance();
          Method[] methods = cls.getMethods();
          i = 0;
@@ -290,8 +295,7 @@ public class ActiveMQJAASSecurityManager implements ActiveMQSecurityManager3 {
 
          if (i < methods.length) {
             methods[i].invoke(instance, param);
-         }
-         else {
+         } else {
             throw new NoSuchMethodException();
          }
       }

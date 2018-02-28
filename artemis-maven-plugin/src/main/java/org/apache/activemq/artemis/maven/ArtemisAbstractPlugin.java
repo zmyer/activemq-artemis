@@ -1,4 +1,4 @@
-/**
+/*
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements. See the NOTICE file distributed with
  * this work for additional information regarding copyright ownership.
@@ -14,12 +14,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.apache.activemq.artemis.maven;
 
 import java.io.File;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -62,22 +64,28 @@ public abstract class ArtemisAbstractPlugin extends AbstractMojo {
    @Parameter(defaultValue = "${localRepository}")
    protected ArtifactRepository localRepository;
 
-
-
    @Override
    public void execute() throws MojoExecutionException, MojoFailureException {
       if (isIgnore()) {
          getLog().debug("******************************************************************************************************");
          getLog().debug("Execution of " + getClass().getSimpleName() + " is being ignored as ignore has been set to true");
          getLog().debug("******************************************************************************************************");
-      }
-      else {
+      } else {
          doExecute();
          // We could execute the maven plugins over and over on examples
          // For that reason we just unlock the server here
          // Notice this has no implementations if you are using spawn
          LockAbstract.unlock();
       }
+   }
+
+   boolean isArtemisHome(Path path) {
+      if (path == null) {
+         return false;
+      }
+
+      Path artemisScript = path.resolve("bin").resolve("artemis");
+      return Files.exists(artemisScript, LinkOption.NOFOLLOW_LINKS);
    }
 
    protected abstract boolean isIgnore();
@@ -88,8 +96,7 @@ public abstract class ArtemisAbstractPlugin extends AbstractMojo {
       Artifact artifact;
       try {
          artifact = new DefaultArtifact(artifactID);
-      }
-      catch (IllegalArgumentException e) {
+      } catch (IllegalArgumentException e) {
          throw new MojoFailureException(e.getMessage(), e);
       }
       return artifact;
@@ -103,8 +110,7 @@ public abstract class ArtemisAbstractPlugin extends AbstractMojo {
       ArtifactResult result;
       try {
          result = repositorySystem.resolveArtifact(repoSession, request);
-      }
-      catch (ArtifactResolutionException e) {
+      } catch (ArtifactResolutionException e) {
          throw new MojoExecutionException(e.getMessage(), e);
       }
 
@@ -148,7 +154,8 @@ public abstract class ArtemisAbstractPlugin extends AbstractMojo {
       return dependencies;
    }
 
-   protected Set<File> resolveDependencies(String[] dependencyListParameter, String[] individualListParameter) throws DependencyCollectionException, MojoFailureException, MojoExecutionException {
+   protected Set<File> resolveDependencies(String[] dependencyListParameter,
+                                           String[] individualListParameter) throws DependencyCollectionException, MojoFailureException, MojoExecutionException {
       Set<File> filesSet = new HashSet<>();
       if (dependencyListParameter != null) {
          for (String lib : dependencyListParameter) {

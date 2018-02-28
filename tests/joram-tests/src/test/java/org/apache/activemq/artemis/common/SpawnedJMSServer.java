@@ -20,23 +20,23 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
 
+import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.core.config.Configuration;
 import org.apache.activemq.artemis.core.config.impl.ConfigurationImpl;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.core.server.ActiveMQServers;
+import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
 import org.apache.activemq.artemis.jms.server.JMSServerManager;
 import org.apache.activemq.artemis.jms.server.impl.JMSServerManagerImpl;
 import org.apache.activemq.artemis.utils.FileUtil;
 
 public class SpawnedJMSServer {
 
-
    public static ActiveMQServer server;
    public static JMSServerManager serverManager;
 
    // Using files may be useful for debugging (through print-data for instance)
    private static final boolean useFiles = false;
-
 
    public static void main(final String[] args) throws Exception {
       try {
@@ -57,14 +57,12 @@ public class SpawnedJMSServer {
                stopServer();
                System.out.println("Server stopped");
                System.exit(0);
-            }
-            else {
+            } else {
                // stop anyway but with an error status
                System.exit(1);
             }
          }
-      }
-      catch (Throwable t) {
+      } catch (Throwable t) {
          t.printStackTrace();
          String allStack = t.getCause().getMessage() + "|";
          StackTraceElement[] stackTrace = t.getCause().getStackTrace();
@@ -91,6 +89,8 @@ public class SpawnedJMSServer {
 
          // disable server persistence since JORAM tests do not restart server
          server = ActiveMQServers.newActiveMQServer(config, useFiles);
+         // set DLA and expiry to avoid spamming the log with warnings
+         server.getAddressSettingsRepository().addMatch("#", new AddressSettings().setDeadLetterAddress(SimpleString.toSimpleString("DLA")).setExpiryAddress(SimpleString.toSimpleString("Expiry")));
 
          serverManager = new JMSServerManagerImpl(server);
          serverManager.start();

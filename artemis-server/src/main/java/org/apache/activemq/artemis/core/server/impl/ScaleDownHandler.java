@@ -25,6 +25,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -39,7 +40,6 @@ import org.apache.activemq.artemis.api.core.client.ClientSessionFactory;
 import org.apache.activemq.artemis.api.core.management.ManagementHelper;
 import org.apache.activemq.artemis.api.core.management.ResourceNames;
 import org.apache.activemq.artemis.core.client.impl.ClientSessionFactoryInternal;
-import org.apache.activemq.artemis.core.message.impl.MessageImpl;
 import org.apache.activemq.artemis.core.paging.PagingManager;
 import org.apache.activemq.artemis.core.paging.PagingStore;
 import org.apache.activemq.artemis.core.paging.cursor.PageSubscription;
@@ -54,14 +54,13 @@ import org.apache.activemq.artemis.core.server.ActiveMQServerLogger;
 import org.apache.activemq.artemis.core.server.MessageReference;
 import org.apache.activemq.artemis.core.server.NodeManager;
 import org.apache.activemq.artemis.core.server.Queue;
-import org.apache.activemq.artemis.core.server.ServerMessage;
 import org.apache.activemq.artemis.core.server.cluster.ClusterControl;
 import org.apache.activemq.artemis.core.server.cluster.ClusterController;
 import org.apache.activemq.artemis.core.transaction.ResourceManager;
 import org.apache.activemq.artemis.core.transaction.Transaction;
 import org.apache.activemq.artemis.core.transaction.TransactionOperation;
 import org.apache.activemq.artemis.core.transaction.impl.TransactionImpl;
-import org.apache.activemq.artemis.utils.LinkedListIterator;
+import org.apache.activemq.artemis.utils.collections.LinkedListIterator;
 import org.jboss.logging.Logger;
 
 public class ScaleDownHandler {
@@ -95,14 +94,17 @@ public class ScaleDownHandler {
       ClusterControl clusterControl = clusterController.connectToNodeInCluster((ClientSessionFactoryInternal) sessionFactory);
       clusterControl.authorize();
       long num = scaleDownMessages(sessionFactory, targetNodeId, clusterControl.getClusterUser(), clusterControl.getClusterPassword());
-      ActiveMQServerLogger.LOGGER.info("Scaled down " + num + " messages total.");
+      ActiveMQServerLogger.LOGGER.infoScaledDownMessages(num);
       scaleDownTransactions(sessionFactory, resourceManager, clusterControl.getClusterUser(), clusterControl.getClusterPassword());
       scaleDownDuplicateIDs(duplicateIDMap, sessionFactory, managementAddress, clusterControl.getClusterUser(), clusterControl.getClusterPassword());
       clusterControl.announceScaleDown(new SimpleString(this.targetNodeId), nodeManager.getNodeId());
       return num;
    }
 
-   public long scaleDownMessages(ClientSessionFactory sessionFactory, SimpleString nodeId, String user, String password) throws Exception {
+   public long scaleDownMessages(ClientSessionFactory sessionFactory,
+                                 SimpleString nodeId,
+                                 String user,
+                                 String password) throws Exception {
       long messageCount = 0;
       targetNodeId = nodeId != null ? nodeId.toString() : getTargetNodeId(sessionFactory);
 
@@ -125,10 +127,10 @@ public class ScaleDownHandler {
                }
             }
 
-            if (address.toString().startsWith("sf.")) {
+            String sfPrefix =  ((PostOfficeImpl) postOffice).getServer().getInternalNamingPrefix() + "sf.";
+            if (address.toString().startsWith(sfPrefix)) {
                messageCount += scaleDownSNF(address, queues, producer);
-            }
-            else {
+            } else {
                messageCount += scaleDownRegularMessages(address, queues, session, producer);
             }
 
@@ -163,7 +165,7 @@ public class ScaleDownHandler {
          for (Queue loopQueue : queues) {
             logger.debug("Scaling down messages on address " + address + " / performing loop on queue " + loopQueue);
 
-            try (LinkedListIterator<MessageReference> messagesIterator = loopQueue.totalIterator()) {
+            try (LinkedListIterator<MessageReference> messagesIterator = loopQueue.browserIterator()) {
 
                while (messagesIterator.hasNext()) {
                   MessageReference messageReference = messagesIterator.next();
@@ -176,8 +178,7 @@ public class ScaleDownHandler {
                      if (controlEntry.getKey() == loopQueue) {
                         // no need to lookup on itself, we just add it
                         queuesFound.add(controlEntry.getValue());
-                     }
-                     else if (controlEntry.getValue().lookup(messageReference)) {
+                     } else if (controlEntry.getValue().lookup(messageReference)) {
                         logger.debug("Message existed on queue " + controlEntry.getKey().getID() + " removeID=" + controlEntry.getValue().getQueueID());
                         queuesFound.add(controlEntry.getValue());
                      }
@@ -191,13 +192,12 @@ public class ScaleDownHandler {
                      buffer.putLong(queueID);
                   }
 
-                  message.putBytesProperty(MessageImpl.HDR_ROUTE_TO_IDS, buffer.array());
+                  message.putBytesProperty(Message.HDR_ROUTE_TO_IDS.toString(), buffer.array());
 
                   if (logger.isDebugEnabled()) {
                      if (messageReference.isPaged()) {
                         logger.debug("*********************<<<<< Scaling down pdgmessage " + message);
-                     }
-                     else {
+                     } else {
                         logger.debug("*********************<<<<< Scaling down message " + message);
                      }
                   }
@@ -211,8 +211,9 @@ public class ScaleDownHandler {
                   for (QueuesXRefInnerManager queueFound : queuesFound) {
                      ackMessageOnQueue(tx, queueFound.getQueue(), messageReference);
                   }
-
                }
+            } catch (NoSuchElementException ignored) {
+               // this could happen through paging browsing
             }
          }
 
@@ -223,8 +224,7 @@ public class ScaleDownHandler {
          }
 
          return messageCount;
-      }
-      finally {
+      } finally {
          pageStore.enableCleanup();
          pageStore.getCursorProvider().scheduleCleanup();
       }
@@ -242,8 +242,7 @@ public class ScaleDownHandler {
 
       if (queueOnTarget) {
          propertyEnd = targetNodeId;
-      }
-      else {
+      } else {
          propertyEnd = address.toString().substring(address.toString().lastIndexOf("."));
       }
 
@@ -251,7 +250,7 @@ public class ScaleDownHandler {
 
       for (Queue queue : queues) {
          // using auto-closeable
-         try (LinkedListIterator<MessageReference> messagesIterator = queue.totalIterator()) {
+         try (LinkedListIterator<MessageReference> messagesIterator = queue.browserIterator()) {
             // loop through every message of this queue
             while (messagesIterator.hasNext()) {
                MessageReference messageRef = messagesIterator.next();
@@ -265,11 +264,11 @@ public class ScaleDownHandler {
                byte[] oldRouteToIDs = null;
 
                List<SimpleString> propertiesToRemove = new ArrayList<>();
-               message.removeProperty(MessageImpl.HDR_ROUTE_TO_IDS);
+               message.removeProperty(Message.HDR_ROUTE_TO_IDS.toString());
                for (SimpleString propName : message.getPropertyNames()) {
-                  if (propName.startsWith(MessageImpl.HDR_ROUTE_TO_IDS)) {
+                  if (propName.startsWith(Message.HDR_ROUTE_TO_IDS)) {
                      if (propName.toString().endsWith(propertyEnd)) {
-                        oldRouteToIDs = message.getBytesProperty(propName);
+                        oldRouteToIDs = message.getBytesProperty(propName.toString());
                      }
                      propertiesToRemove.add(propName);
                   }
@@ -278,17 +277,17 @@ public class ScaleDownHandler {
                // TODO: what if oldRouteToIDs == null ??
 
                for (SimpleString propertyToRemove : propertiesToRemove) {
-                  message.removeProperty(propertyToRemove);
+                  message.removeProperty(propertyToRemove.toString());
                }
 
                if (queueOnTarget) {
-                  message.putBytesProperty(MessageImpl.HDR_ROUTE_TO_IDS, oldRouteToIDs);
-               }
-               else {
-                  message.putBytesProperty(MessageImpl.HDR_SCALEDOWN_TO_IDS, oldRouteToIDs);
+                  message.putBytesProperty(Message.HDR_ROUTE_TO_IDS.toString(), oldRouteToIDs);
+               } else {
+                  message.putBytesProperty(Message.HDR_SCALEDOWN_TO_IDS.toString(), oldRouteToIDs);
                }
 
                logger.debug("Scaling down message " + message + " from " + address + " to " + message.getAddress() + " on node " + targetNodeId);
+
                producer.send(message.getAddress(), message);
 
                messageCount++;
@@ -297,6 +296,8 @@ public class ScaleDownHandler {
 
                ackMessageOnQueue(tx, queue, messageRef);
             }
+         } catch (NoSuchElementException ignored) {
+            // this could happen through paging browsing
          }
       }
 
@@ -324,22 +325,21 @@ public class ScaleDownHandler {
          List<TransactionOperation> allOperations = transaction.getAllOperations();
 
          // Get the information of the Prepared TXs so it could replay the TXs
-         Map<ServerMessage, Pair<List<Long>, List<Long>>> queuesToSendTo = new HashMap<>();
+         Map<Message, Pair<List<Long>, List<Long>>> queuesToSendTo = new HashMap<>();
          for (TransactionOperation operation : allOperations) {
             if (operation instanceof PostOfficeImpl.AddOperation) {
                PostOfficeImpl.AddOperation addOperation = (PostOfficeImpl.AddOperation) operation;
                List<MessageReference> refs = addOperation.getRelatedMessageReferences();
                for (MessageReference ref : refs) {
-                  ServerMessage message = ref.getMessage();
+                  Message message = ref.getMessage();
                   Queue queue = ref.getQueue();
                   long queueID;
                   String queueName = queue.getName().toString();
 
                   if (queueIDs.containsKey(queueName)) {
                      queueID = queueIDs.get(queueName);
-                  }
-                  else {
-                     queueID = createQueueIfNecessaryAndGetID(queueCreateSession, queue, message.getAddress());
+                  } else {
+                     queueID = createQueueIfNecessaryAndGetID(queueCreateSession, queue, message.getAddressSimpleString());
                      queueIDs.put(queueName, queueID);  // store it so we don't have to look it up every time
                   }
                   Pair<List<Long>, List<Long>> queueIds = queuesToSendTo.get(message);
@@ -349,21 +349,19 @@ public class ScaleDownHandler {
                   }
                   queueIds.getA().add(queueID);
                }
-            }
-            else if (operation instanceof RefsOperation) {
+            } else if (operation instanceof RefsOperation) {
                RefsOperation refsOperation = (RefsOperation) operation;
                List<MessageReference> refs = refsOperation.getReferencesToAcknowledge();
                for (MessageReference ref : refs) {
-                  ServerMessage message = ref.getMessage();
+                  Message message = ref.getMessage();
                   Queue queue = ref.getQueue();
                   long queueID;
                   String queueName = queue.getName().toString();
 
                   if (queueIDs.containsKey(queueName)) {
                      queueID = queueIDs.get(queueName);
-                  }
-                  else {
-                     queueID = createQueueIfNecessaryAndGetID(queueCreateSession, queue, message.getAddress());
+                  } else {
+                     queueID = createQueueIfNecessaryAndGetID(queueCreateSession, queue, message.getAddressSimpleString());
                      queueIDs.put(queueName, queueID);  // store it so we don't have to look it up every time
                   }
                   Pair<List<Long>, List<Long>> queueIds = queuesToSendTo.get(message);
@@ -378,23 +376,23 @@ public class ScaleDownHandler {
          }
 
          ClientProducer producer = session.createProducer();
-         for (Map.Entry<ServerMessage, Pair<List<Long>, List<Long>>> entry : queuesToSendTo.entrySet()) {
+         for (Map.Entry<Message, Pair<List<Long>, List<Long>>> entry : queuesToSendTo.entrySet()) {
             List<Long> ids = entry.getValue().getA();
             ByteBuffer buffer = ByteBuffer.allocate(ids.size() * 8);
             for (Long id : ids) {
                buffer.putLong(id);
             }
-            ServerMessage message = entry.getKey();
-            message.putBytesProperty(MessageImpl.HDR_ROUTE_TO_IDS, buffer.array());
+            Message message = entry.getKey();
+            message.putBytesProperty(Message.HDR_ROUTE_TO_IDS.toString(), buffer.array());
             ids = entry.getValue().getB();
             if (ids.size() > 0) {
                buffer = ByteBuffer.allocate(ids.size() * 8);
                for (Long id : ids) {
                   buffer.putLong(id);
                }
-               message.putBytesProperty(MessageImpl.HDR_ROUTE_TO_ACK_IDS, buffer.array());
+               message.putBytesProperty(Message.HDR_ROUTE_TO_ACK_IDS.toString(), buffer.array());
             }
-            producer.send(message.getAddress(), message);
+            producer.send(message.getAddressSimpleString().toString(), message);
          }
          session.end(xid, XAResource.TMSUCCESS);
          session.prepare(xid);
@@ -409,7 +407,7 @@ public class ScaleDownHandler {
       try (ClientSession session = sessionFactory.createSession(user, password, true, false, false, false, 0);
            ClientProducer producer = session.createProducer(managementAddress)) {
          //todo - https://issues.jboss.org/browse/HORNETQ-1336
-         for (Map.Entry<SimpleString,List<Pair<byte[], Long>>> entry : duplicateIDMap.entrySet()) {
+         for (Map.Entry<SimpleString, List<Pair<byte[], Long>>> entry : duplicateIDMap.entrySet()) {
             ClientMessage message = session.createMessage(false);
             List<Pair<byte[], Long>> list = entry.getValue();
             String[] array = new String[list.size()];
@@ -417,7 +415,7 @@ public class ScaleDownHandler {
                Pair<byte[], Long> pair = list.get(i);
                array[i] = new String(pair.getA());
             }
-            ManagementHelper.putOperationInvocation(message, ResourceNames.CORE_SERVER, "updateDuplicateIdCache", entry.getKey().toString(), array);
+            ManagementHelper.putOperationInvocation(message, ResourceNames.BROKER, "updateDuplicateIdCache", entry.getKey().toString(), array);
             producer.send(message);
          }
       }
@@ -444,17 +442,18 @@ public class ScaleDownHandler {
 
    private Integer getQueueID(ClientSession session, SimpleString queueName) throws Exception {
       Integer queueID = -1;
-      ClientRequestor requestor = new ClientRequestor(session, "jms.queue.activemq.management");
-      ClientMessage managementMessage = session.createMessage(false);
-      ManagementHelper.putAttribute(managementMessage, "core.queue." + queueName, "ID");
-      session.start();
-      logger.debug("Requesting ID for: " + queueName);
-      ClientMessage reply = requestor.request(managementMessage);
-      Object result = ManagementHelper.getResult(reply);
+      Object result;
+      try (ClientRequestor requestor = new ClientRequestor(session, "activemq.management")) {
+         ClientMessage managementMessage = session.createMessage(false);
+         ManagementHelper.putAttribute(managementMessage, ResourceNames.QUEUE + queueName, "ID");
+         session.start();
+         logger.debug("Requesting ID for: " + queueName);
+         ClientMessage reply = requestor.request(managementMessage);
+         result = ManagementHelper.getResult(reply);
+      }
       if (result != null && result instanceof Number) {
          queueID = ((Number) result).intValue();
       }
-      requestor.close();
       return queueID;
    }
 
@@ -545,8 +544,7 @@ public class ScaleDownHandler {
             if (subscription.contains((PagedReference) reference)) {
                return true;
             }
-         }
-         else {
+         } else {
 
             if (lastRef != null && lastRef.getMessage().equals(reference.getMessage())) {
                lastRef = null;
@@ -579,8 +577,7 @@ public class ScaleDownHandler {
 
                   if (initialRef == null) {
                      initialRef = lastRef;
-                  }
-                  else {
+                  } else {
                      if (initialRef.equals(lastRef)) {
                         if (!memoryIterator.hasNext()) {
                            // if by coincidence we are at the end of the iterator, we just reset the iterator

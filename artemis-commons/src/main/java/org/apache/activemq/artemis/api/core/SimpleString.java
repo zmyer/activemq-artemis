@@ -18,8 +18,13 @@ package org.apache.activemq.artemis.api.core;
 
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
+import io.netty.buffer.ByteBuf;
+import org.apache.activemq.artemis.utils.AbstractByteBufPool;
+import org.apache.activemq.artemis.utils.AbstractPool;
+import org.apache.activemq.artemis.utils.ByteUtil;
 import org.apache.activemq.artemis.utils.DataConstants;
 
 /**
@@ -30,6 +35,7 @@ import org.apache.activemq.artemis.utils.DataConstants;
  */
 public final class SimpleString implements CharSequence, Serializable, Comparable<SimpleString> {
 
+   private static final SimpleString EMPTY = new SimpleString("");
    private static final long serialVersionUID = 4204223851422244307L;
 
    // Attributes
@@ -57,6 +63,13 @@ public final class SimpleString implements CharSequence, Serializable, Comparabl
          return null;
       }
       return new SimpleString(string);
+   }
+
+   public static SimpleString toSimpleString(final String string, StringSimpleStringPool pool) {
+      if (pool == null) {
+         return toSimpleString(string);
+      }
+      return pool.getOrCreate(string);
    }
 
    // Constructors
@@ -98,6 +111,22 @@ public final class SimpleString implements CharSequence, Serializable, Comparabl
       this.data = data;
    }
 
+   public SimpleString(final char c) {
+      data = new byte[2];
+
+      byte low = (byte) (c & 0xFF); // low byte
+
+      data[0] = low;
+
+      byte high = (byte) (c >> 8 & 0xFF); // high byte
+
+      data[1] = high;
+   }
+
+   public boolean isEmpty() {
+      return data.length == 0;
+   }
+
    // CharSequence implementation
    // ---------------------------------------------------------------------------
 
@@ -118,12 +147,64 @@ public final class SimpleString implements CharSequence, Serializable, Comparabl
 
    @Override
    public CharSequence subSequence(final int start, final int end) {
+      return subSeq(start, end);
+   }
+
+   public static SimpleString readNullableSimpleString(ByteBuf buffer) {
+      int b = buffer.readByte();
+      if (b == DataConstants.NULL) {
+         return null;
+      }
+      return readSimpleString(buffer);
+   }
+
+   public static SimpleString readNullableSimpleString(ByteBuf buffer, ByteBufSimpleStringPool pool) {
+      int b = buffer.readByte();
+      if (b == DataConstants.NULL) {
+         return null;
+      }
+      return readSimpleString(buffer, pool);
+   }
+
+   public static SimpleString readSimpleString(ByteBuf buffer) {
+      int len = buffer.readInt();
+      return readSimpleString(buffer, len);
+   }
+
+   public static SimpleString readSimpleString(ByteBuf buffer, ByteBufSimpleStringPool pool) {
+      if (pool == null) {
+         return readSimpleString(buffer);
+      }
+      return pool.getOrCreate(buffer);
+   }
+
+   public static SimpleString readSimpleString(final ByteBuf buffer, final int length) {
+      byte[] data = new byte[length];
+      buffer.readBytes(data);
+      return new SimpleString(data);
+   }
+
+   public static void writeNullableSimpleString(ByteBuf buffer, SimpleString val) {
+      if (val == null) {
+         buffer.writeByte(DataConstants.NULL);
+      } else {
+         buffer.writeByte(DataConstants.NOT_NULL);
+         writeSimpleString(buffer, val);
+      }
+   }
+
+   public static void writeSimpleString(ByteBuf buffer, SimpleString val) {
+      byte[] data = val.getData();
+      buffer.writeInt(data.length);
+      buffer.writeBytes(data);
+   }
+
+   public SimpleString subSeq(final int start, final int end) {
       int len = data.length >> 1;
 
       if (end < start || start < 0 || end > len) {
          throw new IndexOutOfBoundsException();
-      }
-      else {
+      } else {
          int newlen = end - start << 1;
          byte[] bytes = new byte[newlen];
 
@@ -206,21 +287,21 @@ public final class SimpleString implements CharSequence, Serializable, Comparabl
       if (other instanceof SimpleString) {
          SimpleString s = (SimpleString) other;
 
-         if (data.length != s.data.length) {
-            return false;
-         }
-
-         for (int i = 0; i < data.length; i++) {
-            if (data[i] != s.data[i]) {
-               return false;
-            }
-         }
-
-         return true;
-      }
-      else {
+         return ByteUtil.equals(data, s.data);
+      } else {
          return false;
       }
+   }
+
+   /**
+    * Returns {@code true} if  the {@link SimpleString} encoded content into {@code bytes} is equals to {@code s},
+    * {@code false} otherwise.
+    * <p>
+    * It assumes that the {@code bytes} content is read using {@link SimpleString#readSimpleString(ByteBuf, int)} ie starting right after the
+    * length field.
+    */
+   public boolean equals(final ByteBuf byteBuf, final int offset, final int length) {
+      return ByteUtil.equals(data, byteBuf, offset, length);
    }
 
    @Override
@@ -244,6 +325,14 @@ public final class SimpleString implements CharSequence, Serializable, Comparabl
     * @return An array of SimpleStrings
     */
    public SimpleString[] split(final char delim) {
+      if (this.str != null) {
+         return splitWithCachedString(this, delim);
+      } else {
+         return splitWithoutCachedString(delim);
+      }
+   }
+
+   private SimpleString[] splitWithoutCachedString(final char delim) {
       List<SimpleString> all = null;
 
       byte low = (byte) (delim & 0xFF); // low byte
@@ -270,8 +359,7 @@ public final class SimpleString implements CharSequence, Serializable, Comparabl
 
       if (all == null) {
          return new SimpleString[]{this};
-      }
-      else {
+      } else {
          // Adding the last one
          byte[] bytes = new byte[data.length - lasPos];
          System.arraycopy(data, lasPos, bytes, 0, bytes.length);
@@ -283,6 +371,58 @@ public final class SimpleString implements CharSequence, Serializable, Comparabl
       }
    }
 
+   private static SimpleString[] splitWithCachedString(final SimpleString simpleString, final int delim) {
+      final String str = simpleString.str;
+      final byte[] data = simpleString.data;
+      final int length = str.length();
+      List<SimpleString> all = null;
+      int index = 0;
+      while (index < length) {
+         final int delimIndex = str.indexOf(delim, index);
+         if (delimIndex == -1) {
+            //just need to add the last one
+            break;
+         } else {
+            all = addSimpleStringPart(all, data, index, delimIndex);
+         }
+         index = delimIndex + 1;
+      }
+      if (all == null) {
+         return new SimpleString[]{simpleString};
+      } else {
+         // Adding the last one
+         all = addSimpleStringPart(all, data, index, length);
+         // Converting it to arrays
+         final SimpleString[] parts = new SimpleString[all.size()];
+         return all.toArray(parts);
+      }
+   }
+
+   private static List<SimpleString> addSimpleStringPart(List<SimpleString> all,
+                                                         final byte[] data,
+                                                         final int startIndex,
+                                                         final int endIndex) {
+      final int expectedLength = endIndex - startIndex;
+      final SimpleString ss;
+      if (expectedLength == 0) {
+         ss = EMPTY;
+      } else {
+         //extract a byte[] copy from this
+         final int ssIndex = startIndex << 1;
+         final int delIndex = endIndex << 1;
+         final byte[] bytes = Arrays.copyOfRange(data, ssIndex, delIndex);
+         ss = new SimpleString(bytes);
+      }
+      // We will create the ArrayList lazily
+      if (all == null) {
+         // There will be at least 3 strings on this case (which is the actual common usecase)
+         // For that reason I'm allocating the ArrayList with 3 already
+         all = new ArrayList<>(3);
+      }
+      all.add(ss);
+      return all;
+   }
+
    /**
     * checks to see if this SimpleString contains the char parameter passed in
     *
@@ -290,6 +430,9 @@ public final class SimpleString implements CharSequence, Serializable, Comparabl
     * @return true if the char is found, false otherwise.
     */
    public boolean contains(final char c) {
+      if (this.str != null) {
+         return this.str.indexOf(c) != -1;
+      }
       final byte low = (byte) (c & 0xFF); // low byte
       final byte high = (byte) (c >> 8 & 0xFF); // high byte
 
@@ -366,8 +509,7 @@ public final class SimpleString implements CharSequence, Serializable, Comparabl
    public static int sizeofNullableString(final SimpleString str) {
       if (str == null) {
          return 1;
-      }
-      else {
+      } else {
          return 1 + str.sizeof();
       }
    }
@@ -404,4 +546,63 @@ public final class SimpleString implements CharSequence, Serializable, Comparabl
       }
    }
 
+   public static final class ByteBufSimpleStringPool extends AbstractByteBufPool<SimpleString> {
+
+      private static final int UUID_LENGTH = 36;
+
+      private final int maxLength;
+
+      public ByteBufSimpleStringPool() {
+         this.maxLength = UUID_LENGTH;
+      }
+
+      public ByteBufSimpleStringPool(final int capacity, final int maxCharsLength) {
+         super(capacity);
+         this.maxLength = maxCharsLength;
+      }
+
+      @Override
+      protected boolean isEqual(final SimpleString entry, final ByteBuf byteBuf, final int offset, final int length) {
+         if (entry == null) {
+            return false;
+         }
+         return entry.equals(byteBuf, offset, length);
+      }
+
+      @Override
+      protected boolean canPool(final ByteBuf byteBuf, final int length) {
+         assert length % 2 == 0 : "length must be a multiple of 2";
+         final int expectedStringLength = length >> 1;
+         return expectedStringLength <= maxLength;
+      }
+
+      @Override
+      protected SimpleString create(final ByteBuf byteBuf, final int length) {
+         return readSimpleString(byteBuf, length);
+      }
+   }
+
+   public static final class StringSimpleStringPool extends AbstractPool<String, SimpleString> {
+
+      public StringSimpleStringPool() {
+         super();
+      }
+
+      public StringSimpleStringPool(final int capacity) {
+         super(capacity);
+      }
+
+      @Override
+      protected SimpleString create(String value) {
+         return toSimpleString(value);
+      }
+
+      @Override
+      protected boolean isEqual(SimpleString entry, String value) {
+         if (entry == null) {
+            return false;
+         }
+         return entry.toString().equals(value);
+      }
+   }
 }

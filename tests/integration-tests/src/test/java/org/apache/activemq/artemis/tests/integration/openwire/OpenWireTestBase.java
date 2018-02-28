@@ -26,7 +26,6 @@ import java.util.Set;
 
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.api.core.TransportConfiguration;
-import org.apache.activemq.artemis.api.jms.management.JMSServerControl;
 import org.apache.activemq.artemis.core.config.Configuration;
 import org.apache.activemq.artemis.core.registry.JndiBindingRegistry;
 import org.apache.activemq.artemis.core.security.Role;
@@ -36,7 +35,6 @@ import org.apache.activemq.artemis.jms.server.config.ConnectionFactoryConfigurat
 import org.apache.activemq.artemis.jms.server.config.impl.ConnectionFactoryConfigurationImpl;
 import org.apache.activemq.artemis.jms.server.impl.JMSServerManagerImpl;
 import org.apache.activemq.artemis.spi.core.security.ActiveMQJAASSecurityManager;
-import org.apache.activemq.artemis.tests.integration.management.ManagementControlHelper;
 import org.apache.activemq.artemis.tests.unit.util.InVMNamingContext;
 import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.junit.After;
@@ -46,6 +44,9 @@ public class OpenWireTestBase extends ActiveMQTestBase {
 
    public static final String OWHOST = "localhost";
    public static final int OWPORT = 61616;
+
+   protected static final String urlString = "tcp://" + OWHOST + ":" + OWPORT + "?wireFormat.cacheEnabled=true";
+   protected static final String urlStringLoose = "tcp://" + OWHOST + ":" + OWPORT + "?wireFormat.tightEncodingEnabled=false";
 
    protected ActiveMQServer server;
 
@@ -66,7 +67,7 @@ public class OpenWireTestBase extends ActiveMQTestBase {
 
       Configuration serverConfig = server.getConfiguration();
 
-      serverConfig.getAddressesSettings().put("jms.queue.#", new AddressSettings().setAutoCreateJmsQueues(false).setDeadLetterAddress(new SimpleString("jms.queue.ActiveMQ.DLQ")));
+      serverConfig.getAddressesSettings().put("#", new AddressSettings().setAutoCreateQueues(false).setAutoCreateAddresses(false).setDeadLetterAddress(new SimpleString("ActiveMQ.DLQ")).setAutoCreateAddresses(true));
 
       serverConfig.setSecurityEnabled(enableSecurity);
 
@@ -77,25 +78,25 @@ public class OpenWireTestBase extends ActiveMQTestBase {
          securityManager.getConfiguration().addRole("openwireSender", "sender");
          securityManager.getConfiguration().addUser("openwireSender", "SeNdEr");
          //sender cannot receive
-         Role senderRole = new Role("sender", true, false, false, false, true, true, false, false);
+         Role senderRole = new Role("sender", true, false, false, false, true, true, false, false, true, true);
 
          securityManager.getConfiguration().addRole("openwireReceiver", "receiver");
          securityManager.getConfiguration().addUser("openwireReceiver", "ReCeIvEr");
          //receiver cannot send
-         Role receiverRole = new Role("receiver", false, true, false, false, true, true, false, true);
+         Role receiverRole = new Role("receiver", false, true, false, false, true, true, false, true, false, false);
 
          securityManager.getConfiguration().addRole("openwireGuest", "guest");
          securityManager.getConfiguration().addUser("openwireGuest", "GuEsT");
 
          //guest cannot do anything
-         Role guestRole = new Role("guest", false, false, false, false, false, false, false, false);
+         Role guestRole = new Role("guest", false, false, false, false, false, false, false, false, false, false);
 
          securityManager.getConfiguration().addRole("openwireDestinationManager", "manager");
          securityManager.getConfiguration().addUser("openwireDestinationManager", "DeStInAtIoN");
 
-         Role destRole = new Role("manager", false, false, false, false, true, true, false, false);
+         Role destRole = new Role("manager", false, false, false, false, true, true, false, false, false, false);
 
-         Set<Role> roles =  new HashSet<>();
+         Set<Role> roles = new HashSet<>();
          roles.add(senderRole);
          roles.add(receiverRole);
          roles.add(guestRole);
@@ -103,14 +104,16 @@ public class OpenWireTestBase extends ActiveMQTestBase {
 
          server.getConfiguration().putSecurityRoles("#", roles);
       }
+
+      mbeanServer = MBeanServerFactory.createMBeanServer();
+      server.setMBeanServer(mbeanServer);
+      addServer(server);
       jmsServer = new JMSServerManagerImpl(server);
       namingContext = new InVMNamingContext();
       jmsServer.setRegistry(new JndiBindingRegistry(namingContext));
       jmsServer.start();
 
       registerConnectionFactory();
-
-      mbeanServer = MBeanServerFactory.createMBeanServer();
       System.out.println("debug: server started");
    }
 
@@ -141,10 +144,6 @@ public class OpenWireTestBase extends ActiveMQTestBase {
       }
       ConnectionFactoryConfiguration configuration = new ConnectionFactoryConfigurationImpl().setName(cfName).setConnectorNames(connectorNames).setRetryInterval(retryInterval).setRetryIntervalMultiplier(retryIntervalMultiplier).setCallTimeout(callTimeout).setReconnectAttempts(reconnectAttempts);
       jmsServer.createConnectionFactory(false, configuration, jndiBindings);
-   }
-
-   protected JMSServerControl getJMSServerControl() throws Exception {
-      return ManagementControlHelper.createJMSServerControl(mbeanServer);
    }
 
    @Override

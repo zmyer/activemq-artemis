@@ -16,17 +16,16 @@
  */
 package org.apache.activemq.artemis.tests.integration.cluster.distribution;
 
-import org.apache.activemq.artemis.core.server.cluster.impl.MessageLoadBalancingType;
-import org.junit.Before;
-
-import org.junit.Test;
-
+import org.apache.activemq.artemis.api.core.Message;
 import org.apache.activemq.artemis.api.core.client.ClientConsumer;
 import org.apache.activemq.artemis.api.core.client.ClientMessage;
 import org.apache.activemq.artemis.api.core.client.ClientProducer;
 import org.apache.activemq.artemis.api.core.client.ClientSession;
 import org.apache.activemq.artemis.api.core.client.ClientSessionFactory;
-import org.apache.activemq.artemis.core.message.impl.MessageImpl;
+
+import org.apache.activemq.artemis.core.server.cluster.impl.MessageLoadBalancingType;
+import org.junit.Before;
+import org.junit.Test;
 
 public class ClusterHeadersRemovedTest extends ClusterTestBase {
 
@@ -74,8 +73,7 @@ public class ClusterHeadersRemovedTest extends ClusterTestBase {
 
             producer.send(message);
          }
-      }
-      finally {
+      } finally {
          session0.close();
       }
 
@@ -86,7 +84,7 @@ public class ClusterHeadersRemovedTest extends ClusterTestBase {
 
          assertNotNull(message);
 
-         assertFalse(message.containsProperty(MessageImpl.HDR_ROUTE_TO_IDS));
+         assertFalse(message.containsProperty(Message.HDR_ROUTE_TO_IDS));
       }
    }
 

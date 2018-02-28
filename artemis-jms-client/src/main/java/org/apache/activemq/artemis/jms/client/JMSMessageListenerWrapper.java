@@ -41,6 +41,8 @@ public class JMSMessageListenerWrapper implements MessageHandler {
 
    private final boolean individualACK;
 
+   private final boolean clientACK;
+
    protected JMSMessageListenerWrapper(final ConnectionFactoryOptions options,
                                        final ActiveMQConnection connection,
                                        final ActiveMQSession session,
@@ -60,6 +62,8 @@ public class JMSMessageListenerWrapper implements MessageHandler {
       transactedOrClientAck = (ackMode == Session.SESSION_TRANSACTED || ackMode == Session.CLIENT_ACKNOWLEDGE) || session.isXA();
 
       individualACK = (ackMode == ActiveMQJMSConstants.INDIVIDUAL_ACKNOWLEDGE);
+
+      clientACK = (ackMode == Session.CLIENT_ACKNOWLEDGE);
    }
 
    /**
@@ -74,21 +78,22 @@ public class JMSMessageListenerWrapper implements MessageHandler {
          msg.setIndividualAcknowledge();
       }
 
+      if (clientACK) {
+         msg.setClientAcknowledge();
+      }
+
       try {
          msg.doBeforeReceive();
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          ActiveMQJMSClientLogger.LOGGER.errorPreparingMessageForReceipt(msg.getCoreMessage().toString(), e);
-
          return;
       }
 
       if (transactedOrClientAck) {
          try {
             message.acknowledge();
-         }
-         catch (ActiveMQException e) {
-            ((ClientSessionInternal)session.getCoreSession()).markRollbackOnly();
+         } catch (ActiveMQException e) {
+            ((ClientSessionInternal) session.getCoreSession()).markRollbackOnly();
             ActiveMQJMSClientLogger.LOGGER.errorProcessingMessage(e);
          }
       }
@@ -96,8 +101,7 @@ public class JMSMessageListenerWrapper implements MessageHandler {
       try {
          connection.getThreadAwareContext().setCurrentThread(false);
          listener.onMessage(msg);
-      }
-      catch (RuntimeException e) {
+      } catch (RuntimeException e) {
          // See JMS 1.1 spec, section 4.5.2
 
          ActiveMQJMSClientLogger.LOGGER.onMessageError(e);
@@ -111,13 +115,11 @@ public class JMSMessageListenerWrapper implements MessageHandler {
                session.getCoreSession().rollback(true);
 
                session.setRecoverCalled(true);
-            }
-            catch (Exception e2) {
+            } catch (Exception e2) {
                ActiveMQJMSClientLogger.LOGGER.errorRecoveringSession(e2);
             }
          }
-      }
-      finally {
+      } finally {
          connection.getThreadAwareContext().clearCurrentThread(false);
       }
       if (!session.isRecoverCalled() && !individualACK) {
@@ -126,9 +128,8 @@ public class JMSMessageListenerWrapper implements MessageHandler {
             if (!consumer.isClosed() && !transactedOrClientAck) {
                message.acknowledge();
             }
-         }
-         catch (ActiveMQException e) {
-            ((ClientSessionInternal)session.getCoreSession()).markRollbackOnly();
+         } catch (ActiveMQException e) {
+            ((ClientSessionInternal) session.getCoreSession()).markRollbackOnly();
             ActiveMQJMSClientLogger.LOGGER.errorProcessingMessage(e);
          }
       }

@@ -171,7 +171,7 @@ public class FailoverListenerTest extends FailoverTestBase {
 
    private void createSessionFactory(int members) throws Exception {
       locator.setBlockOnNonDurableSend(true).setBlockOnDurableSend(true).setFailoverOnInitialConnection(true) // unnecessary?
-         .setReconnectAttempts(-1);
+         .setReconnectAttempts(15);
       sf = createSessionFactoryAndWaitForTopology(locator, members);
    }
 
@@ -270,8 +270,7 @@ public class FailoverListenerTest extends FailoverTestBase {
          log.info("Failover event just happen : " + eventType.toString());
          if (eventType == FailoverEventType.FAILURE_DETECTED) {
             failureLatch.countDown();
-         }
-         else if (eventType == FailoverEventType.FAILOVER_COMPLETED || eventType == FailoverEventType.FAILOVER_FAILED) {
+         } else if (eventType == FailoverEventType.FAILOVER_COMPLETED || eventType == FailoverEventType.FAILOVER_FAILED) {
             failureDoneLatch.countDown();
          }
       }

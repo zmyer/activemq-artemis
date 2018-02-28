@@ -16,6 +16,8 @@
  */
 package org.apache.activemq.transport.amqp.client;
 
+import static org.apache.activemq.transport.amqp.AmqpSupport.CONNECTION_OPEN_FAILED;
+
 import java.io.IOException;
 import java.net.URI;
 import java.nio.ByteBuffer;
@@ -23,37 +25,39 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
-import io.netty.util.ReferenceCountUtil;
 import org.apache.activemq.transport.InactivityIOException;
+import org.apache.activemq.transport.netty.NettyTransport;
 import org.apache.activemq.transport.amqp.client.sasl.SaslAuthenticator;
-import org.apache.activemq.transport.amqp.client.transport.NettyTransportListener;
+import org.apache.activemq.transport.netty.NettyTransportListener;
 import org.apache.activemq.transport.amqp.client.util.AsyncResult;
 import org.apache.activemq.transport.amqp.client.util.ClientFuture;
 import org.apache.activemq.transport.amqp.client.util.IdGenerator;
 import org.apache.activemq.transport.amqp.client.util.NoOpAsyncResult;
-import org.apache.activemq.transport.amqp.client.util.UnmodifiableConnection;
+import org.apache.activemq.transport.amqp.client.util.UnmodifiableProxy;
 import org.apache.qpid.proton.amqp.Symbol;
 import org.apache.qpid.proton.engine.Collector;
 import org.apache.qpid.proton.engine.Connection;
+import org.apache.qpid.proton.engine.Delivery;
 import org.apache.qpid.proton.engine.EndpointState;
 import org.apache.qpid.proton.engine.Event;
 import org.apache.qpid.proton.engine.Event.Type;
 import org.apache.qpid.proton.engine.Sasl;
 import org.apache.qpid.proton.engine.Transport;
 import org.apache.qpid.proton.engine.impl.CollectorImpl;
+import org.apache.qpid.proton.engine.impl.TransportImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static org.apache.activemq.transport.amqp.AmqpSupport.CONNECTION_OPEN_FAILED;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+import io.netty.util.ReferenceCountUtil;
 
 public class AmqpConnection extends AmqpAbstractResource<Connection> implements NettyTransportListener {
 
@@ -71,22 +75,25 @@ public class AmqpConnection extends AmqpAbstractResource<Connection> implements 
    public static final long DEFAULT_CLOSE_TIMEOUT = 30000;
    public static final long DEFAULT_DRAIN_TIMEOUT = 60000;
 
-   private final ScheduledExecutorService serializer;
+   private ScheduledThreadPoolExecutor serializer;
    private final AtomicBoolean closed = new AtomicBoolean();
    private final AtomicBoolean connected = new AtomicBoolean();
    private final AtomicLong sessionIdGenerator = new AtomicLong();
    private final AtomicLong txIdGenerator = new AtomicLong();
    private final Collector protonCollector = new CollectorImpl();
-   private final org.apache.activemq.transport.amqp.client.transport.NettyTransport transport;
+   private final NettyTransport transport;
    private final Transport protonTransport = Transport.Factory.create();
 
    private final String username;
    private final String password;
    private final URI remoteURI;
    private final String connectionId;
+   private List<Symbol> desiredCapabilities = Collections.emptyList();
    private List<Symbol> offeredCapabilities = Collections.emptyList();
    private Map<Symbol, Object> offeredProperties = Collections.emptyMap();
 
+   private volatile AmqpFrameValidator sentFrameInspector;
+   private volatile AmqpFrameValidator receivedFrameInspector;
    private AmqpConnectionListener listener;
    private SaslAuthenticator authenticator;
    private String mechanismRestriction;
@@ -100,10 +107,10 @@ public class AmqpConnection extends AmqpAbstractResource<Connection> implements 
    private long connectTimeout = DEFAULT_CONNECT_TIMEOUT;
    private long closeTimeout = DEFAULT_CLOSE_TIMEOUT;
    private long drainTimeout = DEFAULT_DRAIN_TIMEOUT;
+   private boolean trace;
+   private boolean noContainerID = false;
 
-   public AmqpConnection(org.apache.activemq.transport.amqp.client.transport.NettyTransport transport,
-                         String username,
-                         String password) {
+   public AmqpConnection(NettyTransport transport, String username, String password) {
       setEndpoint(Connection.Factory.create());
       getEndpoint().collect(protonCollector);
 
@@ -113,7 +120,7 @@ public class AmqpConnection extends AmqpAbstractResource<Connection> implements 
       this.connectionId = CONNECTION_ID_GENERATOR.generateId();
       this.remoteURI = transport.getRemoteLocation();
 
-      this.serializer = Executors.newSingleThreadScheduledExecutor(new ThreadFactory() {
+      this.serializer = new ScheduledThreadPoolExecutor(1, new ThreadFactory() {
 
          @Override
          public Thread newThread(Runnable runner) {
@@ -124,7 +131,12 @@ public class AmqpConnection extends AmqpAbstractResource<Connection> implements 
          }
       });
 
+      // Ensure timely shutdown
+      this.serializer.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
+      this.serializer.setContinueExistingPeriodicTasksAfterShutdownPolicy(false);
+
       this.transport.setTransportListener(this);
+      this.transport.setMaxFrameSize(getMaxFrameSize());
    }
 
    public void connect() throws Exception {
@@ -135,8 +147,13 @@ public class AmqpConnection extends AmqpAbstractResource<Connection> implements 
          serializer.execute(new Runnable() {
             @Override
             public void run() {
-               getEndpoint().setContainer(safeGetContainerId());
+               if (!noContainerID) {
+                  getEndpoint().setContainer(safeGetContainerId());
+               }
                getEndpoint().setHostname(remoteURI.getHost());
+               if (!getDesiredCapabilities().isEmpty()) {
+                  getEndpoint().setDesiredCapabilities(getDesiredCapabilities().toArray(new Symbol[0]));
+               }
                if (!getOfferedCapabilities().isEmpty()) {
                   getEndpoint().setOfferedCapabilities(getOfferedCapabilities().toArray(new Symbol[0]));
                }
@@ -155,20 +172,29 @@ public class AmqpConnection extends AmqpAbstractResource<Connection> implements 
                   sasl.client();
                }
                authenticator = new SaslAuthenticator(sasl, username, password, authzid, mechanismRestriction);
+               ((TransportImpl) protonTransport).setProtocolTracer(new AmqpProtocolTracer(AmqpConnection.this));
                open(future);
 
                pumpToProtonTransport(future);
             }
          });
 
-         if (connectTimeout <= 0) {
-            future.sync();
-         }
-         else {
-            future.sync(connectTimeout, TimeUnit.MILLISECONDS);
-            if (getEndpoint().getRemoteState() != EndpointState.ACTIVE) {
-               throw new IOException("Failed to connect after configured timeout.");
+         try {
+            if (connectTimeout <= 0) {
+               future.sync();
+            } else {
+               future.sync(connectTimeout, TimeUnit.MILLISECONDS);
+               if (getEndpoint().getRemoteState() != EndpointState.ACTIVE) {
+                  throw new IOException("Failed to connect after configured timeout.");
+               }
             }
+         } catch (Throwable e) {
+            try {
+               close();
+            } catch (Throwable ignore) {
+            }
+
+            throw e;
          }
       }
    }
@@ -194,14 +220,12 @@ public class AmqpConnection extends AmqpAbstractResource<Connection> implements 
 
                   if (getEndpoint() != null) {
                      close(request);
-                  }
-                  else {
+                  } else {
                      request.onSuccess();
                   }
 
                   pumpToProtonTransport(request);
-               }
-               catch (Exception e) {
+               } catch (Exception e) {
                   LOG.debug("Caught exception while closing proton connection");
                }
             }
@@ -210,20 +234,16 @@ public class AmqpConnection extends AmqpAbstractResource<Connection> implements 
          try {
             if (closeTimeout <= 0) {
                request.sync();
-            }
-            else {
+            } else {
                request.sync(closeTimeout, TimeUnit.MILLISECONDS);
             }
-         }
-         catch (IOException e) {
+         } catch (IOException e) {
             LOG.warn("Error caught while closing Provider: ", e.getMessage());
-         }
-         finally {
+         } finally {
             if (transport != null) {
                try {
                   transport.close();
-               }
-               catch (Exception e) {
+               } catch (Exception e) {
                   LOG.debug("Cuaght exception while closing down Transport: {}", e.getMessage());
                }
             }
@@ -233,8 +253,7 @@ public class AmqpConnection extends AmqpAbstractResource<Connection> implements 
                if (!serializer.awaitTermination(10, TimeUnit.SECONDS)) {
                   LOG.warn("Serializer didn't shutdown cleanly");
                }
-            }
-            catch (InterruptedException e) {
+            } catch (InterruptedException e) {
             }
          }
       }
@@ -284,11 +303,9 @@ public class AmqpConnection extends AmqpAbstractResource<Connection> implements 
             checkClosed();
             try {
                transport.send(Unpooled.wrappedBuffer(rawData));
-            }
-            catch (IOException e) {
+            } catch (IOException e) {
                fireClientException(e);
-            }
-            finally {
+            } finally {
                request.onSuccess();
             }
          }
@@ -384,12 +401,24 @@ public class AmqpConnection extends AmqpAbstractResource<Connection> implements 
       this.drainTimeout = drainTimeout;
    }
 
+   public List<Symbol> getDesiredCapabilities() {
+      return desiredCapabilities;
+   }
+
+   public void setDesiredCapabilities(List<Symbol> desiredCapabilities) {
+      if (desiredCapabilities == null) {
+         desiredCapabilities = Collections.emptyList();
+      }
+
+      this.desiredCapabilities = desiredCapabilities;
+   }
+
    public List<Symbol> getOfferedCapabilities() {
       return offeredCapabilities;
    }
 
    public void setOfferedCapabilities(List<Symbol> offeredCapabilities) {
-      if (offeredCapabilities != null) {
+      if (offeredCapabilities == null) {
          offeredCapabilities = Collections.emptyList();
       }
 
@@ -401,7 +430,7 @@ public class AmqpConnection extends AmqpAbstractResource<Connection> implements 
    }
 
    public void setOfferedProperties(Map<Symbol, Object> offeredProperties) {
-      if (offeredProperties != null) {
+      if (offeredProperties == null) {
          offeredProperties = Collections.emptyMap();
       }
 
@@ -409,7 +438,7 @@ public class AmqpConnection extends AmqpAbstractResource<Connection> implements 
    }
 
    public Connection getConnection() {
-      return new UnmodifiableConnection(getEndpoint());
+      return UnmodifiableProxy.connectionProxy(getEndpoint());
    }
 
    public AmqpConnectionListener getListener() {
@@ -449,6 +478,30 @@ public class AmqpConnection extends AmqpAbstractResource<Connection> implements 
       return mechanismRestriction;
    }
 
+   public boolean isTraceFrames() {
+      return trace;
+   }
+
+   public void setTraceFrames(boolean trace) {
+      this.trace = trace;
+   }
+
+   public AmqpFrameValidator getSentFrameInspector() {
+      return sentFrameInspector;
+   }
+
+   public void setSentFrameInspector(AmqpFrameValidator amqpFrameInspector) {
+      this.sentFrameInspector = amqpFrameInspector;
+   }
+
+   public AmqpFrameValidator getReceivedFrameInspector() {
+      return receivedFrameInspector;
+   }
+
+   public void setReceivedFrameInspector(AmqpFrameValidator amqpFrameInspector) {
+      this.receivedFrameInspector = amqpFrameInspector;
+   }
+
    //----- Internal getters used from the child AmqpResource classes --------//
 
    ScheduledExecutorService getScheduler() {
@@ -481,13 +534,11 @@ public class AmqpConnection extends AmqpAbstractResource<Connection> implements 
                outbound.writeBytes(toWrite);
                transport.send(outbound);
                protonTransport.outputConsumed();
-            }
-            else {
+            } else {
                done = true;
             }
          }
-      }
-      catch (IOException e) {
+      } catch (IOException e) {
          fireClientException(e);
          request.onFailure(e);
       }
@@ -521,7 +572,8 @@ public class AmqpConnection extends AmqpAbstractResource<Connection> implements 
                buffer.put(duplicate);
                protonTransport.processInput();
                source.position(source.position() + limit);
-            } while (source.hasRemaining());
+            }
+            while (source.hasRemaining());
 
             ReferenceCountUtil.release(incoming);
 
@@ -555,7 +607,7 @@ public class AmqpConnection extends AmqpAbstractResource<Connection> implements 
             // Using nano time since it is not related to the wall clock, which may change
             long initialNow = TimeUnit.NANOSECONDS.toMillis(System.nanoTime());
             long initialKeepAliveDeadline = protonTransport.tick(initialNow);
-            if (initialKeepAliveDeadline > 0) {
+            if (initialKeepAliveDeadline != 0) {
 
                getScheduler().schedule(new Runnable() {
 
@@ -566,23 +618,21 @@ public class AmqpConnection extends AmqpAbstractResource<Connection> implements 
                            LOG.debug("Client performing next idle check");
                            // Using nano time since it is not related to the wall clock, which may change
                            long now = TimeUnit.NANOSECONDS.toMillis(System.nanoTime());
-                           long rescheduleAt = protonTransport.tick(now) - now;
+                           long deadline = protonTransport.tick(now);
                            pumpToProtonTransport();
                            if (protonTransport.isClosed()) {
                               LOG.debug("Transport closed after inactivity check.");
-                              throw new InactivityIOException("Channel was inactive for to long");
-                           }
-
-                           if (rescheduleAt > 0) {
-                              getScheduler().schedule(this, rescheduleAt, TimeUnit.MILLISECONDS);
+                              throw new InactivityIOException("Channel was inactive for too long");
+                           } else {
+                              if (deadline != 0) {
+                                 getScheduler().schedule(this, deadline - now, TimeUnit.MILLISECONDS);
+                              }
                            }
                         }
-                     }
-                     catch (Exception e) {
+                     } catch (Exception e) {
                         try {
                            transport.close();
-                        }
-                        catch (IOException e1) {
+                        } catch (IOException e1) {
                         }
                         fireClientException(e);
                      }
@@ -598,8 +648,7 @@ public class AmqpConnection extends AmqpAbstractResource<Connection> implements 
    protected void doOpenInspection() {
       try {
          getStateInspector().inspectOpenedResource(getConnection());
-      }
-      catch (Throwable error) {
+      } catch (Throwable error) {
          getStateInspector().markAsInvalid(error.getMessage());
       }
    }
@@ -608,8 +657,7 @@ public class AmqpConnection extends AmqpAbstractResource<Connection> implements 
    protected void doClosedInspection() {
       try {
          getStateInspector().inspectClosedResource(getConnection());
-      }
-      catch (Throwable error) {
+      } catch (Throwable error) {
          getStateInspector().markAsInvalid(error.getMessage());
       }
    }
@@ -671,7 +719,7 @@ public class AmqpConnection extends AmqpAbstractResource<Connection> implements 
                   break;
                case DELIVERY:
                   amqpEventSink = (AmqpEventSink) protonEvent.getLink().getContext();
-                  amqpEventSink.processDeliveryUpdates(this);
+                  amqpEventSink.processDeliveryUpdates(this, (Delivery) protonEvent.getContext());
                   break;
                default:
                   break;
@@ -684,8 +732,7 @@ public class AmqpConnection extends AmqpAbstractResource<Connection> implements 
          if (!authenticated) {
             processSaslAuthentication();
          }
-      }
-      catch (Exception ex) {
+      } catch (Exception ex) {
          LOG.warn("Caught Exception during update processing: {}", ex.getMessage(), ex);
          fireClientException(ex);
       }
@@ -701,8 +748,7 @@ public class AmqpConnection extends AmqpAbstractResource<Connection> implements 
             authenticator = null;
             authenticated = true;
          }
-      }
-      catch (SecurityException ex) {
+      } catch (SecurityException ex) {
          failed(ex);
       }
    }
@@ -723,5 +769,9 @@ public class AmqpConnection extends AmqpAbstractResource<Connection> implements 
    @Override
    public String toString() {
       return "AmqpConnection { " + connectionId + " }";
+   }
+
+   public void setNoContainerID() {
+      noContainerID = true;
    }
 }

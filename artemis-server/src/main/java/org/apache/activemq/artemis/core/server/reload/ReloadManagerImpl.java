@@ -31,7 +31,8 @@ import org.apache.activemq.artemis.core.server.ActiveMQScheduledComponent;
 import org.apache.activemq.artemis.core.server.ActiveMQServerLogger;
 import org.jboss.logging.Logger;
 
-public class ReloadManagerImpl extends ActiveMQScheduledComponent implements ReloadManager  {
+public class ReloadManagerImpl extends ActiveMQScheduledComponent implements ReloadManager {
+
    private static final Logger logger = Logger.getLogger(ReloadManagerImpl.class);
 
    private volatile Runnable tick;
@@ -83,19 +84,32 @@ public class ReloadManagerImpl extends ActiveMQScheduledComponent implements Rel
    }
 
    class ReloadRegistry {
-      private final File file;
+
+      private File file;
       private final URL uri;
       private long lastModified;
 
       private final List<ReloadCallback> callbacks = new LinkedList<>();
 
-      ReloadRegistry(URL uri) {
-         this.file = new File(uri.getPath());
+      ReloadRegistry(URL uri)  {
+         try {
+            file = new File(uri.toURI()); // artemis-features will have this as "file:etc/artemis.xml"
+                                          // so, we need to make sure we catch the exception and try
+                                          // a simple path as it will be a relative path
+         } catch (Exception e) {
+            logger.debug(e.getMessage(), e);
+            file = new File(uri.getPath());
+         }
+
+         if (!file.exists()) {
+            ActiveMQServerLogger.LOGGER.fileDoesNotExist(file.toString());
+         }
+
          this.lastModified = file.lastModified();
          this.uri = uri;
       }
 
-      public void check()  {
+      public void check() {
 
          long fileModified = file.lastModified();
 
@@ -108,8 +122,7 @@ public class ReloadManagerImpl extends ActiveMQScheduledComponent implements Rel
             for (ReloadCallback callback : callbacks) {
                try {
                   callback.reload(uri);
-               }
-               catch (Throwable e) {
+               } catch (Throwable e) {
                   ActiveMQServerLogger.LOGGER.configurationReloadFailed(e);
                }
             }
@@ -117,7 +130,6 @@ public class ReloadManagerImpl extends ActiveMQScheduledComponent implements Rel
 
          this.lastModified = fileModified;
       }
-
 
       public List<ReloadCallback> getCallbacks() {
          return callbacks;

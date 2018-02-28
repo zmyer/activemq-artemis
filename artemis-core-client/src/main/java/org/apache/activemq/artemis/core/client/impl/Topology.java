@@ -33,6 +33,7 @@ import org.apache.activemq.artemis.spi.core.remoting.Connector;
 import org.jboss.logging.Logger;
 
 public final class Topology {
+
    private static final Logger logger = Logger.getLogger(Topology.class);
 
    private final Set<ClusterTopologyListener> topologyListeners;
@@ -181,11 +182,11 @@ public final class Topology {
       Long deleteTme = getMapDelete().get(nodeId);
       if (deleteTme != null && uniqueEventID != 0 && uniqueEventID < deleteTme) {
          logger.debug("Update uniqueEvent=" + uniqueEventID +
-                                              ", nodeId=" +
-                                              nodeId +
-                                              ", memberInput=" +
-                                              memberInput +
-                                              " being rejected as there was a delete done after that");
+                         ", nodeId=" +
+                         nodeId +
+                         ", memberInput=" +
+                         memberInput +
+                         " being rejected as there was a delete done after that");
          return false;
       }
 
@@ -201,7 +202,7 @@ public final class Topology {
             sendMemberUp(nodeId, memberInput);
             return true;
          }
-         if (uniqueEventID > currentMember.getUniqueEventID()) {
+         if (uniqueEventID > currentMember.getUniqueEventID() || (currentMember.getLive() == null && memberInput.getLive() != null)) {
             TopologyMemberImpl newMember = new TopologyMemberImpl(nodeId, memberInput.getBackupGroupName(), memberInput.getScaleDownGroupName(), memberInput.getLive(), memberInput.getBackup());
 
             if (newMember.getLive() == null && currentMember.getLive() != null) {
@@ -214,11 +215,16 @@ public final class Topology {
 
             if (logger.isTraceEnabled()) {
                logger.trace(this + "::updated currentMember=nodeID=" + nodeId + ", currentMember=" +
-                                                    currentMember + ", memberInput=" + memberInput + "newMember=" +
-                                                    newMember, new Exception("trace"));
+                               currentMember + ", memberInput=" + memberInput + "newMember=" +
+                               newMember, new Exception("trace"));
             }
 
-            newMember.setUniqueEventID(uniqueEventID);
+            if (uniqueEventID > currentMember.getUniqueEventID()) {
+               newMember.setUniqueEventID(uniqueEventID);
+            } else {
+               newMember.setUniqueEventID(currentMember.getUniqueEventID());
+            }
+
             topology.remove(nodeId);
             topology.put(nodeId, newMember);
             sendMemberUp(nodeId, newMember);
@@ -254,17 +260,16 @@ public final class Topology {
                for (ClusterTopologyListener listener : copy) {
                   if (logger.isTraceEnabled()) {
                      logger.trace(Topology.this + " informing " +
-                                                          listener +
-                                                          " about node up = " +
-                                                          nodeId +
-                                                          " connector = " +
-                                                          memberToSend.getConnector());
+                                     listener +
+                                     " about node up = " +
+                                     nodeId +
+                                     " connector = " +
+                                     memberToSend.getConnector());
                   }
 
                   try {
                      listener.nodeUP(memberToSend, false);
-                  }
-                  catch (Throwable e) {
+                  } catch (Throwable e) {
                      ActiveMQClientLogger.LOGGER.errorSendingTopology(e);
                   }
                }
@@ -293,8 +298,7 @@ public final class Topology {
             if (member.getUniqueEventID() > uniqueEventID) {
                logger.debug("The removeMember was issued before the node " + nodeId + " was started, ignoring call");
                member = null;
-            }
-            else {
+            } else {
                getMapDelete().put(nodeId, uniqueEventID);
                member = topology.remove(nodeId);
             }
@@ -303,12 +307,12 @@ public final class Topology {
 
       if (logger.isTraceEnabled()) {
          logger.trace("removeMember " + this +
-                                              " removing nodeID=" +
-                                              nodeId +
-                                              ", result=" +
-                                              member +
-                                              ", size = " +
-                                              topology.size(), new Exception("trace"));
+                         " removing nodeID=" +
+                         nodeId +
+                         ", result=" +
+                         member +
+                         ", size = " +
+                         topology.size(), new Exception("trace"));
       }
 
       if (member != null) {
@@ -323,8 +327,7 @@ public final class Topology {
                   }
                   try {
                      listener.nodeDown(uniqueEventID, nodeId);
-                  }
-                  catch (Exception e) {
+                  } catch (Exception e) {
                      ActiveMQClientLogger.LOGGER.errorSendingTopologyNodedown(e);
                   }
                }
@@ -353,11 +356,11 @@ public final class Topology {
             for (Map.Entry<String, TopologyMemberImpl> entry : copy.entrySet()) {
                if (logger.isDebugEnabled()) {
                   logger.debug(Topology.this + " sending " +
-                                                       entry.getKey() +
-                                                       " / " +
-                                                       entry.getValue().getConnector() +
-                                                       " to " +
-                                                       listener);
+                                  entry.getKey() +
+                                  " / " +
+                                  entry.getValue().getConnector() +
+                                  " to " +
+                                  listener);
                }
                listener.nodeUP(entry.getValue(), ++count == copy.size());
             }

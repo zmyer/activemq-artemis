@@ -16,6 +16,8 @@
  */
 package org.apache.activemq.artemis.tests.integration.management;
 
+import java.util.Map;
+
 import org.apache.activemq.artemis.api.core.management.DivertControl;
 import org.apache.activemq.artemis.api.core.management.ResourceNames;
 
@@ -32,9 +34,9 @@ public class DivertControlUsingCoreTest extends DivertControlTest {
    // DivertControlTest overrides --------------------------------
 
    @Override
-   protected DivertControl createManagementControl(final String name) throws Exception {
+   protected DivertControl createDivertManagementControl(final String name, final String address) throws Exception {
       return new DivertControl() {
-         private final CoreMessagingProxy proxy = new CoreMessagingProxy(addServerLocator(createInVMNonHALocator()), ResourceNames.CORE_DIVERT + name);
+         private final CoreMessagingProxy proxy = new CoreMessagingProxy(addServerLocator(createInVMNonHALocator()), ResourceNames.DIVERT + name);
 
          @Override
          public String getAddress() {
@@ -59,6 +61,21 @@ public class DivertControlUsingCoreTest extends DivertControlTest {
          @Override
          public String getTransformerClassName() {
             return (String) proxy.retrieveAttributeValue("transformerClassName");
+         }
+
+         @Override
+         public String getTransformerPropertiesAsJSON() {
+            return (String) proxy.retrieveAttributeValue("transformerPropertiesAsJSON");
+         }
+
+         @Override
+         public Map<String, String> getTransformerProperties() {
+            return (Map<String, String>) proxy.retrieveAttributeValue("transformerProperties");
+         }
+
+         @Override
+         public String getRoutingType() {
+            return (String) proxy.retrieveAttributeValue("routingType");
          }
 
          @Override

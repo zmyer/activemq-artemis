@@ -86,20 +86,16 @@ does not exist then an exception will be sent
 > For the next version we will add a flag to aut create durable queue
 > but for now you will have to add them via the configuration
 
-### AMQP and Topics
- 
-Although amqp has no notion of topics it is still possible to treat amqp consumers or receivers as subscriptions rather 
-than just consumers on a queue. By default any receiving link that attaches to an address with the prefix `jms.topic.` 
+### AMQP and Multicast Queues (Topics)
+
+Although amqp has no notion of topics it is still possible to treat amqp consumers or receivers as subscriptions rather
+than just consumers on a queue. By default any receiving link that attaches to an address that has only multicast enabled
 will be treated as a subscription and a subscription queue will be created. If the Terminus Durability is either UNSETTLED_STATE
-or CONFIGURATION then the queue will be made durable, similar to a JMS durable subscription and given a name made up from 
-the container id and the link name, something like `my-container-id:my-link-name`. if the Terminus Durability is configured 
-as NONE then a volatile queue will be created.
+or CONFIGURATION then the queue will be made durable, similar to a JMS durable subscription and given a name made up from
+the container id and the link name, something like `my-container-id:my-link-name`. if the Terminus Durability is configured
+as NONE then a volatile multicast queue will be created.
 
-The prefix can be changed by configuring the Acceptor and setting the `pubSubPrefix` like so
-  
-> <acceptor name="amqp">tcp://0.0.0.0:5672?protocols=AMQP;pubSubPrefix=foo.bar.</acceptor>
-
-Artemis also supports the qpid-jms client and will respect its use of topics regardless of the prefix used for the address. 
+Artemis also supports the qpid-jms client and will respect its use of topics regardless of the prefix used for the address.
 
 ### AMQP and Coordinations - Handling Transactions
 
@@ -114,11 +110,29 @@ or committed via the coordinator.
 > `amqp:multi-txns-per-ssn`, however in this version Apache ActiveMQ Artemis will only
 > support single transactions per session
 
+### AMQP scheduling message delivery
+
+An AMQP message can provide scheduling information that controls the time in the future when the
+message will be delivered at the earliest.  This information is provided by adding a message annotation
+to the sent message.
+
+There are two different message annotations that can be used to schedule a message for later delivery:
+
+* `x-opt-delivery-time`
+The specified value must be a positive long corresponding to the time the message should be made available
+for delivery (in milliseconds).
+
+* `x-opt-delivery-delay`
+The specified value must be a positive long corresponding to the amount of milliseconds after the broker
+receives the given message before it should be made available for delivery.
+
+if both annotations are present in the same message then the broker will prefer the more specific `x-opt-delivery-time` value.
+
 ## OpenWire
 
 Apache ActiveMQ Artemis now supports the
 [OpenWire](http://activemq.apache.org/openwire.html) protocol so that an
-Apache ActiveMQ Artemis JMS client can talk directly to an Apache ActiveMQ Artemis server. To enable
+Apache ActiveMQ 5.x JMS client can talk directly to an Apache ActiveMQ Artemis server. To enable
 OpenWire support you must configure a Netty Acceptor, like so:
 
     <acceptor name="openwire-acceptor">tcp://localhost:61616?protocols=OPENWIRE</acceptor>
@@ -127,8 +141,7 @@ OpenWire support you must configure a Netty Acceptor, like so:
 The Apache ActiveMQ Artemis server will then listens on port 61616 for incoming
 openwire commands. Please note the "protocols" is not mandatory here.
 The openwire configuration conforms to Apache ActiveMQ Artemis's "Single Port" feature.
-Please refer to [Configuring Single
-Port](#configuring-transports.single-port) for details.
+Please refer to [Configuring Single Port](configuring-transports.md#single-port-support) for details.
 
 Please refer to the openwire example for more coding details.
 
@@ -138,32 +151,80 @@ specific features into Apache ActiveMQ Artemis.
 
 ### Connection Monitoring
 
-OpenWire has a few paramters to control how each connection is monitored, they are:
+OpenWire has a few parameters to control how each connection is monitored, they are:
 
 * maxInactivityDuration:
 It specifies the time (milliseconds) after which the connection is closed by the broker if no data was received.
 Default value is 30000.
 
 * maxInactivityDurationInitalDelay:
-It specifies the maximum delay (milliseconds) before inactivity monitoring is started on the connection. 
+It specifies the maximum delay (milliseconds) before inactivity monitoring is started on the connection.
 It can be useful if a broker is under load with many connections being created concurrently.
 Default value is 10000.
 
 * useInactivityMonitor:
-A value of false disables the InactivityMonitor completely and connections will never time out. 
-By default it is enabled. On broker side you don't neet set this. Instead you can set the 
+A value of false disables the InactivityMonitor completely and connections will never time out.
+By default it is enabled. On broker side you don't neet set this. Instead you can set the
 connection-ttl to -1.
 
 * useKeepAlive:
-Whether or not to send a KeepAliveInfo on an idle connection to prevent it from timing out. 
-Enabled by default. Disabling the keep alive will still make connections time out if no data 
+Whether or not to send a KeepAliveInfo on an idle connection to prevent it from timing out.
+Enabled by default. Disabling the keep alive will still make connections time out if no data
 was received on the connection for the specified amount of time.
 
-Note at the beginning the InactivityMonitor negotiates the appropriate maxInactivityDuration and 
+Note at the beginning the InactivityMonitor negotiates the appropriate maxInactivityDuration and
 maxInactivityDurationInitalDelay. The shortest duration is taken for the connection.
 
 More details please see [ActiveMQ InactivityMonitor](http://activemq.apache.org/activemq-inactivitymonitor.html).
 
+### Disable/Enable Advisories
+
+By default, advisory topics ([ActiveMQ Advisory](http://activemq.apache.org/advisory-message.html))
+are created in order to send certain type of advisory messages to listening clients. As a result,
+advisory addresses and queues will be displayed on the management console, along with user deployed
+addresses and queues. This sometimes cause confusion because the advisory objects are internally
+managed without user being aware of them. In addition, users may not want the advisory topics at all
+(they cause extra resources and performance penalty) and it is convenient to disable them at all
+from the broker side.
+
+The protocol provides two parameters to control advisory behaviors on the broker side.
+
+* supportAdvisory
+Whether or not the broker supports advisory messages. If the value is true, advisory addresses/
+queues will be created. If the value is false, no advisory addresses/queues are created. Default
+value is true. 
+
+* suppressInternalManagementObjects
+Whether or not the advisory addresses/queues, if any, will be registered to management service
+(e.g. JMX registry). If set to true, no advisory addresses/queues will be registered. If set to
+false, those are registered and will be displayed on the management console. Default value is
+true.
+
+The two parameters are configured on openwire acceptors, via URLs or API. For example:
+
+    <acceptor name="artemis">tcp://127.0.0.1:61616?protocols=CORE,AMQP,OPENWIRE;supportAdvisory=true;suppressInternalManagementObjects=false</acceptor>
+
+### Virtual Topic Consumer Destination Translation
+
+For existing OpenWire consumers of virtual topic destinations it is possible to configure a mapping function
+that will translate the virtual topic consumer destination into a FQQN address. This address then represents
+the consumer as a multicast binding to an address representing the virtual topic. 
+
+The configuration string property ```virtualTopicConsumerWildcards``` has two parts seperated by a ```;```. 
+The first is the 5.x style destination filter that identifies the destination as belonging to a virtual topic.
+The second identifies the number of ```paths``` that identify the consumer queue such that it can be parsed from the
+destination.
+For example, the default 5.x virtual topic with consumer prefix of ```Consumer.*.```, would require a
+```virtualTopicConsumerWildcards``` filter of ```Consumer.*.>;2```. As a url parameter this transforms to ```Consumer.*.%3E%3B2``` when
+the url significant characters ```>;``` are escaped with their hex code points. 
+In an acceptor url it would be:
+
+     <acceptor name="artemis">tcp://127.0.0.1:61616?protocols=OPENWIRE;virtualTopicConsumerWildcards=Consumer.*.%3E%3B2</acceptor>
+
+This will translate ```Consumer.A.VirtualTopic.Orders``` into a FQQN of ```VirtualTopic.Orders::Consumer.A``` using the
+int component ```2``` of the configuration to identify the consumer queue as the first two paths of the destination.
+```virtualTopicConsumerWildcards``` is multi valued using a ```,``` separator. 
+  
 ## MQTT
 
 MQTT is a light weight, client to server, publish / subscribe messaging protocol.  MQTT has been specifically
@@ -181,7 +242,7 @@ also active by default on the generic acceptor defined on port 61616 (where all 
 of the box configuration.
 
 The best source of information on the MQTT protocol is in the specification.  The MQTT v3.1.1 specification can
-be downloaded from the OASIS website here: http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html
+be downloaded from the OASIS website here: https://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html
 
 Some note worthy features of MQTT are explained below:
 
@@ -229,6 +290,21 @@ the broker will proceed to publish the will message to the specified address (as
 Other subscribers to the will topic will receive the will message and can react accordingly. This feature can be useful
  in an IoT style scenario to detect errors across a potentially large scale deployment of devices.
 
+### Debug Logging
+
+Detailed protocol logging (e.g. packets in/out) can be activated via the following steps:
+
+1) Open `<ARTEMIS_INSTANCE>/etc/logging.properties` 
+2) Add `org.apache.activemq.artemis.core.protocol.mqtt` to the `loggers` list.
+3) Add this line to enable `TRACE` logging for this new logger: `logger.org.apache.activemq.artemis.core.protocol.mqtt.level=TRACE`
+4) Ensure the `level` for the `handler` you want to log the message doesn't block the `TRACE` logging. For example,
+   modify the `level` of the `CONSOLE` `handler` like so: `handler.CONSOLE.level=TRACE`
+
+The MQTT specification doesn't dictate the format of the payloads which clients publish. As far as the broker is
+concerned a payload is just just an array of bytes. However, to facilitate logging the broker will encode the payloads
+as UTF-8 strings and print them up to 256 characters. Payload logging is limited to avoid filling the logs with potentially
+hundreds of megabytes of unhelpful information.
+
 
 ### Wild card subscriptions
 
@@ -250,7 +326,7 @@ There are 2 types of wild card in MQTT:
 
 ## Stomp
 
-[Stomp](http://stomp.github.com/) is a text-orientated wire protocol
+[Stomp](https://stomp.github.io/) is a text-orientated wire protocol
 that allows Stomp clients to communicate with Stomp Brokers. Apache ActiveMQ Artemis
 now supports Stomp 1.0, 1.1 and 1.2.
 
@@ -284,18 +360,53 @@ set).
 Apache ActiveMQ Artemis currently doesn't support virtual hosting, which means the
 'host' header in CONNECT fram will be ignored.
 
-### Mapping Stomp destinations to Apache ActiveMQ Artemis addresses and queues
+### Mapping Stomp destinations to addresses and queues
 
 Stomp clients deals with *destinations* when sending messages and
 subscribing. Destination names are simply strings which are mapped to
 some form of destination on the server - how the server translates these
 is left to the server implementation.
 
-In Apache ActiveMQ Artemis, these destinations are mapped to *addresses* and *queues*.
-When a Stomp client sends a message (using a `SEND` frame), the
-specified destination is mapped to an address. When a Stomp client
-subscribes (or unsubscribes) for a destination (using a `SUBSCRIBE` or
-`UNSUBSCRIBE` frame), the destination is mapped to an Apache ActiveMQ Artemis queue.
+In Apache ActiveMQ Artemis, these destinations are mapped to *addresses* and *queues*
+depending on the operation being done and the desired semantics (e.g. anycast or
+multicast).
+
+#### Sending
+
+When a Stomp client sends a message (using a `SEND` frame), the protocol manager looks
+at the message to determine where to route it and potentially how to create the address
+and/or queue to which it is being sent. The protocol manager uses either of the following
+bits of information from the frame to determine the routing type:
+
+1. The value of the `destination-type` header. Valid values are `ANYCAST` and
+`MULTICAST` (case sensitive).
+
+2. The "prefix" on the `destination` header. See [additional info](address-model.md) on
+prefixes.
+
+If no indication of routing type is supplied then anycast semantics are used.
+
+The `destination` header maps to an address of the same name. If the `destination` header
+used a prefix then the prefix is stripped.
+
+#### Subscribing
+
+When a Stomp client subscribes to a destination (using a `SUBSCRIBE` frame), the protocol
+manager looks at the frame to determine what subscription semantics to use and potentially how
+to create the address and/or queue for the subscription. The protocol manager uses either of
+the following bits of information from the frame to determine the routing type:
+
+1. The value of the `subscription-type` header. Valid values are `ANYCAST` and
+`MULTICAST` (case sensitive).
+
+2. The "prefix" on the `destination` header. See [additional info](address-model.md) on
+prefixes.
+
+If no indication of routing type is supplied then anycast semantics are used.
+
+The `destination` header maps to an address of the same name if multicast is used or to a queue
+of the same name if anycast is used. If the `destination` header used a prefix then the prefix
+is stripped.
 
 ### STOMP heart-beating and connection-ttl
 
@@ -306,11 +417,11 @@ However if STOMP clients exit without sending a DISCONNECT frame or if
 they crash the server will have no way of knowing immediately whether
 the client is still alive or not. STOMP connections therefore default to
 a connection-ttl value of 1 minute (see chapter on
-[connection-ttl](#connection-ttl) for more information. This value can
-be overridden using the `connection-ttl-override` property or if you 
+[connection-ttl](connection-ttl.md) for more information. This value can
+be overridden using the `connection-ttl-override` property or if you
 need a specific connectionTtl for your stomp connections without
-affecting the broker-wide `connection-ttl-override` setting, you can 
-configure your stomp acceptor with the "connectionTtl" property, which 
+affecting the broker-wide `connection-ttl-override` setting, you can
+configure your stomp acceptor with the "connectionTtl" property, which
 is used to set the ttl for connections that are created from that acceptor.
 For example:
 
@@ -327,7 +438,7 @@ Since Stomp 1.0 does not support heart-beating then all connections from
 Stomp 1.0 clients will have a connection TTL imposed upon them by the broker
 based on the aforementioned configuration options. Likewise, any Stomp 1.1
 or 1.2 clients that don't specify a `heart-beat` header or disable client-to-server
-heart-beating (e.g. by sending `0,X` in the `heart-beat` header) will have 
+heart-beating (e.g. by sending `0,X` in the `heart-beat` header) will have
 a connection TTL imposed upon them by the broker.
 
 For Stomp 1.1 and 1.2 clients which send a non-zero client-to-server `heart-beat`
@@ -373,40 +484,10 @@ The minimum server-to-client heart-beat value is 500ms.
 
 Stomp subscribers can specify an expression used to select or filter
 what the subscriber receives using the `selector` header. The filter
-expression syntax follows the *core filter syntax* described in the 
+expression syntax follows the *core filter syntax* described in the
 [Filter Expressions](filter-expressions.md) documentation.
 
 ### Stomp and JMS interoperability
-
-#### Using JMS destinations
-
-As explained in [Mapping JMS Concepts to the Core API](jms-core-mapping.md),
-JMS destinations are also mapped to Apache ActiveMQ Artemis
-addresses and queues. If you want to use Stomp to send messages to JMS
-destinations, the Stomp destinations must follow the same convention:
-
--   send or subscribe to a JMS *Queue* by prepending the queue name by
-    `jms.queue.`.
-
-    For example, to send a message to the `orders` JMS Queue, the Stomp
-    client must send the frame:
-
-        SEND
-        destination:jms.queue.orders
-
-        hello queue orders
-        ^@
-
--   send or subscribe to a JMS *Topic* by prepending the topic name by
-    `jms.topic.`.
-
-    For example to subscribe to the `stocks` JMS Topic, the Stomp client
-    must send the frame:
-
-        SUBSCRIBE
-        destination:jms.topic.stocks
-
-        ^@
 
 #### Sending and consuming Stomp message from JMS or Apache ActiveMQ Artemis Core API
 
@@ -426,48 +507,6 @@ in the body buffer*.
 The same logic applies when mapping a JMS message or a Core message to
 Stomp. A Stomp 1.0 client can check the presence of the `content-length`
 header to determine the type of the message body (String or bytes).
-
-#### Durable Subscriptions
-
-The `SUBSCRIBE` and `UNSUBSCRIBE` frames can be augmented with special headers to create
-and destroy durable subscriptions respectively.
-
-To create a durable subscription the `client-id` header must be set on the `CONNECT` frame
-and the `durable-subscription-name` must be set on the `SUBSCRIBE` frame. The combination
-of these two headers will form the identity of the durable subscription.
-
-To delete a durable subscription the `client-id` header must be set on the `CONNECT` frame
-and the `durable-subscription-name` must be set on the `UNSUBSCRIBE` frame. The values for
-these headers should match what was set on the `SUBSCRIBE` frame to delete the corresponding
-durable subscription.
-
-It is possible to pre-configure durable subscriptions since the Stomp implementation creates
-the queue used for the durable subscription in a deterministic way (i.e. using the format of 
-`client-id`.`subscription-name`). For example, if you wanted to configure a durable 
-subscription on the JMS topic `myTopic` with a client-id of `myclientid` and a subscription 
-name of `mysubscriptionname` then first you'd configure the topic:
-
-~~~
-   <jms xmlns="urn:activemq:jms">
-      ...
-      <topic name="myTopic"/>
-      ...
-   </jms>
-~~~
-
-Then configure the durable subscription:
-
-~~~
-   <core xmlns="urn:activemq:core">
-      ...
-      <queues>
-         <queue name="myclientid.mysubscription">
-            <address>jms.topic.myTopic</address>
-         </queue>
-      </queues>
-      ...
-   </core>
-~~~
 
 #### Message IDs for Stomp messages
 
@@ -491,9 +530,43 @@ long type internal message id prefixed with "`STOMP`", like:
 If `stomp-enable-message-id` is not specified in the configuration,
 default is `false`.
 
-#### Handling of Large Messages with Stomp
+### Durable Subscriptions
 
-Stomp clients may send very large bodys of frames which can exceed the
+The `SUBSCRIBE` and `UNSUBSCRIBE` frames can be augmented with special headers to create
+and destroy durable subscriptions respectively.
+
+To create a durable subscription the `client-id` header must be set on the `CONNECT` frame
+and the `durable-subscription-name` must be set on the `SUBSCRIBE` frame. The combination
+of these two headers will form the identity of the durable subscription.
+
+To delete a durable subscription the `client-id` header must be set on the `CONNECT` frame
+and the `durable-subscription-name` must be set on the `UNSUBSCRIBE` frame. The values for
+these headers should match what was set on the `SUBSCRIBE` frame to delete the corresponding
+durable subscription.
+
+It is possible to pre-configure durable subscriptions since the Stomp implementation creates
+the queue used for the durable subscription in a deterministic way (i.e. using the format of
+`client-id`.`subscription-name`). For example, if you wanted to configure a durable
+subscription on the address `myAddress` with a client-id of `myclientid` and a subscription
+name of `mysubscription` then configure the durable subscription:
+
+~~~
+   <core xmlns="urn:activemq:core">
+      ...
+      <addresses>
+         <address name="myAddress">
+            <multicast>
+               <queue name="myclientid.mysubscription"/>
+            </multicast>
+         </address>
+      </addresses>
+      ...
+   </core>
+~~~
+
+### Handling of Large Messages with Stomp
+
+Stomp clients may send very large frame bodies which can exceed the
 size of Apache ActiveMQ Artemis server's internal buffer, causing unexpected errors. To
 prevent this situation from happening, Apache ActiveMQ Artemis provides a stomp
 configuration attribute `stompMinLargeMessageSize`. This attribute
@@ -507,18 +580,18 @@ Stomp frame arrived from connections established with this acceptor. If
 the size of the body is equal or greater than the value of
 `stompMinLargeMessageSize`, the message will be persisted as a large
 message. When a large message is delievered to a stomp consumer, the
-HorentQ server will automatically handle the conversion from a large
+broker will automatically handle the conversion from a large
 message to a normal message, before sending it to the client.
 
 If a large message is compressed, the server will uncompressed it before
 sending it to stomp clients. The default value of
 `stompMinLargeMessageSize` is the same as the default value of
-[min-large-message-size](#large-messages.core.config).
+[min-large-message-size](large-messages.md#configuring-parameters).
 
 ### Stomp Over Web Sockets
 
 Apache ActiveMQ Artemis also support Stomp over [Web
-Sockets](http://dev.w3.org/html5/websockets/). Modern web browser which
+Sockets](https://html.spec.whatwg.org/multipage/web-sockets.html). Modern web browser which
 support Web Sockets can send and receive Stomp messages from Apache ActiveMQ Artemis.
 
 Stomp over Web Sockets is supported via the normal Stomp acceptor:
@@ -531,9 +604,14 @@ then connect to `ws://<server>:61614` using a Web Socket to send
 and receive Stomp messages.
 
 A companion JavaScript library to ease client-side development is
-available from [GitHub](http://github.com/jmesnil/stomp-websocket)
+available from [GitHub](https://github.com/jmesnil/stomp-websocket)
 (please see its [documentation](http://jmesnil.net/stomp-websocket/doc/)
 for a complete description).
+
+The payload length of websocket frames can vary between client implementations. By default
+Apache ActiveMQ Artemis will accept frames with a payload length of 65,536. If the client
+needs to send payloads longer than this in a single frame this length can be adjusted by
+using the `stompMaxFramePayloadLength` URL parameter on the acceptor.
 
 The `stomp-websockets` example shows how to configure Apache ActiveMQ Artemis server to
 have web browsers and Java applications exchanges messages on a JMS

@@ -6,7 +6,7 @@
  * (the "License"); you may not use this file except in compliance with
  * the License. You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,8 +18,8 @@
 package org.apache.activemq.artemis.core.protocol.mqtt;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
@@ -30,6 +30,8 @@ import org.apache.activemq.artemis.core.remoting.FailureListener;
 import org.apache.activemq.artemis.spi.core.protocol.RemotingConnection;
 import org.apache.activemq.artemis.spi.core.remoting.Connection;
 import org.apache.activemq.artemis.spi.core.remoting.ReadyListener;
+
+import javax.security.auth.Subject;
 
 public class MQTTConnection implements RemotingConnection {
 
@@ -43,9 +45,11 @@ public class MQTTConnection implements RemotingConnection {
 
    private boolean connected;
 
-   private final List<FailureListener> failureListeners = Collections.synchronizedList(new ArrayList<FailureListener>());
+   private String clientID;
 
-   private final List<CloseListener> closeListeners = Collections.synchronizedList(new ArrayList<CloseListener>());
+   private final List<FailureListener> failureListeners = new CopyOnWriteArrayList<>();
+
+   private final List<CloseListener> closeListeners = new CopyOnWriteArrayList<>();
 
    public MQTTConnection(Connection transportConnection) throws Exception {
       this.transportConnection = transportConnection;
@@ -96,15 +100,14 @@ public class MQTTConnection implements RemotingConnection {
 
    @Override
    public List<CloseListener> removeCloseListeners() {
-      synchronized (closeListeners) {
-         List<CloseListener> deletedCloseListeners = new ArrayList<>(closeListeners);
-         closeListeners.clear();
-         return deletedCloseListeners;
-      }
+      List<CloseListener> deletedCloseListeners = copyCloseListeners();
+      closeListeners.clear();
+      return deletedCloseListeners;
    }
 
    @Override
    public void setCloseListeners(List<CloseListener> listeners) {
+      closeListeners.clear();
       closeListeners.addAll(listeners);
    }
 
@@ -115,19 +118,15 @@ public class MQTTConnection implements RemotingConnection {
 
    @Override
    public List<FailureListener> removeFailureListeners() {
-      synchronized (failureListeners) {
-         List<FailureListener> deletedFailureListeners = new ArrayList<>(failureListeners);
-         failureListeners.clear();
-         return deletedFailureListeners;
-      }
+      List<FailureListener> deletedFailureListeners = copyFailureListeners();
+      failureListeners.clear();
+      return deletedFailureListeners;
    }
 
    @Override
    public void setFailureListeners(List<FailureListener> listeners) {
-      synchronized (failureListeners) {
-         failureListeners.clear();
-         failureListeners.addAll(listeners);
-      }
+      failureListeners.clear();
+      failureListeners.addAll(listeners);
    }
 
    @Override
@@ -137,11 +136,18 @@ public class MQTTConnection implements RemotingConnection {
 
    @Override
    public void fail(ActiveMQException me) {
-      synchronized (failureListeners) {
-         for (FailureListener listener : failureListeners) {
-            listener.connectionFailed(me, false);
-         }
+      List<FailureListener> copy = copyFailureListeners();
+      for (FailureListener listener : copy) {
+         listener.connectionFailed(me, false);
       }
+   }
+
+   private List<FailureListener> copyFailureListeners() {
+      return new ArrayList<>(failureListeners);
+   }
+
+   private List<CloseListener> copyCloseListeners() {
+      return new ArrayList<>(closeListeners);
    }
 
    @Override
@@ -226,4 +232,46 @@ public class MQTTConnection implements RemotingConnection {
    public boolean isSupportsFlowControl() {
       return false;
    }
+
+   @Override
+   public Subject getSubject() {
+      return null;
+   }
+
+   /**
+    * Returns the name of the protocol for this Remoting Connection
+    *
+    * @return
+    */
+   @Override
+   public String getProtocolName() {
+      return MQTTProtocolManagerFactory.MQTT_PROTOCOL_NAME;
+   }
+
+   /**
+    * Sets the client ID associated with this connection
+    *
+    * @param cID
+    * @return
+    */
+   @Override
+   public void setClientID(String cID) {
+      this.clientID = cID;
+   }
+
+   /**
+    * Returns the Client ID associated with this connection
+    *
+    * @return
+    */
+   @Override
+   public String getClientID() {
+      return clientID;
+   }
+
+   @Override
+   public String getTransportLocalAddress() {
+      return getTransportConnection().getLocalAddress();
+   }
+
 }

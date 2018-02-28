@@ -16,23 +16,18 @@
  */
 package org.apache.activemq.artemis.rest;
 
+import javax.xml.bind.JAXBContext;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.io.StringReader;
 import java.net.URL;
-import java.util.HashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-import javax.xml.bind.JAXBContext;
-
-import org.apache.activemq.artemis.api.core.TransportConfiguration;
+import org.apache.activemq.artemis.api.core.client.ActiveMQClient;
 import org.apache.activemq.artemis.api.core.client.ClientSessionFactory;
 import org.apache.activemq.artemis.api.core.client.ServerLocator;
-import org.apache.activemq.artemis.core.client.impl.ServerLocatorImpl;
-import org.apache.activemq.artemis.core.remoting.impl.invm.InVMConnectorFactory;
-import org.apache.activemq.artemis.core.remoting.impl.invm.TransportConstants;
 import org.apache.activemq.artemis.jms.client.ConnectionFactoryOptions;
 import org.apache.activemq.artemis.rest.queue.DestinationSettings;
 import org.apache.activemq.artemis.rest.queue.QueueServiceManager;
@@ -47,14 +42,14 @@ import org.apache.activemq.artemis.utils.XMLUtil;
 
 public class MessageServiceManager {
 
-   protected ExecutorService threadPool;
-   protected QueueServiceManager queueManager;
-   protected TopicServiceManager topicManager;
-   protected TimeoutTask timeoutTask;
-   protected int timeoutTaskInterval = 1;
+   private ExecutorService threadPool;
+   private QueueServiceManager queueManager;
+   private TopicServiceManager topicManager;
+   private TimeoutTask timeoutTask;
+   private int timeoutTaskInterval = 1;
    protected MessageServiceConfiguration configuration = new MessageServiceConfiguration();
-   protected boolean configSet = false;
-   protected String configResourcePath;
+   private boolean configSet = false;
+   private String configResourcePath;
    protected BindingRegistry registry;
 
    private ClientSessionFactory consumerSessionFactory;
@@ -117,15 +112,13 @@ public class MessageServiceManager {
    }
 
    public void start() throws Exception {
-      if (configuration == null || configSet == false) {
+      if (configuration == null || !configSet) {
          if (configResourcePath == null) {
             configuration = new MessageServiceConfiguration();
-         }
-         else {
+         } else {
             URL url = getClass().getClassLoader().getResource(configResourcePath);
 
-            if (url == null) {
-               // The URL is outside of the classloader. Trying a pure url now
+            if (isOutsideOfClassloader(url)) {
                url = new URL(configResourcePath);
             }
             JAXBContext jaxb = JAXBContext.newInstance(MessageServiceConfiguration.class);
@@ -146,28 +139,25 @@ public class MessageServiceManager {
       defaultSettings.setDuplicatesAllowed(configuration.isDupsOk());
       defaultSettings.setDurableSend(configuration.isDefaultDurableSend());
 
-      HashMap<String, Object> transportConfig = new HashMap<>();
-      transportConfig.put(TransportConstants.SERVER_ID_PROP_NAME, configuration.getInVmId());
-
-      ServerLocator consumerLocator = new ServerLocatorImpl(false, new TransportConfiguration(InVMConnectorFactory.class.getName(), transportConfig));
-      ActiveMQRestLogger.LOGGER.debug("Created ServerLocator: " + consumerLocator);
+      ServerLocator consumerLocator = ActiveMQClient.createServerLocator(configuration.getUrl());
 
       if (configuration.getConsumerWindowSize() != -1) {
          consumerLocator.setConsumerWindowSize(configuration.getConsumerWindowSize());
       }
 
+      ActiveMQRestLogger.LOGGER.debug("Created ServerLocator: " + consumerLocator);
+
       consumerSessionFactory = consumerLocator.createSessionFactory();
       ActiveMQRestLogger.LOGGER.debug("Created ClientSessionFactory: " + consumerSessionFactory);
 
-      ServerLocator defaultLocator = new ServerLocatorImpl(false, new TransportConfiguration(InVMConnectorFactory.class.getName(), transportConfig));
+      ServerLocator defaultLocator = ActiveMQClient.createServerLocator(configuration.getUrl());
 
       ClientSessionFactory sessionFactory = defaultLocator.createSessionFactory();
 
-      LinkStrategy linkStrategy = new LinkHeaderLinkStrategy();
+      LinkStrategy linkStrategy;
       if (configuration.isUseLinkHeaders()) {
          linkStrategy = new LinkHeaderLinkStrategy();
-      }
-      else {
+      } else {
          linkStrategy = new CustomHeaderLinkStrategy();
       }
 
@@ -199,6 +189,10 @@ public class MessageServiceManager {
       topicManager.start();
    }
 
+   private boolean isOutsideOfClassloader(URL url) {
+      return url == null;
+   }
+
    public void stop() {
       if (queueManager != null)
          queueManager.stop();
@@ -210,8 +204,7 @@ public class MessageServiceManager {
       threadPool.shutdown();
       try {
          threadPool.awaitTermination(5000, TimeUnit.SECONDS);
-      }
-      catch (InterruptedException e) {
+      } catch (InterruptedException e) {
       }
       this.consumerSessionFactory.close();
    }

@@ -144,27 +144,27 @@ public interface Server extends Remote {
                                 boolean supportsLoadBalancing,
                                 int dupsOkBatchSize,
                                 boolean blockOnAcknowledge,
-                                final String... jndiBindings) throws Exception;
+                                String... jndiBindings) throws Exception;
 
    void deployConnectionFactory(String objectName,
                                 int prefetchSize,
                                 int defaultTempQueueFullSize,
                                 int defaultTempQueuePageSize,
                                 int defaultTempQueueDownCacheSize,
-                                final String... jndiBindings) throws Exception;
+                                String... jndiBindings) throws Exception;
 
    void deployConnectionFactory(String objectName,
                                 boolean supportsFailover,
                                 boolean supportsLoadBalancing,
-                                final String... jndiBindings) throws Exception;
+                                String... jndiBindings) throws Exception;
 
-   void deployConnectionFactory(String clientID, String objectName, final String... jndiBindings) throws Exception;
+   void deployConnectionFactory(String clientID, String objectName, String... jndiBindings) throws Exception;
 
-   void deployConnectionFactory(String objectName, int prefetchSize, final String... jndiBindings) throws Exception;
+   void deployConnectionFactory(String objectName, int prefetchSize, String... jndiBindings) throws Exception;
 
-   void deployConnectionFactory(String objectName, final String... jndiBindings) throws Exception;
+   void deployConnectionFactory(String objectName, String... jndiBindings) throws Exception;
 
-   void deployConnectionFactory(String objectName, JMSFactoryType type, final String... jndiBindings) throws Exception;
+   void deployConnectionFactory(String objectName, JMSFactoryType type, String... jndiBindings) throws Exception;
 
    void undeployConnectionFactory(String objectName) throws Exception;
 
@@ -174,7 +174,7 @@ public interface Server extends Remote {
 
    InitialContext getInitialContext() throws Exception;
 
-   void removeAllMessages(String destination, boolean isQueue) throws Exception;
+   void removeAllMessages(String destination) throws Exception;
 
    Long getMessageCountForQueue(String queueName) throws Exception;
 

@@ -36,8 +36,6 @@ import java.util.Set;
 
 import org.apache.activemq.artemis.api.core.TransportConfiguration;
 import org.apache.activemq.artemis.api.core.management.QueueControl;
-import org.apache.activemq.artemis.api.jms.management.JMSQueueControl;
-import org.apache.activemq.artemis.tests.unit.util.InVMNamingContext;
 import org.apache.activemq.artemis.core.config.Configuration;
 import org.apache.activemq.artemis.core.registry.JndiBindingRegistry;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
@@ -47,6 +45,7 @@ import org.apache.activemq.artemis.jms.server.config.impl.ConnectionFactoryConfi
 import org.apache.activemq.artemis.jms.server.impl.JMSServerManagerImpl;
 import org.apache.activemq.artemis.service.extensions.ServiceUtils;
 import org.apache.activemq.artemis.tests.integration.ra.DummyTransactionManager;
+import org.apache.activemq.artemis.tests.unit.util.InVMNamingContext;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -60,6 +59,7 @@ public class JMSTestBase extends ActiveMQTestBase {
    protected MBeanServer mbeanServer;
 
    protected ConnectionFactory cf;
+   protected ConnectionFactory nettyCf;
    protected Connection conn;
    private final Set<JMSContext> contextSet = new HashSet<>();
    private final Random random = new Random();
@@ -101,11 +101,6 @@ public class JMSTestBase extends ActiveMQTestBase {
       return createTopic(false, topicName);
    }
 
-   protected long getMessageCount(JMSQueueControl control) throws Exception {
-      control.flushExecutor();
-      return control.getMessageCount();
-   }
-
    protected long getMessageCount(QueueControl control) throws Exception {
       control.flushExecutor();
       return control.getMessageCount();
@@ -136,7 +131,7 @@ public class JMSTestBase extends ActiveMQTestBase {
       Configuration config = createDefaultConfig(true).setSecurityEnabled(useSecurity()).
          addConnectorConfiguration("invm", new TransportConfiguration(INVM_CONNECTOR_FACTORY)).
          setTransactionTimeoutScanPeriod(100);
-
+      config.getConnectorConfigurations().put("netty", new TransportConfiguration(NETTY_CONNECTOR_FACTORY));
       server = addServer(ActiveMQServers.newActiveMQServer(config, mbeanServer, usePersistence()));
       jmsServer = new JMSServerManagerImpl(server);
       namingContext = new InVMNamingContext();
@@ -170,18 +165,15 @@ public class JMSTestBase extends ActiveMQTestBase {
          for (JMSContext jmsContext : contextSet) {
             jmsContext.close();
          }
-      }
-      catch (RuntimeException ignored) {
+      } catch (RuntimeException ignored) {
          // no-op
-      }
-      finally {
+      } finally {
          contextSet.clear();
       }
       try {
          if (conn != null)
             conn.close();
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          // no-op
       }
 
@@ -206,21 +198,34 @@ public class JMSTestBase extends ActiveMQTestBase {
       List<TransportConfiguration> connectorConfigs = new ArrayList<>();
       connectorConfigs.add(new TransportConfiguration(INVM_CONNECTOR_FACTORY));
 
+      List<TransportConfiguration> connectorConfigs1 = new ArrayList<>();
+      connectorConfigs1.add(new TransportConfiguration(NETTY_CONNECTOR_FACTORY));
+
       createCF(connectorConfigs, "/cf");
+      createCF("NettyCF", connectorConfigs1, "/nettyCf");
 
       cf = (ConnectionFactory) namingContext.lookup("/cf");
+      nettyCf = (ConnectionFactory)namingContext.lookup("/nettyCf");
    }
 
+   protected void createCF(final List<TransportConfiguration> connectorConfigs,
+                           final String... jndiBindings) throws Exception {
+      createCF(name.getMethodName(), connectorConfigs, jndiBindings);
+   }
+
+
    /**
-    * @param connectorConfigs
-    * @param jndiBindings
+    * @param cfName the unique ConnectionFactory's name
+    * @param connectorConfigs initial static connectors' config
+    * @param jndiBindings JNDI binding names for the CF
     * @throws Exception
     */
-   protected void createCF(final List<TransportConfiguration> connectorConfigs,
+   protected void createCF(final String cfName,
+                           final List<TransportConfiguration> connectorConfigs,
                            final String... jndiBindings) throws Exception {
       List<String> connectorNames = registerConnectors(server, connectorConfigs);
 
-      ConnectionFactoryConfiguration configuration = new ConnectionFactoryConfigurationImpl().setName(name.getMethodName()).setConnectorNames(connectorNames).setRetryInterval(1000).setReconnectAttempts(-1);
+      ConnectionFactoryConfiguration configuration = new ConnectionFactoryConfigurationImpl().setName(cfName).setConnectorNames(connectorNames).setRetryInterval(1000).setReconnectAttempts(-1);
       testCaseCfExtraConfig(configuration);
       jmsServer.createConnectionFactory(false, configuration, jndiBindings);
    }
@@ -246,8 +251,7 @@ public class JMSTestBase extends ActiveMQTestBase {
             msg.setIntProperty("counter", j);
             producer.send(queue, msg);
          }
-      }
-      catch (JMSException cause) {
+      } catch (JMSException cause) {
          throw new JMSRuntimeException(cause.getMessage(), cause.getErrorCode(), cause);
       }
    }
@@ -266,8 +270,7 @@ public class JMSTestBase extends ActiveMQTestBase {
             if (ack)
                message.acknowledge();
          }
-      }
-      catch (JMSException cause) {
+      } catch (JMSException cause) {
          throw new JMSRuntimeException(cause.getMessage(), cause.getErrorCode(), cause);
       }
    }

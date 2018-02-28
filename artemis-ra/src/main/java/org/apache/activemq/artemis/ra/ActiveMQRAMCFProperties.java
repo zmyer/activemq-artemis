@@ -16,10 +16,9 @@
  */
 package org.apache.activemq.artemis.ra;
 
-import java.io.Serializable;
-
 import javax.jms.Queue;
 import javax.jms.Topic;
+import java.io.Serializable;
 
 /**
  * The MCF default properties - these are set in the tx-connection-factory at the jms-ds.xml
@@ -44,6 +43,7 @@ public class ActiveMQRAMCFProperties extends ConnectionFactoryProperties impleme
     * The topic type
     */
    private static final String TOPIC_TYPE = Topic.class.getName();
+   protected boolean allowLocalTransactions;
 
    private String strConnectorClassName;
 
@@ -121,11 +121,9 @@ public class ActiveMQRAMCFProperties extends ConnectionFactoryProperties impleme
 
       if (defaultType.equals(ActiveMQRAMCFProperties.QUEUE_TYPE)) {
          type = ActiveMQRAConnectionFactory.QUEUE_CONNECTION;
-      }
-      else if (defaultType.equals(ActiveMQRAMCFProperties.TOPIC_TYPE)) {
+      } else if (defaultType.equals(ActiveMQRAMCFProperties.TOPIC_TYPE)) {
          type = ActiveMQRAConnectionFactory.TOPIC_CONNECTION;
-      }
-      else {
+      } else {
          type = ActiveMQRAConnectionFactory.CONNECTION;
       }
    }
@@ -142,11 +140,9 @@ public class ActiveMQRAMCFProperties extends ConnectionFactoryProperties impleme
 
       if (type == ActiveMQRAConnectionFactory.CONNECTION) {
          return "BOTH";
-      }
-      else if (type == ActiveMQRAConnectionFactory.QUEUE_CONNECTION) {
+      } else if (type == ActiveMQRAConnectionFactory.QUEUE_CONNECTION) {
          return ActiveMQRAMCFProperties.TOPIC_TYPE;
-      }
-      else {
+      } else {
          return ActiveMQRAMCFProperties.QUEUE_TYPE;
       }
    }
@@ -175,5 +171,13 @@ public class ActiveMQRAMCFProperties extends ConnectionFactoryProperties impleme
       }
 
       this.useTryLock = useTryLock;
+   }
+
+   public boolean isAllowLocalTransactions() {
+      return allowLocalTransactions;
+   }
+
+   public void setAllowLocalTransactions(boolean allowLocalTransactions) {
+      this.allowLocalTransactions = allowLocalTransactions;
    }
 }

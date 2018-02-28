@@ -49,7 +49,7 @@ public class LibaioContext<Callback extends SubmitInfo> implements Closeable {
     * <br>
     * Or else the native module won't be loaded because of version mismatches
     */
-   private static final int EXPECTED_NATIVE_VERSION = 6;
+   private static final int EXPECTED_NATIVE_VERSION = 7;
 
    private static boolean loaded = false;
 
@@ -67,12 +67,10 @@ public class LibaioContext<Callback extends SubmitInfo> implements Closeable {
          if (getNativeVersion() != EXPECTED_NATIVE_VERSION) {
             NativeLogger.LOGGER.incompatibleNativeLibrary();
             return false;
-         }
-         else {
+         } else {
             return true;
          }
-      }
-      catch (Throwable e) {
+      } catch (Throwable e) {
          NativeLogger.LOGGER.debug(name + " -> error loading the native library", e);
          return false;
       }
@@ -93,8 +91,7 @@ public class LibaioContext<Callback extends SubmitInfo> implements Closeable {
                }
             });
             break;
-         }
-         else {
+         } else {
             NativeLogger.LOGGER.debug("Library " + library + " not found!");
          }
       }
@@ -149,6 +146,8 @@ public class LibaioContext<Callback extends SubmitInfo> implements Closeable {
 
    final int queueSize;
 
+   final boolean useFdatasync;
+
    /**
     * The queue size here will use resources defined on the kernel parameter
     * <a href="https://www.kernel.org/doc/Documentation/sysctl/fs.txt">fs.aio-max-nr</a> .
@@ -156,21 +155,21 @@ public class LibaioContext<Callback extends SubmitInfo> implements Closeable {
     * @param queueSize    the size to be initialize on libaio
     *                     io_queue_init which can't be higher than /proc/sys/fs/aio-max-nr.
     * @param useSemaphore should block on a semaphore avoiding using more submits than what's available.
+    * @param useFdatasync should use fdatasync before calling callbacks.
     */
-   public LibaioContext(int queueSize, boolean useSemaphore) {
+   public LibaioContext(int queueSize, boolean useSemaphore, boolean useFdatasync) {
       try {
          contexts.incrementAndGet();
          this.ioContext = newContext(queueSize);
-      }
-      catch (Exception e) {
+         this.useFdatasync = useFdatasync;
+      } catch (Exception e) {
          throw e;
       }
       this.queueSize = queueSize;
       totalMaxIO.addAndGet(queueSize);
       if (useSemaphore) {
          this.ioSpace = new Semaphore(queueSize);
-      }
-      else {
+      } else {
          this.ioSpace = null;
       }
    }
@@ -197,8 +196,7 @@ public class LibaioContext<Callback extends SubmitInfo> implements Closeable {
          if (ioSpace != null) {
             ioSpace.acquire();
          }
-      }
-      catch (InterruptedException e) {
+      } catch (InterruptedException e) {
          Thread.currentThread().interrupt();
          throw new IOException(e.getMessage(), e);
       }
@@ -217,8 +215,7 @@ public class LibaioContext<Callback extends SubmitInfo> implements Closeable {
          if (ioSpace != null) {
             ioSpace.acquire();
          }
-      }
-      catch (InterruptedException e) {
+      } catch (InterruptedException e) {
          Thread.currentThread().interrupt();
          throw new IOException(e.getMessage(), e);
       }
@@ -238,8 +235,7 @@ public class LibaioContext<Callback extends SubmitInfo> implements Closeable {
          if (ioSpace != null) {
             try {
                ioSpace.tryAcquire(queueSize, 10, TimeUnit.SECONDS);
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                NativeLogger.LOGGER.error(e);
             }
          }
@@ -357,7 +353,7 @@ public class LibaioContext<Callback extends SubmitInfo> implements Closeable {
     */
    public void poll() {
       if (!closed.get()) {
-         blockedPoll(ioContext);
+         blockedPoll(ioContext, useFdatasync);
       }
    }
 
@@ -444,7 +440,7 @@ public class LibaioContext<Callback extends SubmitInfo> implements Closeable {
    /**
     * This method will block as long as the context is open.
     */
-   native void blockedPoll(ByteBuffer libaioContext);
+   native void blockedPoll(ByteBuffer libaioContext, boolean useFdatasync);
 
    static native int getNativeVersion();
 

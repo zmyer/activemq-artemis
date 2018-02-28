@@ -31,6 +31,7 @@ import org.apache.activemq.artemis.api.core.client.ServerLocator;
 import org.apache.activemq.artemis.core.protocol.core.Packet;
 import org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.core.settings.impl.AddressFullMessagePolicy;
 import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
 import org.apache.activemq.artemis.spi.core.protocol.RemotingConnection;
@@ -89,7 +90,7 @@ public class ProducerTest extends ActiveMQTestBase {
       server.getConfiguration().getAddressesSettings().put(QUEUE.toString(), setting);
       server.start();
 
-      server.createQueue(QUEUE, QUEUE, null, true, false);
+      server.createQueue(QUEUE, RoutingType.MULTICAST, QUEUE, null, true, false);
 
       for (int i = 0; i < 100; i++) {
          final CountDownLatch latch = new CountDownLatch(1);
@@ -104,23 +105,22 @@ public class ProducerTest extends ActiveMQTestBase {
                   ClientProducer producer = session.createProducer();
 
                   for (int i = 0; i < 62; i++) {
-                     if (i == 61) {
+                     if (i == 30) {
                         // the point where the send would block
                         latch.countDown();
                      }
                      ClientMessage msg = session.createMessage(false);
-                     msg.getBodyBuffer().writeBytes(new byte[1024]);
+                     msg.getBodyBuffer().writeBytes(new byte[2048]);
                      producer.send(QUEUE, msg);
                   }
-               }
-               catch (Exception e) {
+               } catch (Exception e) {
                   e.printStackTrace();
                }
             }
          };
 
          t.start();
-         assertTrue(latch.await(5, TimeUnit.SECONDS));
+         assertTrue(latch.await(10, TimeUnit.SECONDS));
          session.close();
 
          t.join(5000);

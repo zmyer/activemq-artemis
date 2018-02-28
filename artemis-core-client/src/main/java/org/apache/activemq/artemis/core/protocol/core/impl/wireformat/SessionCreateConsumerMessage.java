@@ -18,13 +18,10 @@ package org.apache.activemq.artemis.core.protocol.core.impl.wireformat;
 
 import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
 import org.apache.activemq.artemis.api.core.SimpleString;
-import org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl;
 
-public class SessionCreateConsumerMessage extends PacketImpl {
+public class SessionCreateConsumerMessage extends QueueAbstractPacket {
 
    private long id;
-
-   private SimpleString queueName;
 
    private SimpleString filterString;
 
@@ -64,10 +61,6 @@ public class SessionCreateConsumerMessage extends PacketImpl {
 
    public long getID() {
       return id;
-   }
-
-   public SimpleString getQueueName() {
-      return queueName;
    }
 
    public SimpleString getFilterString() {
@@ -138,16 +131,14 @@ public class SessionCreateConsumerMessage extends PacketImpl {
       if (filterString == null) {
          if (other.filterString != null)
             return false;
-      }
-      else if (!filterString.equals(other.filterString))
+      } else if (!filterString.equals(other.filterString))
          return false;
       if (id != other.id)
          return false;
       if (queueName == null) {
          if (other.queueName != null)
             return false;
-      }
-      else if (!queueName.equals(other.queueName))
+      } else if (!queueName.equals(other.queueName))
          return false;
       if (requiresResponse != other.requiresResponse)
          return false;

@@ -17,6 +17,9 @@
 package org.apache.activemq.artemis.core.config.impl;
 
 import java.io.File;
+import java.util.Properties;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.activemq.artemis.ArtemisConstants;
 import org.apache.activemq.artemis.api.config.ActiveMQDefaultConfiguration;
@@ -24,6 +27,7 @@ import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.core.config.Configuration;
 import org.apache.activemq.artemis.core.config.ha.LiveOnlyPolicyConfiguration;
 import org.apache.activemq.artemis.core.server.JournalType;
+import org.apache.activemq.artemis.core.server.plugin.impl.LoggingActiveMQServerPlugin;
 import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.apache.activemq.artemis.utils.RandomUtil;
 import org.junit.Assert;
@@ -74,7 +78,6 @@ public class ConfigurationImplTest extends ActiveMQTestBase {
       Assert.assertEquals(ArtemisConstants.DEFAULT_JOURNAL_BUFFER_SIZE_AIO, conf.getJournalBufferSize_AIO());
       Assert.assertEquals(ArtemisConstants.DEFAULT_JOURNAL_BUFFER_SIZE_NIO, conf.getJournalBufferSize_NIO());
       Assert.assertEquals(ActiveMQDefaultConfiguration.isDefaultJournalLogWriteRate(), conf.isLogJournalWriteRate());
-      Assert.assertEquals(ActiveMQDefaultConfiguration.getDefaultJournalPerfBlastPages(), conf.getJournalPerfBlastPages());
       Assert.assertEquals(ActiveMQDefaultConfiguration.isDefaultMessageCounterEnabled(), conf.isMessageCounterEnabled());
       Assert.assertEquals(ActiveMQDefaultConfiguration.getDefaultMessageCounterMaxDayHistory(), conf.getMessageCounterMaxDayHistory());
       Assert.assertEquals(ActiveMQDefaultConfiguration.getDefaultMessageCounterSamplePeriod(), conf.getMessageCounterSamplePeriod());
@@ -229,10 +232,6 @@ public class ConfigurationImplTest extends ActiveMQTestBase {
          conf.setLogJournalWriteRate(b);
          Assert.assertEquals(b, conf.isLogJournalWriteRate());
 
-         i = RandomUtil.randomInt();
-         conf.setJournalPerfBlastPages(i);
-         Assert.assertEquals(i, conf.getJournalPerfBlastPages());
-
          l = RandomUtil.randomLong();
          conf.setServerDumpInterval(l);
          Assert.assertEquals(l, conf.getServerDumpInterval());
@@ -244,10 +243,6 @@ public class ConfigurationImplTest extends ActiveMQTestBase {
          s = RandomUtil.randomString();
          conf.setLargeMessagesDirectory(s);
          Assert.assertEquals(s, conf.getLargeMessagesDirectory());
-
-         b = RandomUtil.randomBoolean();
-         conf.setWildcardRoutingEnabled(b);
-         Assert.assertEquals(b, conf.isWildcardRoutingEnabled());
 
          l = RandomUtil.randomLong();
          conf.setTransactionTimeout(l);
@@ -435,10 +430,6 @@ public class ConfigurationImplTest extends ActiveMQTestBase {
       conf.setLogJournalWriteRate(b);
       Assert.assertEquals(b, conf.isLogJournalWriteRate());
 
-      i = RandomUtil.randomInt();
-      conf.setJournalPerfBlastPages(i);
-      Assert.assertEquals(i, conf.getJournalPerfBlastPages());
-
       l = RandomUtil.randomLong();
       conf.setServerDumpInterval(l);
       Assert.assertEquals(l, conf.getServerDumpInterval());
@@ -479,6 +470,9 @@ public class ConfigurationImplTest extends ActiveMQTestBase {
       conf.setClusterPassword(s);
       Assert.assertEquals(s, conf.getClusterPassword());
 
+      conf.registerBrokerPlugin(new LoggingActiveMQServerPlugin());
+      Assert.assertEquals("ensure one plugin registered", 1, conf.getBrokerPlugins().size());
+
       // This will use serialization to perform a deep copy of the object
       Configuration conf2 = conf.copy();
 
@@ -497,12 +491,10 @@ public class ConfigurationImplTest extends ActiveMQTestBase {
          configuration.setJournalDirectory("./data-journal");
          File journalLocation = configuration.getJournalLocation();
          Assert.assertFalse("This path shouldn't resolve to a real folder", journalLocation.exists());
-      }
-      finally {
+      } finally {
          if (oldProperty == null) {
             System.clearProperty("artemis.instance");
-         }
-         else {
+         } else {
             System.setProperty("artemis.instance", oldProperty);
          }
       }
@@ -514,6 +506,7 @@ public class ConfigurationImplTest extends ActiveMQTestBase {
       // Validate that the resolve method will work even with artemis.instance doesn't exist
 
       String oldProperty = System.getProperty("artemis.instance");
+      String oldEtc = System.getProperty("artemis.instance.etc");
 
       File tempFolder = null;
       try {
@@ -531,13 +524,13 @@ public class ConfigurationImplTest extends ActiveMQTestBase {
          File journalLocation = configuration.getJournalLocation();
 
          Assert.assertTrue(journalLocation.exists());
-      }
-      finally {
+      } finally {
          if (oldProperty == null) {
             System.clearProperty("artemis.instance");
-         }
-         else {
+            System.clearProperty("artemis.instance.etc");
+         } else {
             System.setProperty("artemis.instance", oldProperty);
+            System.setProperty("artemis.instance.etc", oldEtc);
          }
 
          if (tempFolder != null) {
@@ -545,6 +538,74 @@ public class ConfigurationImplTest extends ActiveMQTestBase {
          }
       }
 
+   }
+
+
+   @Test
+   public void testSetSystemProperty() throws Throwable {
+      ConfigurationImpl configuration = new ConfigurationImpl();
+      Properties properties = new Properties();
+      properties.put(configuration.getSystemPropertyPrefix() + "fileDeployerScanPeriod", "1234");
+      properties.put(configuration.getSystemPropertyPrefix() + "globalMaxSize", "4321");
+
+      configuration.parseSystemProperties(properties);
+
+      Assert.assertEquals(1234, configuration.getFileDeployerScanPeriod());
+      Assert.assertEquals(4321, configuration.getGlobalMaxSize());
+   }
+
+   /**
+    * To test ARTEMIS-926
+    * @throws Throwable
+    */
+   @Test
+   public void testSetSystemPropertyCME() throws Throwable {
+      Properties properties = new Properties();
+
+      for (int i = 0; i < 5000; i++) {
+         properties.put("key" + i, "value " + i);
+      }
+
+
+      final ConfigurationImpl configuration = new ConfigurationImpl();
+
+      final AtomicBoolean running = new AtomicBoolean(true);
+      final CountDownLatch latch = new CountDownLatch(1);
+
+
+      Thread thread = new Thread() {
+         @Override
+         public void run() {
+            latch.countDown();
+            int i = 1;
+            while (running.get()) {
+               properties.remove("key" + i);
+               properties.put("key" + i, "new value " + i);
+               i++;
+               if (i > 200) {
+                  i = 1;
+               }
+            }
+         }
+      };
+
+      thread.start();
+      try {
+
+         latch.await();
+         properties.put(configuration.getSystemPropertyPrefix() + "fileDeployerScanPeriod", "1234");
+         properties.put(configuration.getSystemPropertyPrefix() + "globalMaxSize", "4321");
+
+         configuration.parseSystemProperties(properties);
+
+
+      } finally {
+         running.set(false);
+         thread.join();
+      }
+
+      Assert.assertEquals(1234, configuration.getFileDeployerScanPeriod());
+      Assert.assertEquals(4321, configuration.getGlobalMaxSize());
    }
 
    @Override

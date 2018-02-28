@@ -6,7 +6,7 @@
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -26,6 +26,8 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import org.apache.activemq.artemis.api.core.SimpleString;
 
 /**
  * Utility class that provides methods for parsing URI's
@@ -75,7 +77,7 @@ public class URISupport {
       }
 
       public URI toURI() throws URISyntaxException {
-         StringBuffer sb = new StringBuffer();
+         StringBuilder sb = new StringBuilder();
          if (scheme != null) {
             sb.append(scheme);
             sb.append(':');
@@ -83,8 +85,7 @@ public class URISupport {
 
          if (host != null && host.length() != 0) {
             sb.append(host);
-         }
-         else {
+         } else {
             sb.append('(');
             for (int i = 0; i < components.length; i++) {
                if (i != 0) {
@@ -99,16 +100,21 @@ public class URISupport {
             sb.append('/');
             sb.append(path);
          }
-         if (!parameters.isEmpty()) {
-            sb.append("?");
-            sb.append(createQueryString(parameters));
-         }
+         appendParameters(sb, parameters);
          if (fragment != null) {
-            sb.append("#");
+            sb.append('#');
             sb.append(fragment);
          }
          return new URI(sb.toString());
       }
+   }
+
+   public static StringBuilder appendParameters(StringBuilder sb, Map<String, String> parameters) throws URISyntaxException {
+      if (!parameters.isEmpty()) {
+         sb.append('?');
+         sb.append(createQueryString(parameters));
+      }
+      return sb;
    }
 
    /**
@@ -123,14 +129,20 @@ public class URISupport {
          uri = uri.substring(uri.lastIndexOf("?") + 1); // get only the relevant part of the query
          Map<String, String> rc = new HashMap<>();
          if (uri != null && !uri.isEmpty()) {
-            parseParameters(rc, uri.split("&"));
-            parseParameters(rc, uri.split(";"));
+            parseParameters(rc, uri.split("[&;]"));
          }
          return rc;
-      }
-      catch (UnsupportedEncodingException e) {
+      } catch (UnsupportedEncodingException e) {
          throw (URISyntaxException) new URISyntaxException(e.toString(), "Invalid encoding").initCause(e);
       }
+   }
+
+   public static boolean containsQuery(String uri) {
+      return uri.contains("?");
+   }
+
+   public static boolean containsQuery(SimpleString uri) {
+      return uri.contains('?');
    }
 
    private static void parseParameters(Map<String, String> rc,
@@ -141,8 +153,7 @@ public class URISupport {
             String name = URLDecoder.decode(parameter.substring(0, p), "UTF-8");
             String value = URLDecoder.decode(parameter.substring(p + 1), "UTF-8");
             rc.put(name, value);
-         }
-         else {
+         } else {
             rc.put(parameter, null);
          }
       }
@@ -161,8 +172,7 @@ public class URISupport {
    public static Map<String, String> parseParameters(URI uri) throws URISyntaxException {
       if (!isCompositeURI(uri)) {
          return uri.getQuery() == null ? emptyMap() : parseQuery(stripPrefix(uri.getQuery(), "?"));
-      }
-      else {
+      } else {
          CompositeData data = URISupport.parseComposite(uri);
          Map<String, String> parameters = new HashMap<>();
          parameters.putAll(data.getParameters());
@@ -202,7 +212,7 @@ public class URISupport {
                                      Map<String, String> queryParameters,
                                      String optionPrefix) throws URISyntaxException {
       if (queryParameters != null && !queryParameters.isEmpty()) {
-         StringBuffer newQuery = uri.getRawQuery() != null ? new StringBuffer(uri.getRawQuery()) : new StringBuffer();
+         StringBuilder newQuery = uri.getRawQuery() != null ? new StringBuilder(uri.getRawQuery()) : new StringBuilder();
          for (Map.Entry<String, String> param : queryParameters.entrySet()) {
             if (param.getKey().startsWith(optionPrefix)) {
                if (newQuery.length() != 0) {
@@ -259,10 +269,10 @@ public class URISupport {
 
    /**
     * Given a composite URI, parse the individual URI elements contained within that URI and return
-    * a CompsoteData instance that contains the parsed URI values.
+    * a CompositeData instance that contains the parsed URI values.
     *
     * @param uri The target URI that should be parsed.
-    * @return a new CompsiteData instance representing the parsed composite URI.
+    * @return a new CompositeData instance representing the parsed composite URI.
     * @throws java.net.URISyntaxException
     */
    public static CompositeData parseComposite(URI uri) throws URISyntaxException {
@@ -281,7 +291,7 @@ public class URISupport {
     * Examine a URI and determine if it is a Composite type or not.
     *
     * @param uri The URI that is to be examined.
-    * @return true if the given URI is a Compsote type.
+    * @return true if the given URI is a Composite type.
     */
    public static boolean isCompositeURI(URI uri) {
       String ssp = stripPrefix(uri.getRawSchemeSpecificPart().trim(), "//").trim();
@@ -317,8 +327,7 @@ public class URISupport {
          char current = array[index];
          if (current == '(') {
             depth++;
-         }
-         else if (current == ')') {
+         } else if (current == ')') {
             if (--depth == 0) {
                break;
             }
@@ -338,7 +347,7 @@ public class URISupport {
     * for logging as the ssp should have already been extracted from it and passed here.
     *
     * @param uri The original source URI whose ssp is parsed into the composite data.
-    * @param rc  The CompsositeData instance that will be populated from the given ssp.
+    * @param rc  The CompositeData instance that will be populated from the given ssp.
     * @param ssp The scheme specific part from the original string that is a composite or one or more URIs.
     * @throws java.net.URISyntaxException
     */
@@ -366,8 +375,7 @@ public class URISupport {
          componentString = ssp.substring(initialParen + 1, p);
          params = ssp.substring(p + 1).trim();
 
-      }
-      else {
+      } else {
          componentString = ssp;
          params = "";
       }
@@ -384,8 +392,7 @@ public class URISupport {
             rc.path = stripPrefix(params.substring(0, p), "/");
          }
          rc.parameters = parseQuery(params.substring(p + 1));
-      }
-      else {
+      } else {
          if (params.length() > 0) {
             rc.path = stripPrefix(params, "/");
          }
@@ -479,8 +486,7 @@ public class URISupport {
             for (String key : keys) {
                if (first) {
                   first = false;
-               }
-               else {
+               } else {
                   rc.append("&");
                }
                String value = (String) options.get(key);
@@ -489,12 +495,10 @@ public class URISupport {
                rc.append(URLEncoder.encode(value, "UTF-8"));
             }
             return rc.toString();
-         }
-         else {
+         } else {
             return "";
          }
-      }
-      catch (UnsupportedEncodingException e) {
+      } catch (UnsupportedEncodingException e) {
          throw (URISyntaxException) new URISyntaxException(e.toString(), "Invalid encoding").initCause(e);
       }
    }
@@ -534,10 +538,10 @@ public class URISupport {
    }
 
    /**
-    * Examine the supplied string and ensure that all parends appear as matching pairs.
+    * Examine the supplied string and ensure that all parens appear as matching pairs.
     *
     * @param str The target string to examine.
-    * @return true if the target string has valid parend pairings.
+    * @return true if the target string has valid paren pairings.
     */
    public static boolean checkParenthesis(String str) {
       boolean result = true;

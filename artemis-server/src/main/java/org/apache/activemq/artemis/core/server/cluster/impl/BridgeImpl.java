@@ -46,25 +46,24 @@ import org.apache.activemq.artemis.core.client.impl.ClientSessionFactoryInternal
 import org.apache.activemq.artemis.core.client.impl.ClientSessionInternal;
 import org.apache.activemq.artemis.core.client.impl.ServerLocatorInternal;
 import org.apache.activemq.artemis.core.filter.Filter;
-import org.apache.activemq.artemis.core.message.impl.MessageImpl;
-import org.apache.activemq.artemis.core.persistence.StorageManager;
+import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.core.server.ActiveMQServerLogger;
 import org.apache.activemq.artemis.core.server.HandleStatus;
 import org.apache.activemq.artemis.core.server.LargeServerMessage;
 import org.apache.activemq.artemis.core.server.MessageReference;
 import org.apache.activemq.artemis.core.server.Queue;
-import org.apache.activemq.artemis.core.server.ServerMessage;
 import org.apache.activemq.artemis.core.server.cluster.Bridge;
-import org.apache.activemq.artemis.core.server.cluster.Transformer;
+import org.apache.activemq.artemis.core.server.transformer.Transformer;
 import org.apache.activemq.artemis.core.server.impl.QueueImpl;
 import org.apache.activemq.artemis.core.server.management.Notification;
 import org.apache.activemq.artemis.core.server.management.NotificationService;
+import org.apache.activemq.artemis.spi.core.protocol.EmbedMessageUtil;
 import org.apache.activemq.artemis.spi.core.protocol.RemotingConnection;
 import org.apache.activemq.artemis.spi.core.remoting.ReadyListener;
 import org.apache.activemq.artemis.utils.FutureLatch;
 import org.apache.activemq.artemis.utils.ReusableLatch;
-import org.apache.activemq.artemis.utils.TypedProperties;
 import org.apache.activemq.artemis.utils.UUID;
+import org.apache.activemq.artemis.utils.collections.TypedProperties;
 import org.jboss.logging.Logger;
 
 /**
@@ -78,10 +77,6 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
 
    // Attributes ----------------------------------------------------
 
-   private static final SimpleString JMS_QUEUE_ADDRESS_PREFIX = new SimpleString("jms.queue.");
-
-   private static final SimpleString JMS_TOPIC_ADDRESS_PREFIX = new SimpleString("jms.topic.");
-
    protected final ServerLocatorInternal serverLocator;
 
    protected final Executor executor;
@@ -91,6 +86,8 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
    private final ReusableLatch pendingAcks = new ReusableLatch(0);
 
    private final UUID nodeUUID;
+
+   private final long sequentialID;
 
    private final SimpleString name;
 
@@ -156,6 +153,8 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
 
    private boolean keepConnecting = true;
 
+   private ActiveMQServer server;
+
    public BridgeImpl(final ServerLocatorInternal serverLocator,
                      final int initialConnectAttempts,
                      final int reconnectAttempts,
@@ -174,7 +173,9 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
                      final boolean useDuplicateDetection,
                      final String user,
                      final String password,
-                     final StorageManager storageManager) {
+                     final ActiveMQServer server) {
+
+      this.sequentialID = server.getStorageManager().generateID();
 
       this.reconnectAttempts = reconnectAttempts;
 
@@ -211,6 +212,8 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
       this.user = user;
 
       this.password = password;
+
+      this.server = server;
    }
 
    public static final byte[] getDuplicateBytes(final UUID nodeUUID, final long messageID) {
@@ -248,6 +251,11 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
    @Override
    public void setNotificationService(final NotificationService notificationService) {
       this.notificationService = notificationService;
+   }
+
+   @Override
+   public long sequentialID() {
+      return sequentialID;
    }
 
    @Override
@@ -309,8 +317,7 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
 
          try {
             refqueue.cancel(ref, timeBase);
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             // There isn't much we can do besides log an error
             ActiveMQServerLogger.LOGGER.errorCancellingRefOnBridge(e, ref);
          }
@@ -339,8 +346,7 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
             if (session != null) {
                try {
                   session.cleanUp(false);
-               }
-               catch (Exception dontcare) {
+               } catch (Exception dontcare) {
                   logger.debug(dontcare.getMessage(), dontcare);
                }
                session = null;
@@ -348,8 +354,7 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
             if (sessionConsumer != null) {
                try {
                   sessionConsumer.cleanUp(false);
-               }
-               catch (Exception dontcare) {
+               } catch (Exception dontcare) {
                   logger.debug(dontcare.getMessage(), dontcare);
                }
                sessionConsumer = null;
@@ -395,8 +400,7 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
          Notification notification = new Notification(nodeUUID.toString(), CoreNotificationType.BRIDGE_STOPPED, props);
          try {
             notificationService.sendNotification(notification);
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             ActiveMQServerLogger.LOGGER.broadcastBridgeStoppedError(e);
          }
       }
@@ -416,8 +420,7 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
          Notification notification = new Notification(nodeUUID.toString(), CoreNotificationType.BRIDGE_STOPPED, props);
          try {
             notificationService.sendNotification(notification);
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             ActiveMQServerLogger.LOGGER.notificationBridgeStoppedError(e);
          }
       }
@@ -465,8 +468,7 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
    public RemotingConnection getForwardingConnection() {
       if (session == null) {
          return null;
-      }
-      else {
+      } else {
          return session.getConnection();
       }
    }
@@ -493,46 +495,44 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
                }
                ref.getQueue().acknowledge(ref);
                pendingAcks.countDown();
-            }
-            else {
+            } else {
                if (logger.isTraceEnabled()) {
                   logger.trace("BridgeImpl::sendAcknowledged bridge " + this + " could not find reference for message " + message);
                }
             }
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             ActiveMQServerLogger.LOGGER.bridgeFailedToAck(e);
          }
       }
    }
 
-   protected boolean isPlainCoreBridge() {
-      return true;
-   }
-
    /* Hook for processing message before forwarding */
-   protected ServerMessage beforeForward(final ServerMessage message) {
+   protected Message beforeForward(final Message message, final SimpleString forwardingAddress) {
       if (useDuplicateDetection) {
-         // We keep our own DuplicateID for the Bridge, so bouncing back and forths will work fine
+         // We keep our own DuplicateID for the Bridge, so bouncing back and forth will work fine
          byte[] bytes = getDuplicateBytes(nodeUUID, message.getMessageID());
 
-         message.putBytesProperty(MessageImpl.HDR_BRIDGE_DUPLICATE_ID, bytes);
+         message.putExtraBytesProperty(Message.HDR_BRIDGE_DUPLICATE_ID, bytes);
+      }
+
+      if (forwardingAddress != null) {
+         // for AMQP messages this modification will be transient
+         message.setAddress(forwardingAddress);
       }
 
       if (transformer != null) {
-         final ServerMessage transformedMessage = transformer.transform(message);
+         final Message transformedMessage = transformer.transform(message);
          if (transformedMessage != message) {
             if (logger.isDebugEnabled()) {
                logger.debug("The transformer " + transformer +
-                                                    " made a copy of the message " +
-                                                    message +
-                                                    " as transformedMessage");
+                               " made a copy of the message " +
+                               message +
+                               " as transformedMessage");
             }
          }
-         return transformedMessage;
-      }
-      else {
-         return message;
+         return EmbedMessageUtil.embedAsCoreMessage(transformedMessage);
+      } else {
+         return EmbedMessageUtil.embedAsCoreMessage(message);
       }
    }
 
@@ -569,17 +569,16 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
             refs.put(ref.getMessage().getMessageID(), ref);
          }
 
-         final ServerMessage message = beforeForward(ref.getMessage());
-
          final SimpleString dest;
 
          if (forwardingAddress != null) {
             dest = forwardingAddress;
-         }
-         else {
+         } else {
             // Preserve the original address
-            dest = message.getAddress();
+            dest = ref.getMessage().getAddressSimpleString();
          }
+
+         final Message message = beforeForward(ref.getMessage(), dest);
 
          pendingAcks.countUp();
 
@@ -588,12 +587,10 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
                deliveringLargeMessage = true;
                deliverLargeMessage(dest, ref, (LargeServerMessage) message);
                return HandleStatus.HANDLED;
-            }
-            else {
+            } else {
                return deliverStandardMessage(dest, ref, message);
             }
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             // If an exception happened, we must count down immediately
             pendingAcks.countDown();
             throw e;
@@ -615,7 +612,9 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
 
    @Override
    public void connectionFailed(final ActiveMQException me, boolean failedOver, String scaleDownTargetNodeID) {
-      ActiveMQServerLogger.LOGGER.bridgeConnectionFailed(failedOver);
+      if (server.isStarted()) {
+         ActiveMQServerLogger.LOGGER.bridgeConnectionFailed(failedOver);
+      }
 
       synchronized (connectionGuard) {
          keepConnecting = true;
@@ -627,14 +626,12 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
          }
 
          cleanUpSessionFactory(csf);
-      }
-      catch (Throwable dontCare) {
+      } catch (Throwable dontCare) {
       }
 
       try {
          session.cleanUp(false);
-      }
-      catch (Throwable dontCare) {
+      } catch (Throwable dontCare) {
       }
 
       if (scaleDownTargetNodeID != null && !scaleDownTargetNodeID.equals(nodeUUID.toString())) {
@@ -645,18 +642,15 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
 
                // stop the bridge from trying to reconnect and clean up all the bindings
                fail(true);
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                ActiveMQServerLogger.LOGGER.warn(e.getMessage(), e);
             }
          }
-      }
-      else if (scaleDownTargetNodeID != null) {
+      } else if (scaleDownTargetNodeID != null) {
          // the disconnected node is scaling down to me, no need to reconnect to it
          logger.debug("Received scaleDownTargetNodeID: " + scaleDownTargetNodeID + "; cancelling reconnect.");
          fail(true);
-      }
-      else {
+      } else {
          logger.debug("Received invalid scaleDownTargetNodeID: " + scaleDownTargetNodeID);
 
          fail(me.getType() == ActiveMQExceptionType.DISCONNECTED);
@@ -692,8 +686,7 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
                if (queue != null) {
                   queue.deliverAsync();
                }
-            }
-            catch (final ActiveMQException e) {
+            } catch (final ActiveMQException e) {
                unsetLargeMessageDelivery();
                ActiveMQServerLogger.LOGGER.bridgeUnableToSendMessage(e, ref);
 
@@ -708,7 +701,7 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
     * @param message
     * @return
     */
-   private HandleStatus deliverStandardMessage(SimpleString dest, final MessageReference ref, ServerMessage message) {
+   private HandleStatus deliverStandardMessage(SimpleString dest, final MessageReference ref, Message message) {
       // if we failover during send then there is a chance that the
       // that this will throw a disconnect, we need to remove the message
       // from the acks so it will get resent, duplicate detection will cope
@@ -720,8 +713,7 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
 
       try {
          producer.send(dest, message);
-      }
-      catch (final ActiveMQException e) {
+      } catch (final ActiveMQException e) {
          ActiveMQServerLogger.LOGGER.bridgeUnableToSendMessage(e, ref);
 
          synchronized (refs) {
@@ -730,7 +722,7 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
             refs.remove(message.getMessageID());
 
             // The delivering count should also be decreased as to avoid inconsistencies
-            ((QueueImpl) ref.getQueue()).decDelivering();
+            ((QueueImpl) ref.getQueue()).decDelivering(ref);
          }
 
          connectionFailed(e, false);
@@ -782,15 +774,15 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
 
    protected void fail(final boolean permanently) {
       logger.debug(this + "\n\t::fail being called, permanently=" + permanently);
-
+      //we need to make sure we remove the node from the topology so any incoming quorum requests are voted correctly
+      serverLocator.notifyNodeDown(System.currentTimeMillis(), targetNodeID);
       if (queue != null) {
          try {
             if (logger.isTraceEnabled()) {
                logger.trace("Removing consumer on fail " + this + " from queue " + queue);
             }
             queue.removeConsumer(this);
-         }
-         catch (Exception dontcare) {
+         } catch (Exception dontcare) {
             logger.debug(dontcare);
          }
       }
@@ -815,8 +807,7 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
    protected ClientSessionFactoryInternal createSessionFactory() throws Exception {
       if (targetNodeID != null && (this.reconnectAttemptsSameNode < 0 || retryCount <= this.reconnectAttemptsSameNode)) {
          csf = reconnectOnOriginalNode();
-      }
-      else {
+      } else {
          serverLocator.resetToInitialConnectors();
          csf = (ClientSessionFactoryInternal) serverLocator.createSessionFactory();
       }
@@ -829,7 +820,7 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
       return csf;
    }
 
-   private ClientSessionFactoryInternal reconnectOnOriginalNode() throws Exception {
+   protected ClientSessionFactoryInternal reconnectOnOriginalNode() throws Exception {
       String targetNodeIdUse = targetNodeID;
       TopologyMember nodeUse = targetNode;
       if (targetNodeIdUse != null && nodeUse != null) {
@@ -891,8 +882,7 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
 
                try {
                   query = session.addressQuery(forwardingAddress);
-               }
-               catch (Throwable e) {
+               } catch (Throwable e) {
                   ActiveMQServerLogger.LOGGER.errorQueryingBridge(e, name);
                   // This was an issue during startup, we will not count this retry
                   retryCount--;
@@ -901,17 +891,10 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
                   return;
                }
 
-               if (forwardingAddress.startsWith(BridgeImpl.JMS_QUEUE_ADDRESS_PREFIX) || forwardingAddress.startsWith(BridgeImpl.JMS_TOPIC_ADDRESS_PREFIX)) {
-                  if (!query.isExists()) {
-                     ActiveMQServerLogger.LOGGER.errorQueryingBridge(forwardingAddress, retryCount);
-                     scheduleRetryConnect();
-                     return;
-                  }
-               }
-               else {
-                  if (!query.isExists()) {
-                     ActiveMQServerLogger.LOGGER.bridgeNoBindings(getName(), getForwardingAddress(), getForwardingAddress());
-                  }
+               if (!query.isExists()) {
+                  ActiveMQServerLogger.LOGGER.errorQueryingBridge(forwardingAddress, retryCount);
+                  scheduleRetryConnect();
+                  return;
                }
             }
 
@@ -929,15 +912,11 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
 
             ActiveMQServerLogger.LOGGER.bridgeConnected(this);
 
-            // We only do this on plain core bridges
-            if (isPlainCoreBridge()) {
-               serverLocator.addClusterTopologyListener(new TopologyListener());
-            }
+            serverLocator.addClusterTopologyListener(new TopologyListener());
 
             keepConnecting = false;
             return;
-         }
-         catch (ActiveMQException e) {
+         } catch (ActiveMQException e) {
             // the session was created while its server was starting, retry it:
             if (e.getType() == ActiveMQExceptionType.SESSION_CREATION_REJECTED) {
                ActiveMQServerLogger.LOGGER.errorStartingBridge(name);
@@ -947,26 +926,22 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
 
                scheduleRetryConnectFixedTimeout(this.retryInterval);
                return;
-            }
-            else {
+            } else {
                if (logger.isDebugEnabled()) {
                   logger.debug("Bridge " + this + " is unable to connect to destination. Retrying", e);
                }
 
                scheduleRetryConnect();
             }
-         }
-         catch (ActiveMQInterruptedException | InterruptedException e) {
+         } catch (ActiveMQInterruptedException | InterruptedException e) {
             ActiveMQServerLogger.LOGGER.errorConnectingBridge(e, this);
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             ActiveMQServerLogger.LOGGER.errorConnectingBridge(e, this);
             if (csf != null) {
                try {
                   csf.close();
                   csf = null;
-               }
-               catch (Throwable ignored) {
+               } catch (Throwable ignored) {
                }
             }
             fail(false);
@@ -1001,12 +976,12 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
       }
 
       logger.debug("Bridge " + this +
-                                           " retrying connection #" +
-                                           retryCount +
-                                           ", maxRetry=" +
-                                           reconnectAttemptsInUse +
-                                           ", timeout=" +
-                                           timeout);
+                      " retrying connection #" +
+                      retryCount +
+                      ", maxRetry=" +
+                      reconnectAttemptsInUse +
+                      ", timeout=" +
+                      timeout);
 
       scheduleRetryConnectFixedTimeout(timeout);
    }
@@ -1016,8 +991,7 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
    protected void scheduleRetryConnectFixedTimeout(final long milliseconds) {
       try {
          cleanUpSessionFactory(csf);
-      }
-      catch (Throwable ignored) {
+      } catch (Throwable ignored) {
       }
 
       if (stopping)
@@ -1082,62 +1056,51 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
 
       @Override
       public void run() {
-         try {
-            logger.debug("stopping bridge " + BridgeImpl.this);
-            queue.removeConsumer(BridgeImpl.this);
+         logger.debug("stopping bridge " + BridgeImpl.this);
+         queue.removeConsumer(BridgeImpl.this);
 
-            if (!pendingAcks.await(10, TimeUnit.SECONDS)) {
-               ActiveMQServerLogger.LOGGER.timedOutWaitingCompletions(BridgeImpl.this.toString(), pendingAcks.getCount());
-            }
+         synchronized (BridgeImpl.this) {
+            logger.debug("Closing Session for bridge " + BridgeImpl.this.name);
 
-            synchronized (BridgeImpl.this) {
-               logger.debug("Closing Session for bridge " + BridgeImpl.this.name);
+            started = false;
 
-               started = false;
+            active = false;
 
-               active = false;
-
-            }
-
-            if (session != null) {
-               logger.debug("Cleaning up session " + session);
-               session.removeFailureListener(BridgeImpl.this);
-               try {
-                  session.close();
-                  session = null;
-               }
-               catch (ActiveMQException dontcare) {
-               }
-            }
-
-            if (sessionConsumer != null) {
-               logger.debug("Cleaning up session " + session);
-               try {
-                  sessionConsumer.close();
-                  sessionConsumer = null;
-               }
-               catch (ActiveMQException dontcare) {
-               }
-            }
-
-            internalCancelReferences();
-
-            if (csf != null) {
-               csf.cleanup();
-            }
-
-            synchronized (connectionGuard) {
-               keepConnecting = true;
-            }
-
-            if (logger.isTraceEnabled()) {
-               logger.trace("Removing consumer on stopRunnable " + this + " from queue " + queue);
-            }
-            ActiveMQServerLogger.LOGGER.bridgeStopped(name);
          }
-         catch (InterruptedException | RuntimeException e) {
-            ActiveMQServerLogger.LOGGER.error("Failed to stop bridge", e);
+
+         if (session != null) {
+            logger.debug("Cleaning up session " + session);
+            session.removeFailureListener(BridgeImpl.this);
+            try {
+               session.close();
+               session = null;
+            } catch (ActiveMQException dontcare) {
+            }
          }
+
+         if (sessionConsumer != null) {
+            logger.debug("Cleaning up session " + session);
+            try {
+               sessionConsumer.close();
+               sessionConsumer = null;
+            } catch (ActiveMQException dontcare) {
+            }
+         }
+
+         internalCancelReferences();
+
+         if (csf != null) {
+            csf.cleanup();
+         }
+
+         synchronized (connectionGuard) {
+            keepConnecting = true;
+         }
+
+         if (logger.isTraceEnabled()) {
+            logger.trace("Removing consumer on stopRunnable " + this + " from queue " + queue);
+         }
+         ActiveMQServerLogger.LOGGER.bridgeStopped(name);
       }
    }
 
@@ -1160,8 +1123,7 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
             internalCancelReferences();
 
             ActiveMQServerLogger.LOGGER.bridgePaused(name);
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             ActiveMQServerLogger.LOGGER.errorPausingBridge(e);
          }
       }
@@ -1179,8 +1141,7 @@ public class BridgeImpl implements Bridge, SessionFailureListener, SendAcknowled
          if (member != null && BridgeImpl.this.targetNodeID != null && BridgeImpl.this.targetNodeID.equals(member.getNodeId())) {
             // this could be an update of the topology say after a backup started
             BridgeImpl.this.targetNode = member;
-         }
-         else {
+         } else {
             // we don't need synchronization here, but we need to make sure we won't get a NPE on races
             if (connectionToUse != null && member.isMember(connectionToUse)) {
                BridgeImpl.this.targetNode = member;

@@ -46,6 +46,7 @@ import org.apache.activemq.broker.jmx.ManagementContext;
 import org.apache.activemq.broker.region.Destination;
 import org.apache.activemq.broker.region.DestinationInterceptor;
 import org.apache.activemq.broker.region.policy.PolicyMap;
+import org.apache.activemq.broker.region.policy.RegionBrokerProxy;
 import org.apache.activemq.broker.scheduler.JobSchedulerStore;
 import org.apache.activemq.command.ActiveMQDestination;
 import org.apache.activemq.command.BrokerId;
@@ -117,8 +118,7 @@ public class BrokerService implements Service {
          BufferedReader reader = new BufferedReader(new InputStreamReader(in));
          try {
             version = reader.readLine();
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
          }
       }
       BROKER_VERSION = version;
@@ -156,14 +156,12 @@ public class BrokerService implements Service {
             public void run() {
                try {
                   doStartBroker();
-               }
-               catch (Throwable t) {
+               } catch (Throwable t) {
                   startException = t;
                }
             }
          }.start();
-      }
-      else {
+      } else {
          doStartBroker();
       }
    }
@@ -180,11 +178,9 @@ public class BrokerService implements Service {
 
       try {
          broker.start();
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          throw e;
-      }
-      catch (Throwable t) {
+      } catch (Throwable t) {
          throw new Exception(t);
       }
 
@@ -255,14 +251,14 @@ public class BrokerService implements Service {
    }
 
    //below are methods called directly by tests
-   //we don't actually implement any of these for now,
+   //we don't actually implement many of these for now,
    //just to make test compile pass.
-
-   //we may get class cast exception as in TestSupport it
-   //casts the broker to RegionBroker, which we didn't
-   //implement (wrap) yet. Consider solving it later.
    public Broker getRegionBroker() {
-      return broker;
+      try {
+         return RegionBrokerProxy.newRegionBroker((ArtemisBrokerWrapper) getBroker());
+      } catch (Exception e) {
+         throw new RuntimeException(e);
+      }
    }
 
    public void setPersistenceAdapter(PersistenceAdapter persistenceAdapter) throws IOException {
@@ -360,8 +356,7 @@ public class BrokerService implements Service {
       try {
          URI substituteUri = new URI("tcp://localhost:61616");
          return substituteUri;
-      }
-      catch (URISyntaxException e) {
+      } catch (URISyntaxException e) {
          e.printStackTrace();
       }
       return null;
@@ -490,9 +485,8 @@ public class BrokerService implements Service {
       this.transportConnectors = transportConnectors;
       for (TransportConnector connector : transportConnectors) {
          if (sslContext instanceof SpringSslContext) {
-            this.extraConnectors.add(new ConnectorInfo(connector.getUri(), (SpringSslContext)sslContext));
-         }
-         else {
+            this.extraConnectors.add(new ConnectorInfo(connector.getUri(), (SpringSslContext) sslContext));
+         } else {
             this.extraConnectors.add(new ConnectorInfo(connector.getUri()));
          }
       }
@@ -509,7 +503,7 @@ public class BrokerService implements Service {
          @Override
          public boolean connectTo(URI location) {
             List<TransportConnector> transportConnectors = getTransportConnectors();
-            for (Iterator<TransportConnector> iter = transportConnectors.iterator(); iter.hasNext();) {
+            for (Iterator<TransportConnector> iter = transportConnectors.iterator(); iter.hasNext(); ) {
                try {
                   TransportConnector tc = iter.next();
                   if (location.equals(tc.getConnectUri())) {
@@ -556,15 +550,13 @@ public class BrokerService implements Service {
 
       }
 
-      bindAddress = new URI(bindAddress.getScheme(), bindAddress.getUserInfo(),
-              host, port, bindAddress.getPath(), bindAddress.getQuery(), bindAddress.getFragment());
+      bindAddress = new URI(bindAddress.getScheme(), bindAddress.getUserInfo(), host, port, bindAddress.getPath(), bindAddress.getQuery(), bindAddress.getFragment());
 
       connector = new FakeTransportConnector(bindAddress);
       this.transportConnectors.add(connector);
       if (sslContext instanceof SpringSslContext) {
          this.extraConnectors.add(new ConnectorInfo(bindAddress, (SpringSslContext) sslContext));
-      }
-      else {
+      } else {
          this.extraConnectors.add(new ConnectorInfo(bindAddress));
       }
 
@@ -584,8 +576,7 @@ public class BrokerService implements Service {
          }
          try {
             TimeUnit.SECONDS.sleep(5);
-         }
-         catch (InterruptedException e) {
+         } catch (InterruptedException e) {
          }
       }
       return currentRandomPort;
@@ -595,17 +586,14 @@ public class BrokerService implements Service {
       ServerSocket ssocket = null;
       try {
          ssocket = new ServerSocket(port);
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          LOG.info("port " + port + " is being used.");
          return false;
-      }
-      finally {
+      } finally {
          if (ssocket != null) {
             try {
                ssocket.close();
-            }
-            catch (IOException e) {
+            } catch (IOException e) {
             }
          }
       }
@@ -740,8 +728,7 @@ public class BrokerService implements Service {
          if (!b.isStopped()) {
             try {
                b.stop();
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                e.printStackTrace();
             }
             brokerExceptionEntry.getValue().printStackTrace();
@@ -807,20 +794,11 @@ public class BrokerService implements Service {
          String query = bindAddress.getQuery();
          if (!ssl || query != null && query.contains(TransportConstants.SSL_ENABLED_PROP_NAME)) {
             //it means the uri is already configured ssl
-            uri = new URI("tcp", bindAddress.getUserInfo(),
-                    host, port, bindAddress.getPath(), bindAddress.getQuery(), bindAddress.getFragment());
-         }
-         else {
-            String baseUri = "tcp://" + host + ":" + port + "?"
-                    + TransportConstants.SSL_ENABLED_PROP_NAME + "=true&"
-                    + TransportConstants.KEYSTORE_PATH_PROP_NAME + "=" + (context == null ? defaultKeyStore : context.getKeyStore()) + "&"
-                    + TransportConstants.KEYSTORE_PASSWORD_PROP_NAME + "=" + (context == null ? defaultKeyStorePassword : context.getKeyStorePassword()) + "&"
-                    + TransportConstants.KEYSTORE_PROVIDER_PROP_NAME + "=" + (context == null ? defaultKeyStoreType : context.getKeyStoreType());
+            uri = new URI("tcp", bindAddress.getUserInfo(), host, port, bindAddress.getPath(), bindAddress.getQuery(), bindAddress.getFragment());
+         } else {
+            String baseUri = "tcp://" + host + ":" + port + "?" + TransportConstants.SSL_ENABLED_PROP_NAME + "=true&" + TransportConstants.KEYSTORE_PATH_PROP_NAME + "=" + (context == null ? defaultKeyStore : context.getKeyStore()) + "&" + TransportConstants.KEYSTORE_PASSWORD_PROP_NAME + "=" + (context == null ? defaultKeyStorePassword : context.getKeyStorePassword()) + "&" + TransportConstants.KEYSTORE_PROVIDER_PROP_NAME + "=" + (context == null ? defaultKeyStoreType : context.getKeyStoreType());
             if (clientAuth) {
-               baseUri = baseUri + "&" + TransportConstants.NEED_CLIENT_AUTH_PROP_NAME + "=true" + "&"
-                       + TransportConstants.TRUSTSTORE_PATH_PROP_NAME + "=" + (context == null ? defaultTrustStore : context.getTrustStore()) + "&"
-                       + TransportConstants.TRUSTSTORE_PASSWORD_PROP_NAME + "=" + (context == null ? defaultTrustStorePassword : context.getTrustStorePassword()) + "&"
-                       + TransportConstants.TRUSTSTORE_PROVIDER_PROP_NAME + "=" + (context == null ? defaultTrustStoreType : context.getTrustStoreType());
+               baseUri = baseUri + "&" + TransportConstants.NEED_CLIENT_AUTH_PROP_NAME + "=true" + "&" + TransportConstants.TRUSTSTORE_PATH_PROP_NAME + "=" + (context == null ? defaultTrustStore : context.getTrustStore()) + "&" + TransportConstants.TRUSTSTORE_PASSWORD_PROP_NAME + "=" + (context == null ? defaultTrustStorePassword : context.getTrustStorePassword()) + "&" + TransportConstants.TRUSTSTORE_PROVIDER_PROP_NAME + "=" + (context == null ? defaultTrustStoreType : context.getTrustStoreType());
             }
             uri = new URI(baseUri);
          }
@@ -835,7 +813,7 @@ public class BrokerService implements Service {
       @Override
       public boolean equals(Object obj) {
          if (obj instanceof ConnectorInfo) {
-            return uri.getPort() == ((ConnectorInfo)obj).uri.getPort();
+            return uri.getPort() == ((ConnectorInfo) obj).uri.getPort();
          }
          return false;
       }

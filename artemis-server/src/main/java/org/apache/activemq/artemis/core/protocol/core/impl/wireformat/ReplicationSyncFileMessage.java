@@ -16,15 +16,16 @@
  */
 package org.apache.activemq.artemis.core.protocol.core.impl.wireformat;
 
-import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.Set;
 
+import io.netty.buffer.ByteBuf;
 import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.core.persistence.impl.journal.AbstractJournalStorageManager;
 import org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl;
+import org.apache.activemq.artemis.utils.DataConstants;
 
 /**
  * Message is used to sync {@link org.apache.activemq.artemis.core.io.SequentialFile}s to a backup server. The {@link FileType} controls
@@ -42,7 +43,7 @@ public final class ReplicationSyncFileMessage extends PacketImpl {
     */
    private long fileId;
    private int dataSize;
-   private ByteBuffer byteBuffer;
+   private ByteBuf byteBuffer;
    private byte[] byteArray;
    private SimpleString pageStoreName;
    private FileType fileType;
@@ -78,7 +79,7 @@ public final class ReplicationSyncFileMessage extends PacketImpl {
                                      SimpleString storeName,
                                      long id,
                                      int size,
-                                     ByteBuffer buffer) {
+                                     ByteBuf buffer) {
       this();
       this.byteBuffer = buffer;
       this.pageStoreName = storeName;
@@ -91,13 +92,43 @@ public final class ReplicationSyncFileMessage extends PacketImpl {
    private void determineType() {
       if (journalType != null) {
          fileType = FileType.JOURNAL;
-      }
-      else if (pageStoreName != null) {
+      } else if (pageStoreName != null) {
          fileType = FileType.PAGE;
-      }
-      else {
+      } else {
          fileType = FileType.LARGE_MESSAGE;
       }
+   }
+
+   @Override
+   public int expectedEncodeSize() {
+      int size = PACKET_HEADERS_SIZE +
+                 DataConstants.SIZE_LONG; // buffer.writeLong(fileId);
+
+      if (fileId == -1)
+         return size;
+
+      size += DataConstants.SIZE_BYTE; // buffer.writeByte(fileType.code);
+      switch (fileType) {
+         case JOURNAL: {
+            size += DataConstants.SIZE_BYTE; // buffer.writeByte(journalType.typeByte);
+            break;
+         }
+         case PAGE: {
+            size += SimpleString.sizeofString(pageStoreName);
+            break;
+         }
+         case LARGE_MESSAGE:
+         default:
+            // no-op
+      }
+
+      size += DataConstants.SIZE_INT; // buffer.writeInt(dataSize);
+
+      if (dataSize > 0) {
+         size += byteBuffer.writerIndex(); // buffer.writeBytes(byteBuffer, 0, byteBuffer.writerIndex());
+      }
+
+      return size;
    }
 
    @Override
@@ -126,7 +157,17 @@ public final class ReplicationSyncFileMessage extends PacketImpl {
        * (which might receive appends)
        */
       if (dataSize > 0) {
-         buffer.writeBytes(byteBuffer);
+         buffer.writeBytes(byteBuffer, 0, byteBuffer.writerIndex());
+      }
+
+      release();
+   }
+
+   @Override
+   public void release() {
+      if (byteBuffer != null) {
+         byteBuffer.release();
+         byteBuffer = null;
       }
    }
 
@@ -209,8 +250,7 @@ public final class ReplicationSyncFileMessage extends PacketImpl {
          if (other.byteBuffer != null) {
             return false;
          }
-      }
-      else if (!byteBuffer.equals(other.byteBuffer)) {
+      } else if (!byteBuffer.equals(other.byteBuffer)) {
          return false;
       }
       if (dataSize != other.dataSize) {
@@ -229,8 +269,7 @@ public final class ReplicationSyncFileMessage extends PacketImpl {
          if (other.pageStoreName != null) {
             return false;
          }
-      }
-      else if (!pageStoreName.equals(other.pageStoreName)) {
+      } else if (!pageStoreName.equals(other.pageStoreName)) {
          return false;
       }
       return true;

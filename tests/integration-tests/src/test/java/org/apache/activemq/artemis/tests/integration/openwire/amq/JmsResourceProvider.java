@@ -45,7 +45,7 @@ public class JmsResourceProvider {
    /**
     * Creates a connection.
     *
-    * @see org.apache.activemq.test.JmsResourceProvider#createConnection(javax.jms.ConnectionFactory)
+    * @see org.apache.activemq.test.JmsResourceProvider#afterCreateConnection(javax.jms.ConnectionFactory)
     */
    public Connection createConnection(ConnectionFactory cf) throws JMSException {
       Connection connection = cf.createConnection();
@@ -107,8 +107,7 @@ public class JmsResourceProvider {
    public Destination createDestination(Session session, JmsTransactionTestSupport support) throws JMSException {
       if (isTopic) {
          return support.createDestination(session, ActiveMQDestination.TOPIC_TYPE);
-      }
-      else {
+      } else {
          return support.createDestination(session, ActiveMQDestination.QUEUE_TYPE);
       }
    }

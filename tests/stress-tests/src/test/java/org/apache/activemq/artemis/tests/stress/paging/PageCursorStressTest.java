@@ -16,10 +16,21 @@
  */
 package org.apache.activemq.artemis.tests.stress.paging;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock.ReadLock;
+
 import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
+import org.apache.activemq.artemis.api.core.Message;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.core.config.Configuration;
 import org.apache.activemq.artemis.core.filter.Filter;
+import org.apache.activemq.artemis.core.message.impl.CoreMessage;
 import org.apache.activemq.artemis.core.paging.cursor.PageCache;
 import org.apache.activemq.artemis.core.paging.cursor.PageCursorProvider;
 import org.apache.activemq.artemis.core.paging.cursor.PageSubscription;
@@ -31,27 +42,17 @@ import org.apache.activemq.artemis.core.persistence.impl.journal.OperationContex
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.core.server.Queue;
 import org.apache.activemq.artemis.core.server.RoutingContext;
-import org.apache.activemq.artemis.core.server.ServerMessage;
 import org.apache.activemq.artemis.core.server.impl.RoutingContextImpl;
-import org.apache.activemq.artemis.core.server.impl.ServerMessageImpl;
 import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
 import org.apache.activemq.artemis.core.transaction.Transaction;
 import org.apache.activemq.artemis.core.transaction.impl.TransactionImpl;
 import org.apache.activemq.artemis.tests.unit.core.postoffice.impl.FakeQueue;
 import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
-import org.apache.activemq.artemis.utils.LinkedListIterator;
 import org.apache.activemq.artemis.utils.RandomUtil;
+import org.apache.activemq.artemis.utils.collections.LinkedListIterator;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
-
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock.ReadLock;
 
 public class PageCursorStressTest extends ActiveMQTestBase {
 
@@ -146,12 +147,11 @@ public class PageCursorStressTest extends ActiveMQTestBase {
       PageSubscription cursorEven = createNonPersistentCursor(new Filter() {
 
          @Override
-         public boolean match(ServerMessage message) {
+         public boolean match(Message message) {
             Boolean property = message.getBooleanProperty("even");
             if (property == null) {
                return false;
-            }
-            else {
+            } else {
                return property.booleanValue();
             }
          }
@@ -166,12 +166,11 @@ public class PageCursorStressTest extends ActiveMQTestBase {
       PageSubscription cursorOdd = createNonPersistentCursor(new Filter() {
 
          @Override
-         public boolean match(ServerMessage message) {
+         public boolean match(Message message) {
             Boolean property = message.getBooleanProperty("even");
             if (property == null) {
                return false;
-            }
-            else {
+            } else {
                return !property.booleanValue();
             }
          }
@@ -383,7 +382,7 @@ public class PageCursorStressTest extends ActiveMQTestBase {
 
          ActiveMQBuffer buffer = RandomUtil.randomBuffer(messageSize, i + 1L);
 
-         ServerMessage msg = new ServerMessageImpl(i, buffer.writerIndex());
+         Message msg = new CoreMessage(i, buffer.writerIndex());
          msg.putIntProperty("key", i);
 
          msg.getBodyBuffer().writeBytes(buffer, 0, buffer.writerIndex());
@@ -416,7 +415,7 @@ public class PageCursorStressTest extends ActiveMQTestBase {
 
             ActiveMQBuffer buffer = RandomUtil.randomBuffer(messageSize, i + 1L);
 
-            ServerMessage msg = new ServerMessageImpl(i, buffer.writerIndex());
+            Message msg = new CoreMessage(i, buffer.writerIndex());
             msg.putIntProperty("key", i);
 
             msg.getBodyBuffer().writeBytes(buffer, 0, buffer.writerIndex());
@@ -446,7 +445,7 @@ public class PageCursorStressTest extends ActiveMQTestBase {
 
             ActiveMQBuffer buffer = RandomUtil.randomBuffer(messageSize, i + 1L);
 
-            ServerMessage msg = new ServerMessageImpl(i, buffer.writerIndex());
+            Message msg = new CoreMessage(i, buffer.writerIndex());
             msg.putIntProperty("key", i + 1);
 
             msg.getBodyBuffer().writeBytes(buffer, 0, buffer.writerIndex());
@@ -531,7 +530,7 @@ public class PageCursorStressTest extends ActiveMQTestBase {
                      //System.out.println("Sending " + count);
                      ActiveMQBuffer buffer = RandomUtil.randomBuffer(messageSize, count);
 
-                     ServerMessage msg = new ServerMessageImpl(i, buffer.writerIndex());
+                     Message msg = new CoreMessage(i, buffer.writerIndex());
                      msg.putIntProperty("key", count++);
 
                      msg.getBodyBuffer().writeBytes(buffer, 0, buffer.writerIndex());
@@ -544,8 +543,7 @@ public class PageCursorStressTest extends ActiveMQTestBase {
                   }
 
                }
-            }
-            catch (Throwable e) {
+            } catch (Throwable e) {
                e.printStackTrace();
                exceptions.incrementAndGet();
             }
@@ -563,8 +561,7 @@ public class PageCursorStressTest extends ActiveMQTestBase {
             ref = iterator.next();
             if (ref == null) {
                Thread.sleep(1000);
-            }
-            else {
+            } else {
                break;
             }
          }
@@ -669,7 +666,7 @@ public class PageCursorStressTest extends ActiveMQTestBase {
 
    }
 
-   private int tstProperty(ServerMessage msg) {
+   private int tstProperty(Message msg) {
       return msg.getIntProperty("key").intValue();
    }
 
@@ -750,7 +747,7 @@ public class PageCursorStressTest extends ActiveMQTestBase {
             System.out.println("Paged " + i);
          ActiveMQBuffer buffer = RandomUtil.randomBuffer(messageSize, i + 1L);
 
-         ServerMessage msg = new ServerMessageImpl(i, buffer.writerIndex());
+         Message msg = new CoreMessage(i, buffer.writerIndex());
          msg.putIntProperty("key", i);
          // to be used on tests that are validating filters
          msg.putBooleanProperty("even", i % 2 == 0);
@@ -801,10 +798,9 @@ public class PageCursorStressTest extends ActiveMQTestBase {
       queueList.clear();
 
       try {
-         queue = server.createQueue(ADDRESS, ADDRESS, null, true, false);
+         queue = server.createQueue(ADDRESS, RoutingType.ANYCAST, ADDRESS, null, true, false);
          queue.pause();
-      }
-      catch (Exception ignored) {
+      } catch (Exception ignored) {
       }
    }
 
@@ -854,7 +850,7 @@ public class PageCursorStressTest extends ActiveMQTestBase {
 
       for (int i = start; i < start + NUM_MESSAGES; i++) {
          ActiveMQBuffer buffer = RandomUtil.randomBuffer(messageSize, i + 1L);
-         ServerMessage msg = new ServerMessageImpl(storage.generateID(), buffer.writerIndex());
+         Message msg = new CoreMessage(storage.generateID(), buffer.writerIndex());
          msg.getBodyBuffer().writeBytes(buffer, 0, buffer.writerIndex());
          msg.putIntProperty("key", i);
          pageStore.page(msg, ctx.getTransaction(), ctx.getContextListing(ADDRESS), lock);

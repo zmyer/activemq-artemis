@@ -52,7 +52,10 @@ public abstract class CertificateLoginModule extends PropertiesLoader implements
     * Overriding to allow for proper initialization. Standard JAAS.
     */
    @Override
-   public void initialize(Subject subject, CallbackHandler callbackHandler, Map<String, ?> sharedState, Map<String, ?> options) {
+   public void initialize(Subject subject,
+                          CallbackHandler callbackHandler,
+                          Map<String, ?> sharedState,
+                          Map<String, ?> options) {
       this.subject = subject;
       this.callbackHandler = callbackHandler;
 
@@ -69,12 +72,10 @@ public abstract class CertificateLoginModule extends PropertiesLoader implements
       callbacks[0] = new CertificateCallback();
       try {
          callbackHandler.handle(callbacks);
-      }
-      catch (IOException ioe) {
+      } catch (IOException ioe) {
          throw new LoginException(ioe.getMessage());
-      }
-      catch (UnsupportedCallbackException uce) {
-         throw new LoginException(uce.getMessage() + " Unable to obtain client certificates.");
+      } catch (UnsupportedCallbackException uce) {
+         throw new LoginException("Unable to obtain client certificates: " + uce.getMessage());
       }
       certificates = ((CertificateCallback) callbacks[0]).getCertificates();
 
@@ -153,7 +154,7 @@ public abstract class CertificateLoginModule extends PropertiesLoader implements
     * @param certs The distinguished name.
     * @return The unique name if the certificate is recognized, null otherwise.
     */
-   protected abstract String getUserNameForCertificates(final X509Certificate[] certs) throws LoginException;
+   protected abstract String getUserNameForCertificates(X509Certificate[] certs) throws LoginException;
 
    /**
     * Should return a set of the roles this user belongs to. The roles
@@ -163,13 +164,12 @@ public abstract class CertificateLoginModule extends PropertiesLoader implements
     *                 getUserNameForDn returned for the user's DN.
     * @return A Set of the names of the roles this user belongs to.
     */
-   protected abstract Set<String> getUserRoles(final String username) throws LoginException;
+   protected abstract Set<String> getUserRoles(String username) throws LoginException;
 
    protected String getDistinguishedName(final X509Certificate[] certs) {
       if (certs != null && certs.length > 0 && certs[0] != null) {
          return certs[0].getSubjectDN().getName();
-      }
-      else {
+      } else {
          return null;
       }
    }

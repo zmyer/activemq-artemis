@@ -47,11 +47,10 @@ public class QueueTest extends JMSTestCase {
          conn.start();
 
          p.send(s.createTextMessage("payload"));
-         TextMessage m = (TextMessage) c.receive();
+         TextMessage m = (TextMessage) c.receive(5000);
 
          ProxyAssertSupport.assertEquals("payload", m.getText());
-      }
-      finally {
+      } finally {
          if (conn != null) {
             conn.close();
          }
@@ -157,8 +156,7 @@ public class QueueTest extends JMSTestCase {
             s2.commit();
 
             checkEmpty(queue1);
-         }
-         finally {
+         } finally {
             if (conn1 != null) {
                conn1.close();
             }

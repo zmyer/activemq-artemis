@@ -18,26 +18,42 @@ package org.apache.activemq.artemis.core.io.buffer;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.LockSupport;
 
+import io.netty.buffer.Unpooled;
 import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
-import org.apache.activemq.artemis.api.core.ActiveMQBuffers;
 import org.apache.activemq.artemis.api.core.ActiveMQInterruptedException;
+import org.apache.activemq.artemis.core.buffers.impl.ChannelBufferWrapper;
 import org.apache.activemq.artemis.core.io.IOCallback;
 import org.apache.activemq.artemis.core.journal.EncodingSupport;
-import org.apache.activemq.artemis.core.journal.impl.dataformat.ByteArrayEncoding;
 import org.apache.activemq.artemis.journal.ActiveMQJournalLogger;
+import org.apache.activemq.artemis.utils.critical.CriticalAnalyzer;
+import org.apache.activemq.artemis.utils.critical.CriticalComponentImpl;
+import org.jboss.logging.Logger;
 
-public class TimedBuffer {
+public final class TimedBuffer extends CriticalComponentImpl {
+
+   protected static final int CRITICAL_PATHS = 6;
+   protected static final int CRITICAL_PATH_FLUSH = 0;
+   protected static final int CRITICAL_PATH_STOP = 1;
+   protected static final int CRITICAL_PATH_START = 2;
+   protected static final int CRITICAL_PATH_CHECK_SIZE = 3;
+   protected static final int CRITICAL_PATH_ADD_BYTES = 4;
+   protected static final int CRITICAL_PATH_SET_OBSERVER = 5;
+
+   private static final Logger logger = Logger.getLogger(TimedBuffer.class);
+
+   private static final double MAX_TIMEOUT_ERROR_FACTOR = 1.5;
+
    // Constants -----------------------------------------------------
 
    // The number of tries on sleep before switching to spin
-   public static final int MAX_CHECKS_ON_SLEEP = 20;
+   private static final int MAX_CHECKS_ON_SLEEP = 20;
 
    // Attributes ----------------------------------------------------
 
@@ -48,7 +64,7 @@ public class TimedBuffer {
    // prevent that
    private final Semaphore spinLimiter = new Semaphore(1);
 
-   private CheckTimer timerRunnable = new CheckTimer();
+   private CheckTimer timerRunnable;
 
    private final int bufferSize;
 
@@ -58,7 +74,7 @@ public class TimedBuffer {
 
    private List<IOCallback> callbacks;
 
-   private volatile int timeout;
+   private final int timeout;
 
    // used to measure sync requests. When a sync is requested, it shouldn't take more than timeout to happen
    private volatile boolean pendingSync = false;
@@ -84,8 +100,6 @@ public class TimedBuffer {
 
    private TimerTask logRatesTimerTask;
 
-   private boolean useSleep = true;
-
    // no need to be volatile as every access is synchronized
    private boolean spinning = false;
 
@@ -95,7 +109,8 @@ public class TimedBuffer {
 
    // Public --------------------------------------------------------
 
-   public TimedBuffer(final int size, final int timeout, final boolean logRates) {
+   public TimedBuffer(CriticalAnalyzer analyzer, final int size, final int timeout, final boolean logRates) {
+      super(analyzer, CRITICAL_PATHS);
       bufferSize = size;
 
       this.logRates = logRates;
@@ -105,7 +120,10 @@ public class TimedBuffer {
       }
       // Setting the interval for nano-sleeps
 
-      buffer = ActiveMQBuffers.fixedBuffer(bufferSize);
+      //prefer off heap buffer to allow further humongous allocations and reduce GC overhead
+      //NOTE: it is used ByteBuffer::allocateDirect instead of Unpooled::directBuffer, because the latter could allocate
+      //direct ByteBuffers with no Cleaner!
+      buffer = new ChannelBufferWrapper(Unpooled.wrappedBuffer(ByteBuffer.allocateDirect(size)));
 
       buffer.clear();
 
@@ -116,78 +134,100 @@ public class TimedBuffer {
       this.timeout = timeout;
    }
 
-   // for Debug purposes
-   public synchronized boolean isUseSleep() {
-      return useSleep;
-   }
-
-   public synchronized void setUseSleep(boolean useSleep) {
-      this.useSleep = useSleep;
-   }
-
-   public synchronized void start() {
-      if (started) {
-         return;
-      }
-
-      // Need to start with the spin limiter acquired
+   public void start() {
+      enterCritical(CRITICAL_PATH_START);
       try {
-         spinLimiter.acquire();
+         synchronized (this) {
+            if (started) {
+               return;
+            }
+
+            // Need to start with the spin limiter acquired
+            try {
+               spinLimiter.acquire();
+            } catch (InterruptedException e) {
+               throw new ActiveMQInterruptedException(e);
+            }
+
+            timerRunnable = new CheckTimer();
+
+            timerThread = new Thread(timerRunnable, "activemq-buffer-timeout");
+
+            timerThread.start();
+
+            if (logRates) {
+               logRatesTimerTask = new LogRatesTimerTask();
+
+               logRatesTimer.scheduleAtFixedRate(logRatesTimerTask, 2000, 2000);
+            }
+
+            started = true;
+         }
+      } finally {
+         leaveCritical(CRITICAL_PATH_START);
       }
-      catch (InterruptedException e) {
-         throw new ActiveMQInterruptedException(e);
-      }
-
-      timerRunnable = new CheckTimer();
-
-      timerThread = new Thread(timerRunnable, "activemq-buffer-timeout");
-
-      timerThread.start();
-
-      if (logRates) {
-         logRatesTimerTask = new LogRatesTimerTask();
-
-         logRatesTimer.scheduleAtFixedRate(logRatesTimerTask, 2000, 2000);
-      }
-
-      started = true;
    }
 
    public void stop() {
-      if (!started) {
-         return;
-      }
+      enterCritical(CRITICAL_PATH_STOP);
+      Thread localTimer = null;
+      try {
+         // add critical analyzer here.... <<<<
+         synchronized (this) {
+            try {
+               if (!started) {
+                  return;
+               }
 
-      flush();
+               flush();
 
-      bufferObserver = null;
+               bufferObserver = null;
 
-      timerRunnable.close();
+               timerRunnable.close();
 
-      spinLimiter.release();
+               spinLimiter.release();
 
-      if (logRates) {
-         logRatesTimerTask.cancel();
-      }
+               if (logRates) {
+                  logRatesTimerTask.cancel();
+               }
 
-      while (timerThread.isAlive()) {
-         try {
-            timerThread.join();
+               localTimer = timerThread;
+               timerThread = null;
+
+            } finally {
+               started = false;
+            }
          }
-         catch (InterruptedException e) {
-            throw new ActiveMQInterruptedException(e);
+         if (localTimer != null) {
+            while (localTimer.isAlive()) {
+               try {
+                  localTimer.join(1000);
+                  if (localTimer.isAlive()) {
+                     localTimer.interrupt();
+                  }
+               } catch (InterruptedException e) {
+                  throw new ActiveMQInterruptedException(e);
+               }
+            }
          }
+      } finally {
+         leaveCritical(CRITICAL_PATH_STOP);
       }
-
-      started = false;
    }
 
-   public synchronized void setObserver(final TimedBufferObserver observer) {
-      if (bufferObserver != null) {
-         flush();
-      }
+   public void setObserver(final TimedBufferObserver observer) {
+      enterCritical(CRITICAL_PATH_SET_OBSERVER);
+      try {
+         synchronized (this) {
+            if (bufferObserver != null) {
+               flush();
+            }
 
-      bufferObserver = observer;
+            bufferObserver = observer;
+         }
+      } finally {
+         leaveCritical(CRITICAL_PATH_SET_OBSERVER);
+      }
    }
 
    /**
@@ -195,113 +235,157 @@ public class TimedBuffer {
     *
     * @param sizeChecked
     */
-   public synchronized boolean checkSize(final int sizeChecked) {
-      if (!started) {
-         throw new IllegalStateException("TimedBuffer is not started");
-      }
+   public boolean checkSize(final int sizeChecked) {
+      enterCritical(CRITICAL_PATH_CHECK_SIZE);
+      try {
+         synchronized (this) {
+            if (!started) {
+               throw new IllegalStateException("TimedBuffer is not started");
+            }
 
-      if (sizeChecked > bufferSize) {
-         throw new IllegalStateException("Can't write records bigger than the bufferSize(" + bufferSize +
-                                            ") on the journal");
-      }
+            if (sizeChecked > bufferSize) {
+               throw new IllegalStateException("Can't write records bigger than the bufferSize(" + bufferSize + ") on the journal");
+            }
 
-      if (bufferLimit == 0 || buffer.writerIndex() + sizeChecked > bufferLimit) {
-         // Either there is not enough space left in the buffer for the sized record
-         // Or a flush has just been performed and we need to re-calcualate bufferLimit
+            if (bufferLimit == 0 || buffer.writerIndex() + sizeChecked > bufferLimit) {
+               // Either there is not enough space left in the buffer for the sized record
+               // Or a flush has just been performed and we need to re-calculate bufferLimit
 
-         flush();
+               flush();
 
-         delayFlush = true;
+               delayFlush = true;
 
-         final int remainingInFile = bufferObserver.getRemainingBytes();
+               final int remainingInFile = bufferObserver.getRemainingBytes();
 
-         if (sizeChecked > remainingInFile) {
-            return false;
+               if (sizeChecked > remainingInFile) {
+                  return false;
+               } else {
+                  // There is enough space in the file for this size
+
+                  // Need to re-calculate buffer limit
+
+                  bufferLimit = Math.min(remainingInFile, bufferSize);
+
+                  return true;
+               }
+            } else {
+               delayFlush = true;
+
+               return true;
+            }
          }
-         else {
-            // There is enough space in the file for this size
-
-            // Need to re-calculate buffer limit
-
-            bufferLimit = Math.min(remainingInFile, bufferSize);
-
-            return true;
-         }
-      }
-      else {
-         delayFlush = true;
-
-         return true;
+      } finally {
+         leaveCritical(CRITICAL_PATH_CHECK_SIZE);
       }
    }
 
-   public synchronized void addBytes(final ActiveMQBuffer bytes, final boolean sync, final IOCallback callback) {
-      addBytes(new ByteArrayEncoding(bytes.toByteBuffer().array()), sync, callback);
+   public void addBytes(final ActiveMQBuffer bytes, final boolean sync, final IOCallback callback) {
+      enterCritical(CRITICAL_PATH_ADD_BYTES);
+      try {
+         synchronized (this) {
+            if (!started) {
+               throw new IllegalStateException("TimedBuffer is not started");
+            }
+
+            delayFlush = false;
+
+            //it doesn't modify the reader index of bytes as in the original version
+            final int readableBytes = bytes.readableBytes();
+            final int writerIndex = buffer.writerIndex();
+            buffer.setBytes(writerIndex, bytes, bytes.readerIndex(), readableBytes);
+            buffer.writerIndex(writerIndex + readableBytes);
+
+            callbacks.add(callback);
+
+            if (sync) {
+               pendingSync = true;
+
+               startSpin();
+            }
+         }
+      } finally {
+         leaveCritical(CRITICAL_PATH_ADD_BYTES);
+      }
    }
 
-   public synchronized void addBytes(final EncodingSupport bytes, final boolean sync, final IOCallback callback) {
-      if (!started) {
-         throw new IllegalStateException("TimedBuffer is not started");
-      }
+   public void addBytes(final EncodingSupport bytes, final boolean sync, final IOCallback callback) {
+      enterCritical(CRITICAL_PATH_ADD_BYTES);
+      try {
+         synchronized (this) {
+            if (!started) {
+               throw new IllegalStateException("TimedBuffer is not started");
+            }
 
-      delayFlush = false;
+            delayFlush = false;
 
-      bytes.encode(buffer);
+            bytes.encode(buffer);
 
-      callbacks.add(callback);
+            callbacks.add(callback);
 
-      if (sync) {
-         pendingSync = true;
+            if (sync) {
+               pendingSync = true;
 
-         startSpin();
+               startSpin();
+            }
+         }
+      } finally {
+         leaveCritical(CRITICAL_PATH_ADD_BYTES);
       }
 
    }
 
    public void flush() {
-      flush(false);
+      flushBatch();
    }
 
    /**
-    * force means the Journal is moving to a new file. Any pending write need to be done immediately
-    * or data could be lost
+    * Attempts to flush if {@code !delayFlush} and {@code buffer} is filled by any data.
+    *
+    * @return {@code true} when are flushed any bytes, {@code false} otherwise
     */
-   public void flush(final boolean force) {
-      synchronized (this) {
-         if (!started) {
-            throw new IllegalStateException("TimedBuffer is not started");
-         }
-
-         if ((force || !delayFlush) && buffer.writerIndex() > 0) {
-            int pos = buffer.writerIndex();
-
-            if (logRates) {
-               bytesFlushed.addAndGet(pos);
+   public boolean flushBatch() {
+      enterCritical(CRITICAL_PATH_FLUSH);
+      try {
+         synchronized (this) {
+            if (!started) {
+               throw new IllegalStateException("TimedBuffer is not started");
             }
 
-            ByteBuffer bufferToFlush = bufferObserver.newBuffer(bufferSize, pos);
+            if (!delayFlush && buffer.writerIndex() > 0) {
+               int pos = buffer.writerIndex();
 
-            // Putting a byteArray on a native buffer is much faster, since it will do in a single native call.
-            // Using bufferToFlush.put(buffer) would make several append calls for each byte
-            // We also transfer the content of this buffer to the native file's buffer
+               if (logRates) {
+                  bytesFlushed.addAndGet(pos);
+               }
 
-            bufferToFlush.put(buffer.toByteBuffer().array(), 0, pos);
+               final ByteBuffer bufferToFlush = bufferObserver.newBuffer(bufferSize, pos);
+               //bufferObserver::newBuffer doesn't necessary return a buffer with limit == pos or limit == bufferSize!!
+               bufferToFlush.limit(pos);
+               //perform memcpy under the hood due to the off heap buffer
+               buffer.getBytes(0, bufferToFlush);
 
-            bufferObserver.flushBuffer(bufferToFlush, pendingSync, callbacks);
+               bufferObserver.flushBuffer(bufferToFlush, pendingSync, callbacks);
 
-            stopSpin();
+               stopSpin();
 
-            pendingSync = false;
+               pendingSync = false;
 
-            // swap the instance as the previous callback list is being used asynchronously
-            callbacks = new LinkedList<>();
+               // swap the instance as the previous callback list is being used asynchronously
+               callbacks = new ArrayList<>();
 
-            buffer.clear();
+               buffer.clear();
 
-            bufferLimit = 0;
+               bufferLimit = 0;
 
-            flushesDone.incrementAndGet();
+               flushesDone.incrementAndGet();
+
+               return pos > 0;
+            } else {
+               return false;
+            }
          }
+      } finally {
+         leaveCritical(CRITICAL_PATH_FLUSH);
       }
    }
 
@@ -360,14 +444,11 @@ public class TimedBuffer {
 
       int checks = 0;
       int failedChecks = 0;
-      long timeBefore = 0;
-
-      final int sleepMillis = timeout / 1000000; // truncates
-      final int sleepNanos = timeout % 1000000;
 
       @Override
       public void run() {
-         long lastFlushTime = 0;
+         long lastFlushTime = System.nanoTime();
+         boolean useSleep = true;
 
          while (!closed) {
             // We flush on the timer if there are pending syncs there and we've waited at least one
@@ -376,20 +457,28 @@ public class TimedBuffer {
             // On the timeout verification, notice that we ignore the timeout check if we are using sleep
 
             if (pendingSync) {
-               if (isUseSleep()) {
+               if (useSleep) {
                   // if using sleep, we will always flush
-                  flush();
                   lastFlushTime = System.nanoTime();
-               }
-               else if (bufferObserver != null && System.nanoTime() > lastFlushTime + timeout) {
+                  if (flushBatch()) {
+                     //it could wait until the timeout is expired
+                     final long timeFromTheLastFlush = System.nanoTime() - lastFlushTime;
+
+                     // example: Say the device took 20% of the time to write..
+                     //          We only need to wait 80% more..
+                     //          timeFromTheLastFlush would be the difference
+                     //          And if the device took more than that time, there's no need to wait at all.
+                     final long timeToSleep = timeout - timeFromTheLastFlush;
+                     if (timeToSleep > 0) {
+                        useSleep = sleepIfPossible(timeToSleep);
+                     }
+                  }
+               } else if (bufferObserver != null && System.nanoTime() - lastFlushTime > timeout) {
+                  lastFlushTime = System.nanoTime();
                   // if not using flush we will spin and do the time checks manually
                   flush();
-                  lastFlushTime = System.nanoTime();
                }
-
             }
-
-            sleepIfPossible();
 
             try {
                spinLimiter.acquire();
@@ -397,51 +486,42 @@ public class TimedBuffer {
                Thread.yield();
 
                spinLimiter.release();
-            }
-            catch (InterruptedException e) {
+            } catch (InterruptedException e) {
                throw new ActiveMQInterruptedException(e);
             }
          }
       }
 
       /**
-       * We will attempt to use sleep only if the system supports nano-sleep
+       * We will attempt to use sleep only if the system supports nano-sleep.
        * we will on that case verify up to MAX_CHECKS if nano sleep is behaving well.
        * if more than 50% of the checks have failed we will cancel the sleep and just use regular spin
        */
-      private void sleepIfPossible() {
-         if (isUseSleep()) {
+      private boolean sleepIfPossible(long nanosToSleep) {
+         boolean useSleep = true;
+         try {
+            final long startSleep = System.nanoTime();
+            sleep(nanosToSleep);
             if (checks < MAX_CHECKS_ON_SLEEP) {
-               timeBefore = System.nanoTime();
-            }
-
-            try {
-               sleep(sleepMillis, sleepNanos);
-            }
-            catch (InterruptedException e) {
-               throw new ActiveMQInterruptedException(e);
-            }
-            catch (Exception e) {
-               setUseSleep(false);
-               ActiveMQJournalLogger.LOGGER.warn(e.getMessage() + ", disabling sleep on TimedBuffer, using spin now", e);
-            }
-
-            if (checks < MAX_CHECKS_ON_SLEEP) {
-               long realTimeSleep = System.nanoTime() - timeBefore;
-
+               final long elapsedSleep = System.nanoTime() - startSleep;
                // I'm letting the real time to be up to 50% than the requested sleep.
-               if (realTimeSleep > timeout * 1.5) {
+               if (elapsedSleep > (nanosToSleep * MAX_TIMEOUT_ERROR_FACTOR)) {
                   failedChecks++;
                }
 
                if (++checks >= MAX_CHECKS_ON_SLEEP) {
                   if (failedChecks > MAX_CHECKS_ON_SLEEP * 0.5) {
-                     ActiveMQJournalLogger.LOGGER.debug("Thread.sleep with nano seconds is not working as expected, Your kernel possibly doesn't support real time. the Journal TimedBuffer will spin for timeouts");
-                     setUseSleep(false);
+                     logger.debug("LockSupport.parkNanos with nano seconds is not working as expected, Your kernel possibly doesn't support real time. the Journal TimedBuffer will spin for timeouts");
+                     useSleep = false;
                   }
                }
             }
+         } catch (Exception e) {
+            useSleep = false;
+            // I don't think we need to individualize a logger code here, this is unlikely to happen anyways
+            logger.warn(e.getMessage() + ", disabling sleep on TimedBuffer, using spin now", e);
          }
+         return useSleep;
       }
 
       public void close() {
@@ -452,12 +532,11 @@ public class TimedBuffer {
    /**
     * Sub classes (tests basically) can use this to override how the sleep is being done
     *
-    * @param sleepMillis
     * @param sleepNanos
     * @throws InterruptedException
     */
-   protected void sleep(int sleepMillis, int sleepNanos) throws InterruptedException {
-      Thread.sleep(sleepMillis, sleepNanos);
+   protected void sleep(long sleepNanos) {
+      LockSupport.parkNanos(sleepNanos);
    }
 
    /**
@@ -469,8 +548,7 @@ public class TimedBuffer {
             // We acquire the spinLimiter semaphore - this prevents the timer flush thread unnecessarily spinning
             // when the buffer is inactive
             spinLimiter.acquire();
-         }
-         catch (InterruptedException e) {
+         } catch (InterruptedException e) {
             throw new ActiveMQInterruptedException(e);
          }
 

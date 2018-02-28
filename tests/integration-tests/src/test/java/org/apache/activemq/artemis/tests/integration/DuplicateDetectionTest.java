@@ -33,7 +33,7 @@ import org.apache.activemq.artemis.api.core.client.ClientSession;
 import org.apache.activemq.artemis.api.core.client.ClientSessionFactory;
 import org.apache.activemq.artemis.api.core.client.ServerLocator;
 import org.apache.activemq.artemis.core.config.Configuration;
-import org.apache.activemq.artemis.core.message.impl.MessageImpl;
+
 import org.apache.activemq.artemis.core.postoffice.impl.PostOfficeImpl;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.core.transaction.impl.XidImpl;
@@ -169,8 +169,7 @@ public class DuplicateDetectionTest extends ActiveMQTestBase {
 
          if (temporary) {
             session.createTemporaryQueue(addressName, queueName, null);
-         }
-         else {
+         } else {
             session.createQueue(addressName, queueName, null, true);
          }
 
@@ -192,13 +191,13 @@ public class DuplicateDetectionTest extends ActiveMQTestBase {
          Assert.assertNull(message2);
 
          message = createMessage(session, 3);
-         message.putBytesProperty(MessageImpl.HDR_BRIDGE_DUPLICATE_ID, dupID.getData());
+         message.putBytesProperty(Message.HDR_BRIDGE_DUPLICATE_ID, dupID.getData());
          producer.send(message);
          message2 = consumer.receive(1000);
          Assert.assertEquals(3, message2.getObjectProperty(propKey));
 
          message = createMessage(session, 4);
-         message.putBytesProperty(MessageImpl.HDR_BRIDGE_DUPLICATE_ID, dupID.getData());
+         message.putBytesProperty(Message.HDR_BRIDGE_DUPLICATE_ID, dupID.getData());
          producer.send(message);
          message2 = consumer.receiveImmediate();
          Assert.assertNull(message2);
@@ -277,8 +276,7 @@ public class DuplicateDetectionTest extends ActiveMQTestBase {
       try {
          session.commit();
          Assert.fail("Exception expected");
-      }
-      catch (ActiveMQException expected) {
+      } catch (ActiveMQException expected) {
 
       }
 
@@ -601,8 +599,7 @@ public class DuplicateDetectionTest extends ActiveMQTestBase {
 
       try {
          session.commit();
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          session.rollback();
       }
 
@@ -710,11 +707,9 @@ public class DuplicateDetectionTest extends ActiveMQTestBase {
 
       try {
          session.commit();
-      }
-      catch (ActiveMQDuplicateIdException die) {
+      } catch (ActiveMQDuplicateIdException die) {
          session.rollback();
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          fail("Invalid Exception type:" + e.getType());
       }
 
@@ -1136,8 +1131,7 @@ public class DuplicateDetectionTest extends ActiveMQTestBase {
       try {
          session.prepare(xid2);
          fail("Should throw an exception here!");
-      }
-      catch (XAException expected) {
+      } catch (XAException expected) {
          assertTrue(expected.getCause().toString().contains("DUPLICATE_ID_REJECTED"));
       }
 
@@ -1522,11 +1516,9 @@ public class DuplicateDetectionTest extends ActiveMQTestBase {
 
       try {
          session.commit();
-      }
-      catch (ActiveMQDuplicateIdException die) {
+      } catch (ActiveMQDuplicateIdException die) {
          session.rollback();
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          fail("Invalid Exception type:" + e.getType());
       }
 
@@ -1539,11 +1531,9 @@ public class DuplicateDetectionTest extends ActiveMQTestBase {
 
       try {
          session.commit();
-      }
-      catch (ActiveMQDuplicateIdException die) {
+      } catch (ActiveMQDuplicateIdException die) {
          session.rollback();
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          fail("Invalid Exception type:" + e.getType());
       }
 
@@ -1789,8 +1779,7 @@ public class DuplicateDetectionTest extends ActiveMQTestBase {
       try {
          session.prepare(xid2);
          fail("Should throw an exception here!");
-      }
-      catch (XAException expected) {
+      } catch (XAException expected) {
       }
 
       session.rollback(xid2);

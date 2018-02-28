@@ -16,25 +16,26 @@
  */
 package org.apache.activemq.artemis.tests.integration.openwire;
 
-import static org.junit.Assert.assertEquals;
-
+import org.apache.activemq.artemis.core.config.WildcardConfiguration;
 import org.apache.activemq.artemis.core.protocol.openwire.util.OpenWireUtil;
 import org.junit.Test;
+
+import static org.junit.Assert.assertEquals;
 
 public class OpenWireUtilTest {
 
    @Test
    public void testWildcardConversion() throws Exception {
       String amqTarget = "TEST.ONE.>";
-      String coreTarget = OpenWireUtil.convertWildcard(amqTarget);
+      String coreTarget = OpenWireUtil.OPENWIRE_WILDCARD.convert(amqTarget, new WildcardConfiguration());
       assertEquals("TEST.ONE.#", coreTarget);
 
       amqTarget = "TEST.*.ONE";
-      coreTarget = OpenWireUtil.convertWildcard(amqTarget);
+      coreTarget = OpenWireUtil.OPENWIRE_WILDCARD.convert(amqTarget, new WildcardConfiguration());
       assertEquals("TEST.*.ONE", coreTarget);
 
       amqTarget = "a.*.>.>";
-      coreTarget = OpenWireUtil.convertWildcard(amqTarget);
-      assertEquals("a.*.#", coreTarget);
+      coreTarget = OpenWireUtil.OPENWIRE_WILDCARD.convert(amqTarget, new WildcardConfiguration());
+      assertEquals("a.*.#.#", coreTarget);
    }
 }

@@ -38,7 +38,7 @@ public class AcceptorControlUsingCoreTest extends AcceptorControlTest {
    protected AcceptorControl createManagementControl(final String name) throws Exception {
       return new AcceptorControl() {
 
-         private final CoreMessagingProxy proxy = new CoreMessagingProxy(addServerLocator(createInVMNonHALocator()), ResourceNames.CORE_ACCEPTOR + name);
+         private final CoreMessagingProxy proxy = new CoreMessagingProxy(addServerLocator(createInVMNonHALocator()), ResourceNames.ACCEPTOR + name);
 
          @Override
          public String getFactoryClassName() {
@@ -60,8 +60,7 @@ public class AcceptorControlUsingCoreTest extends AcceptorControlTest {
          public void reload() {
             try {
                proxy.invokeOperation("reload");
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                e.printStackTrace();
             }
          }

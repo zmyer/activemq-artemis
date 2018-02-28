@@ -30,6 +30,9 @@ import java.io.File;
 import java.io.Serializable;
 import java.io.StringReader;
 
+import org.apache.activemq.artemis.api.core.SimpleString;
+import org.apache.activemq.artemis.api.core.RoutingType;
+import org.apache.activemq.artemis.core.server.impl.AddressInfo;
 import org.apache.activemq.artemis.jms.client.ActiveMQDestination;
 import org.apache.activemq.artemis.jms.client.ActiveMQJMSConnectionFactory;
 import org.apache.activemq.artemis.rest.HttpHeaderProperty;
@@ -39,17 +42,22 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
+import static org.apache.activemq.artemis.jms.client.ActiveMQDestination.QUEUE_QUALIFIED_PREFIX;
+import static org.apache.activemq.artemis.jms.client.ActiveMQDestination.TOPIC_QUALIFIED_PREFIX;
+
 public class RestDeserializationTest extends RestTestBase {
 
    private RestAMQConnection restConnection;
 
    @Before
+   @Override
    public void setUp() throws Exception {
       super.setUp();
       createJettyServer("localhost", 12345);
    }
 
    @After
+   @Override
    public void tearDown() throws Exception {
       if (restConnection != null) {
          restConnection.close();
@@ -77,6 +85,9 @@ public class RestDeserializationTest extends RestTestBase {
 
    @Test
    public void testWithoutBlackWhiteListTopic() throws Exception {
+
+      jmsServer.getActiveMQServer().addAddressInfo(new AddressInfo(SimpleString.toSimpleString("ordersTopic"), RoutingType.MULTICAST));
+
       deployAndconfigureRESTService("rest-test.war");
 
       RestMessageContext topicContext = restConnection.createTopicContext("ordersTopic");
@@ -110,8 +121,7 @@ public class RestDeserializationTest extends RestTestBase {
       try {
          String received = restReceiveQueueMessage("orders");
          fail("Object should be rejected by blacklist, but " + received);
-      }
-      catch (IllegalStateException e) {
+      } catch (IllegalStateException e) {
          String error = e.getMessage();
          assertTrue(error, error.contains("ClassNotFoundException"));
       }
@@ -134,8 +144,7 @@ public class RestDeserializationTest extends RestTestBase {
       try {
          String received = topicContext.pullMessage();
          fail("object should have been rejected but: " + received);
-      }
-      catch (IllegalStateException e) {
+      } catch (IllegalStateException e) {
          String error = e.getMessage();
          assertTrue(error, error.contains("ClassNotFoundException"));
       }
@@ -169,12 +178,11 @@ public class RestDeserializationTest extends RestTestBase {
       ConnectionFactory factory = new ActiveMQJMSConnectionFactory("tcp://localhost:61616");
       String jmsDest;
       if (isQueue) {
-         jmsDest = "jms.queue." + destName;
+         jmsDest = QUEUE_QUALIFIED_PREFIX + destName;
+      } else {
+         jmsDest = TOPIC_QUALIFIED_PREFIX + destName;
       }
-      else {
-         jmsDest = "jms.topic." + destName;
-      }
-      Destination destination = ActiveMQDestination.fromAddress(jmsDest);
+      Destination destination = ActiveMQDestination.fromPrefixedName(jmsDest);
 
       Connection conn = factory.createConnection();
       try {
@@ -184,8 +192,7 @@ public class RestDeserializationTest extends RestTestBase {
          message.setStringProperty(HttpHeaderProperty.CONTENT_TYPE, "application/xml");
          message.setObject(value);
          producer.send(message);
-      }
-      finally {
+      } finally {
          conn.close();
       }
    }

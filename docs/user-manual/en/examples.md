@@ -19,7 +19,7 @@ The examples are available in both the binary and source distribution under the 
 
 A set of Java EE examples are also provided which need WildFly installed to be able to run.
 
-Runnning the Examples
+Running the Examples
 =====================
 
 To run any example, simply `cd` into the appropriate example directory and type `mvn verify` or `mvn install` (For 
@@ -246,7 +246,7 @@ Browser
 The `browser` example shows you how to use a JMS `QueueBrowser` with
 Apache ActiveMQ Artemis.
 
-Queues are a standard part of JMS, please consult the JMS 1.1
+Queues are a standard part of JMS, please consult the JMS 2.0
 specification for full details.
 
 A `QueueBrowser` is used to look at messages on the queue without
@@ -289,7 +289,7 @@ consumer.
 Clustered Queue
 ---------------
 
-The `clustered-queue` example demonstrates a JMS queue deployed on two
+The `clustered-queue` example demonstrates a queue deployed on two
 different nodes. The two nodes are configured to form a cluster. We then
 create a consumer for the queue on each node, and we create a producer
 on only one of the nodes. We then send some messages via the producer,
@@ -403,14 +403,14 @@ messages.
 Embedded
 --------
 
-The `embedded` example shows how to embed JMS within your own code using
+The `embedded` example shows how to embed a broker within your own code using
 POJO instantiation and no config files.
 
 Embedded Simple
 ---------------
 
-The `embedded` example shows how to embed JMS within your own code using
-regular Apache ActiveMQ Artemis XML files.
+The `embedded-simple` example shows how to embed a broker within your own code
+using regular Apache ActiveMQ Artemis XML files.
 
 Message Expiration
 ------------------
@@ -481,14 +481,14 @@ of the Broker receiving it.
 JMS Bridge
 ----------
 
-The `jms-brigde` example shows how to setup a bridge between two
+The `jms-bridge` example shows how to setup a bridge between two
 standalone Apache ActiveMQ Artemis servers.
 
 JMS Context
 -----------
 
-The `jms-context` example shows how to send and receive a message to a
-JMS Queue using Apache ActiveMQ Artemis by using a JMS Context.
+The `jms-context` example shows how to send and receive a message to/from an
+address/queue using Apache ActiveMQ Artemis by using a JMS Context.
 
 A JMSContext is part of JMS 2.0 and combines the JMS Connection and
 Session Objects into a simple Interface.
@@ -550,7 +550,7 @@ Message Counter
 ---------------
 
 The `message-counters` example shows you how to use message counters to
-obtain message information for a JMS queue.
+obtain message information for a queue.
 
 Message Group
 -------------
@@ -676,7 +676,7 @@ send messages.
 Queue
 -----
 
-A simple example demonstrating a JMS queue.
+A simple example demonstrating a queue.
 
 Message Redistribution
 ----------------------
@@ -741,7 +741,7 @@ Scheduled Message
 -----------------
 
 The `scheduled-message` example shows you how to send a scheduled
-message to a JMS Queue with Apache ActiveMQ Artemis. Scheduled messages won't get
+message to an address/queue with Apache ActiveMQ Artemis. Scheduled messages won't get
 delivered until a specified time in the future.
 
 Security
@@ -757,6 +757,12 @@ The `send-acknowledgements` example shows you how to use Apache ActiveMQ Artemis
 advanced *asynchronous send acknowledgements* feature to obtain
 acknowledgement from the server that sends have been received and
 processed in a separate stream to the sent messages.
+
+Slow Consumer
+-------------
+
+The `slow-consumer` example shows you how to detect slow consumers and configure
+a slow consumer policy in Apache ActiveMQ Artemis's
 
 Spring Integration
 ------------------
@@ -897,14 +903,3 @@ XA Send
 
 The `xa-send` example shows you how message sending behaves in an XA
 transaction in Apache ActiveMQ Artemis.
-Core API Examples
-=================
-
-To run a core example, simply `cd` into the appropriate example
-directory and type `ant`
-
-Embedded
---------
-
-The `embedded` example shows how to embed the Apache ActiveMQ Artemis server within
-your own code.

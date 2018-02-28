@@ -159,12 +159,14 @@ public class ClusterControl implements AutoCloseable {
 
    public Vote sendQuorumVote(SimpleString handler, Vote vote) {
       try {
+         ActiveMQServerLogger.LOGGER.sendingQuorumVoteRequest(getSessionFactory().getConnection().getRemoteAddress(), vote.toString());
          QuorumVoteReplyMessage replyMessage = (QuorumVoteReplyMessage) clusterChannel.sendBlocking(new QuorumVoteMessage(handler, vote), PacketImpl.QUORUM_VOTE_REPLY);
          QuorumVoteHandler voteHandler = server.getClusterManager().getQuorumManager().getVoteHandler(replyMessage.getHandler());
          replyMessage.decodeRest(voteHandler);
-         return replyMessage.getVote();
-      }
-      catch (ActiveMQException e) {
+         Vote voteResponse = replyMessage.getVote();
+         ActiveMQServerLogger.LOGGER.receivedQuorumVoteResponse(getSessionFactory().getConnection().getRemoteAddress(), voteResponse.toString());
+         return voteResponse;
+      } catch (ActiveMQException e) {
          return null;
       }
    }
@@ -178,8 +180,7 @@ public class ClusterControl implements AutoCloseable {
       BackupResponseMessage packet;
       try {
          packet = (BackupResponseMessage) clusterChannel.sendBlocking(backupRequestMessage, PacketImpl.BACKUP_REQUEST_RESPONSE);
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          return false;
       }
       return packet.isBackupStarted();

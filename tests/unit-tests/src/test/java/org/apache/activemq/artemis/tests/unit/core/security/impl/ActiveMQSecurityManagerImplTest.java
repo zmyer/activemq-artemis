@@ -16,19 +16,16 @@
  */
 package org.apache.activemq.artemis.tests.unit.core.security.impl;
 
-import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
-import org.junit.Before;
-import org.junit.After;
-
-import org.junit.Test;
-
 import java.util.HashSet;
-
-import org.junit.Assert;
 
 import org.apache.activemq.artemis.core.security.CheckType;
 import org.apache.activemq.artemis.core.security.Role;
 import org.apache.activemq.artemis.spi.core.security.ActiveMQSecurityManagerImpl;
+import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
+import org.junit.After;
+import org.junit.Assert;
+import org.junit.Before;
+import org.junit.Test;
 
 /**
  * tests ActiveMQSecurityManagerImpl
@@ -62,22 +59,22 @@ public class ActiveMQSecurityManagerImplTest extends ActiveMQTestBase {
       Assert.assertTrue(securityManager.validateUser("guest", "password"));
       Assert.assertFalse(securityManager.validateUser(null, "wrongpass"));
       HashSet<Role> roles = new HashSet<>();
-      roles.add(new Role("guest", true, true, true, true, true, true, true, true));
+      roles.add(new Role("guest", true, true, true, true, true, true, true, true, true, true));
       Assert.assertTrue(securityManager.validateUserAndRole(null, null, roles, CheckType.CREATE_DURABLE_QUEUE));
       Assert.assertTrue(securityManager.validateUserAndRole(null, null, roles, CheckType.SEND));
       Assert.assertTrue(securityManager.validateUserAndRole(null, null, roles, CheckType.CONSUME));
       roles = new HashSet<>();
-      roles.add(new Role("guest", true, true, false, true, true, true, true, true));
+      roles.add(new Role("guest", true, true, false, true, true, true, true, true, true, true));
       Assert.assertFalse(securityManager.validateUserAndRole(null, null, roles, CheckType.CREATE_DURABLE_QUEUE));
       Assert.assertTrue(securityManager.validateUserAndRole(null, null, roles, CheckType.SEND));
       Assert.assertTrue(securityManager.validateUserAndRole(null, null, roles, CheckType.CONSUME));
       roles = new HashSet<>();
-      roles.add(new Role("guest", true, false, false, true, true, true, true, true));
+      roles.add(new Role("guest", true, false, false, true, true, true, true, true, true, true));
       Assert.assertFalse(securityManager.validateUserAndRole(null, null, roles, CheckType.CREATE_DURABLE_QUEUE));
       Assert.assertTrue(securityManager.validateUserAndRole(null, null, roles, CheckType.SEND));
       Assert.assertFalse(securityManager.validateUserAndRole(null, null, roles, CheckType.CONSUME));
       roles = new HashSet<>();
-      roles.add(new Role("guest", false, false, false, true, true, true, true, true));
+      roles.add(new Role("guest", false, false, false, true, true, true, true, true, true, true));
       Assert.assertFalse(securityManager.validateUserAndRole(null, null, roles, CheckType.CREATE_DURABLE_QUEUE));
       Assert.assertFalse(securityManager.validateUserAndRole(null, null, roles, CheckType.SEND));
       Assert.assertFalse(securityManager.validateUserAndRole(null, null, roles, CheckType.CONSUME));
@@ -92,15 +89,13 @@ public class ActiveMQSecurityManagerImplTest extends ActiveMQTestBase {
       try {
          securityManager.getConfiguration().addUser("newuser2", null);
          Assert.fail("password cannot be null");
-      }
-      catch (IllegalArgumentException e) {
+      } catch (IllegalArgumentException e) {
          // pass
       }
       try {
          securityManager.getConfiguration().addUser(null, "newpassword2");
          Assert.fail("password cannot be null");
-      }
-      catch (IllegalArgumentException e) {
+      } catch (IllegalArgumentException e) {
          // pass
       }
    }
@@ -129,19 +124,19 @@ public class ActiveMQSecurityManagerImplTest extends ActiveMQTestBase {
       securityManager.getConfiguration().addRole("newuser1", "role3");
       securityManager.getConfiguration().addRole("newuser1", "role4");
       HashSet<Role> roles = new HashSet<>();
-      roles.add(new Role("role1", true, true, true, true, true, true, true, true));
+      roles.add(new Role("role1", true, true, true, true, true, true, true, true, true, true));
       Assert.assertTrue(securityManager.validateUserAndRole("newuser1", "newpassword1", roles, CheckType.SEND));
       roles = new HashSet<>();
-      roles.add(new Role("role2", true, true, true, true, true, true, true, true));
+      roles.add(new Role("role2", true, true, true, true, true, true, true, true, true, true));
       Assert.assertTrue(securityManager.validateUserAndRole("newuser1", "newpassword1", roles, CheckType.SEND));
       roles = new HashSet<>();
-      roles.add(new Role("role3", true, true, true, true, true, true, true, true));
+      roles.add(new Role("role3", true, true, true, true, true, true, true, true, true, true));
       Assert.assertTrue(securityManager.validateUserAndRole("newuser1", "newpassword1", roles, CheckType.SEND));
       roles = new HashSet<>();
-      roles.add(new Role("role4", true, true, true, true, true, true, true, true));
+      roles.add(new Role("role4", true, true, true, true, true, true, true, true, true, true));
       Assert.assertTrue(securityManager.validateUserAndRole("newuser1", "newpassword1", roles, CheckType.SEND));
       roles = new HashSet<>();
-      roles.add(new Role("role5", true, true, true, true, true, true, true, true));
+      roles.add(new Role("role5", true, true, true, true, true, true, true, true, true, true));
       Assert.assertFalse(securityManager.validateUserAndRole("newuser1", "newpassword1", roles, CheckType.SEND));
    }
 
@@ -155,19 +150,19 @@ public class ActiveMQSecurityManagerImplTest extends ActiveMQTestBase {
       securityManager.getConfiguration().removeRole("newuser1", "role2");
       securityManager.getConfiguration().removeRole("newuser1", "role4");
       HashSet<Role> roles = new HashSet<>();
-      roles.add(new Role("role1", true, true, true, true, true, true, true, true));
+      roles.add(new Role("role1", true, true, true, true, true, true, true, true, true, true));
       Assert.assertTrue(securityManager.validateUserAndRole("newuser1", "newpassword1", roles, CheckType.SEND));
       roles = new HashSet<>();
-      roles.add(new Role("role2", true, true, true, true, true, true, true, true));
+      roles.add(new Role("role2", true, true, true, true, true, true, true, true, true, true));
       Assert.assertFalse(securityManager.validateUserAndRole("newuser1", "newpassword1", roles, CheckType.SEND));
       roles = new HashSet<>();
-      roles.add(new Role("role3", true, true, true, true, true, true, true, true));
+      roles.add(new Role("role3", true, true, true, true, true, true, true, true, true, true));
       Assert.assertTrue(securityManager.validateUserAndRole("newuser1", "newpassword1", roles, CheckType.SEND));
       roles = new HashSet<>();
-      roles.add(new Role("role4", true, true, true, true, true, true, true, true));
+      roles.add(new Role("role4", true, true, true, true, true, true, true, true, true, true));
       Assert.assertFalse(securityManager.validateUserAndRole("newuser1", "newpassword1", roles, CheckType.SEND));
       roles = new HashSet<>();
-      roles.add(new Role("role5", true, true, true, true, true, true, true, true));
+      roles.add(new Role("role5", true, true, true, true, true, true, true, true, true, true));
       Assert.assertFalse(securityManager.validateUserAndRole("newuser1", "newpassword1", roles, CheckType.SEND));
    }
 }

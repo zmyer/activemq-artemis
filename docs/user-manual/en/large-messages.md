@@ -28,7 +28,8 @@ Large messages are stored on a disk directory on the server side, as
 configured on the main configuration file.
 
 The configuration property `large-messages-directory` specifies where
-large messages are stored.
+large messages are stored.  For JDBC persistence the `large-message-table`
+should be configured.
 
     <configuration xmlns="urn:activemq"
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -38,17 +39,17 @@ large messages are stored.
     ...
     </configuration
 
-By default the large message directory is `data/largemessages`
+By default the large message directory is `data/largemessages` and `large-message-table` is
+configured as "LARGE_MESSAGE_TABLE".
 
-For the best performance we recommend large messages directory is stored
-on a different physical volume to the message journal or paging
-directory.
+For the best performance we recommend using file store with large messages directory stored
+on a different physical volume to the message journal or paging directory.
 
 ## Configuring Parameters
 
 Any message larger than a certain size is considered a large message.
 Large messages will be split up and sent in fragments. This is
-determined by the parameter `minLargeMessageSize`
+determined by the URL parameter `minLargeMessageSize`
 
 > **Note**
 >
@@ -61,67 +62,27 @@ determined by the parameter `minLargeMessageSize`
 
 The default value is 100KiB.
 
-### Using Core API
-
-If the Apache ActiveMQ Artemis Core API is used, the minimal large message size is
-specified by `ServerLocator.setMinLargeMessageSize`.
-
-``` java
-ServerLocator locator = ActiveMQClient.createServerLocatorWithoutHA(new TransportConfiguration(NettyConnectorFactory.class.getName()))
-
-locator.setMinLargeMessageSize(25 * 1024);
-
-ClientSessionFactory factory = ActiveMQClient.createClientSessionFactory();
-```
-
-[Configuring the transport directly from the client side](configuring-transports.md) will provide more information on how to instantiate the session
-factory.
-
-### Using JMS
-
-If JNDI is used to instantiate and look up the connection factory, the
-minimum large message size is configured in the JNDI context
-environment, e.g. `jndi.properties`. Here's a simple example using the
-"ConnectionFactory" connection factory which is available in the context
-by default:
-
-    java.naming.factory.initial=org.apache.activemq.artemis.jndi.ActiveMQInitialContextFactory
-    connectionFactory.myConnectionFactory=tcp://localhost:61616?minLargeMessageSize=250000
-
-
-If the connection factory is being instantiated directly, the minimum
-large message size is specified by
-`ActiveMQConnectionFactory.setMinLargeMessageSize`.
+[Configuring the transport directly from the client side](configuring-transports.md)
+will provide more information on how to instantiate the core session factory
+or JMS connection factory.
 
 ### Compressed Large Messages
 
-You can choose to send large messages in compressed form using `
-                compress-large-messages` attributes.
+You can choose to send large messages in compressed form using
+`compressLargeMessages` URL parameter.
 
 #### `compressLargeMessages`
 
-If you specify the boolean property `compressLargeMessages` on the
-`server locator` or `ConnectionFactory` as true, The system will use the
-ZIP algorithm to compress the message body as the message is transferred
-to the server's side. Notice that there's no special treatment at the
-server's side, all the compressing and uncompressing is done at the
-client.
+If you specify the boolean URL parameter `compressLargeMessages` as true,
+The system will use the ZIP algorithm to compress the message body as
+the message is transferred to the server's side. Notice that there's no
+special treatment at the server's side, all the compressing and uncompressing
+is done at the client.
 
-If the compressed size of a large message is below `
-                minLargeMessageSize`, it is sent to server as regular
-messages. This means that the message won't be written into the server's
-large-message data directory, thus reducing the disk I/O.
-
-###
-
-If JNDI is used to instantiate and look up the connection factory, large
-message compression can be configured in the JNDI context environment,
-e.g. `jndi.properties`. Here's a simple example using the
-"ConnectionFactory" connection factory which is available in the context
-by default:
-
-    java.naming.factory.initial=org.apache.activemq.artemis.jndi.ActiveMQInitialContextFactory
-    connectionFactory.myConnectionFactory=tcp://localhost:61616?compressLargeMessages=true
+If the compressed size of a large message is below `minLargeMessageSize`,
+it is sent to server as regular messages. This means that the message won't
+be written into the server's large-message data directory, thus reducing the
+disk I/O.
 
 ## Streaming large messages
 
@@ -149,7 +110,7 @@ messages or `java.io.OutputStream` for receiving them.
 The following table shows a list of methods available at `ClientMessage`
 which are also available through JMS by the use of object properties.
 
-<table summary="Server Configuration" border="1">
+<table summary="org.hornetq.api.core.client.ClientMessage API" border="1">
     <colgroup>
         <col/>
         <col/>
@@ -182,8 +143,6 @@ which are also available through JMS by the use of object properties.
     </tbody>
 </table>
 
-  : org.apache.activemq.artemis.api.core.client.ClientMessage API
-
 To set the output stream when receiving a core message:
 
 ``` java
@@ -196,7 +155,7 @@ msg.saveOutputStream(someOutputStream);
 ClientMessage msg2 = consumer.receive(...);
 
 // This will not wait the transfer to finish
-msg.setOutputStream(someOtherOutputStream);
+msg2.setOutputStream(someOtherOutputStream);
 ```
 
 Set the input stream when sending a core message:
@@ -296,5 +255,5 @@ for (int i = 0; i < rm.getBodyLength(); i += 1024)
 
 ## Large message example
 
-Please see the [examples](examples.md) chapter for an example which shows how large message is configured
-and used with JMS.
+Please see the [examples](examples.md) chapter for an example which shows
+how large message is configured and used with JMS.

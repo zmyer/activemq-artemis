@@ -19,6 +19,7 @@ package org.apache.activemq.artemis.core.server;
 import java.util.List;
 
 import org.apache.activemq.artemis.api.core.SimpleString;
+import org.apache.activemq.artemis.core.server.impl.AddressInfo;
 
 public class BindingQueryResult {
 
@@ -26,36 +27,81 @@ public class BindingQueryResult {
 
    private List<SimpleString> queueNames;
 
-   private boolean autoCreateJmsQueues;
+   private boolean autoCreateQueues;
 
-   private boolean autoCreateJmsTopics;
+   private boolean autoCreateAddresses;
+
+   private boolean defaultPurgeOnNoConsumers;
+
+   private int defaultMaxConsumers;
+
+   private final AddressInfo addressInfo;
+
+   private boolean defaultExclusive;
+
+   private boolean defaultLastValue;
 
    public BindingQueryResult(final boolean exists,
+                             final AddressInfo addressInfo,
                              final List<SimpleString> queueNames,
-                             final boolean autoCreateJmsQueues,
-                             final boolean autoCreateJmsTopics) {
+                             final boolean autoCreateQueues,
+                             final boolean autoCreateAddresses,
+                             final boolean defaultPurgeOnNoConsumers,
+                             final int defaultMaxConsumers,
+                             final boolean defaultExclusive,
+                             final boolean defaultLastValue) {
+      this.addressInfo = addressInfo;
+
       this.exists = exists;
 
       this.queueNames = queueNames;
 
-      this.autoCreateJmsQueues = autoCreateJmsQueues;
+      this.autoCreateQueues = autoCreateQueues;
 
-      this.autoCreateJmsTopics = autoCreateJmsTopics;
+      this.autoCreateAddresses = autoCreateAddresses;
+
+      this.defaultPurgeOnNoConsumers = defaultPurgeOnNoConsumers;
+
+      this.defaultMaxConsumers = defaultMaxConsumers;
+
+      this.defaultExclusive = defaultExclusive;
+
+      this.defaultLastValue = defaultLastValue;
    }
 
    public boolean isExists() {
       return exists;
    }
 
-   public boolean isAutoCreateJmsQueues() {
-      return autoCreateJmsQueues;
+   public AddressInfo getAddressInfo() {
+      return addressInfo;
    }
 
-   public boolean isAutoCreateJmsTopics() {
-      return autoCreateJmsTopics;
+   public boolean isAutoCreateQueues() {
+      return autoCreateQueues;
+   }
+
+   public boolean isAutoCreateAddresses() {
+      return autoCreateAddresses;
    }
 
    public List<SimpleString> getQueueNames() {
       return queueNames;
+   }
+
+   public boolean isDefaultPurgeOnNoConsumers() {
+      return defaultPurgeOnNoConsumers;
+   }
+
+   public int getDefaultMaxConsumers() {
+      return defaultMaxConsumers;
+   }
+
+   public boolean isDefaultExclusive() {
+      return defaultExclusive;
+   }
+
+   public boolean isDefaultLastValue() {
+      return defaultLastValue;
    }
 }

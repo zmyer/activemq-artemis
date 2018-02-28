@@ -20,9 +20,16 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.activemq.artemis.api.core.BaseInterceptor;
+import org.apache.activemq.artemis.api.core.Message;
+import org.apache.activemq.artemis.core.persistence.Persister;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
 
 public interface ProtocolManagerFactory<P extends BaseInterceptor> {
+
+   default Persister<Message>[] getPersister() {
+      return new Persister[]{};
+   }
+
 
    /**
     * When you create the ProtocolManager, you should filter out any interceptors that won't belong

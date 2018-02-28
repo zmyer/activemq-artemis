@@ -66,8 +66,7 @@ public abstract class SecurityManagementTestBase extends ActiveMQTestBase {
          ClientSession session = null;
          if (user == null) {
             session = sf.createSession(false, true, true);
-         }
-         else {
+         } else {
             session = sf.createSession(user, password, false, true, true, false, 1);
          }
 
@@ -76,25 +75,22 @@ public abstract class SecurityManagementTestBase extends ActiveMQTestBase {
          ClientRequestor requestor = new ClientRequestor(session, ActiveMQDefaultConfiguration.getDefaultManagementAddress());
 
          ClientMessage mngmntMessage = session.createMessage(false);
-         ManagementHelper.putAttribute(mngmntMessage, ResourceNames.CORE_SERVER, "started");
+         ManagementHelper.putAttribute(mngmntMessage, ResourceNames.BROKER, "started");
          ClientMessage reply = requestor.request(mngmntMessage, 500);
          if (expectSuccess) {
             Assert.assertNotNull(reply);
             Assert.assertTrue((Boolean) ManagementHelper.getResult(reply));
-         }
-         else {
+         } else {
             Assert.assertNull(reply);
          }
 
          requestor.close();
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          if (expectSuccess) {
             Assert.fail("got unexpected exception " + e.getClass() + ": " + e.getMessage());
             e.printStackTrace();
          }
-      }
-      finally {
+      } finally {
          sf.close();
       }
    }

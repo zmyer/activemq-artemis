@@ -22,12 +22,16 @@ import javax.jms.Topic;
 import javax.naming.Context;
 import javax.naming.NamingException;
 import javax.naming.spi.InitialContextFactory;
+import java.util.Collections;
 import java.util.Hashtable;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.activemq.artemis.api.jms.ActiveMQJMSClient;
+import org.apache.activemq.artemis.api.jms.JMSFactoryType;
 import org.apache.activemq.artemis.uri.ConnectionFactoryParser;
+import org.apache.activemq.artemis.uri.JMSConnectionOptions;
+import org.apache.activemq.artemis.utils.uri.URISchema;
 
 /**
  * A factory of the ActiveMQ Artemis InitialContext which contains
@@ -50,15 +54,33 @@ public class ActiveMQInitialContextFactory implements InitialContextFactory {
    public Context getInitialContext(Hashtable<?, ?> environment) throws NamingException {
       // lets create a factory
       Map<String, Object> data = new ConcurrentHashMap<>();
+
+      String providerUrl = (String) environment.get(javax.naming.Context.PROVIDER_URL);
+      if (providerUrl != null) {
+         try {
+            JMSFactoryType providedFactoryType = getFactoryType(providerUrl);
+            if (providedFactoryType == null) {
+               for (JMSFactoryType factoryType : JMSFactoryType.values()) {
+                  String factoryName = factoryType.connectionFactoryInterface().getSimpleName();
+                  data.put(factoryName, createConnectionFactory(providerUrl, Collections.singletonMap("type", factoryType.toString()), factoryName));
+               }
+            } else {
+               String factoryName = providedFactoryType.connectionFactoryInterface().getSimpleName();
+               data.put(factoryName, createConnectionFactory(providerUrl, factoryName));
+            }
+         } catch (Exception e) {
+            e.printStackTrace();
+            throw new NamingException("Invalid broker URL");
+         }
+      }
+
       for (Map.Entry<?, ?> entry : environment.entrySet()) {
          String key = entry.getKey().toString();
          if (key.startsWith(connectionFactoryPrefix)) {
             String jndiName = key.substring(connectionFactoryPrefix.length());
             try {
-               ConnectionFactory factory = createConnectionFactory((String) environment.get(key), jndiName);
-               data.put(jndiName, factory);
-            }
-            catch (Exception e) {
+               data.put(jndiName, createConnectionFactory((String) environment.get(key), jndiName));
+            } catch (Exception e) {
                e.printStackTrace();
                throw new NamingException("Invalid broker URL");
             }
@@ -153,5 +175,20 @@ public class ActiveMQInitialContextFactory implements InitialContextFactory {
    protected ConnectionFactory createConnectionFactory(String uri, String name) throws Exception {
       ConnectionFactoryParser parser = new ConnectionFactoryParser();
       return parser.newObject(parser.expandURI(uri), name);
+   }
+
+   /**
+    * Factory method to create a new connection factory from the given environment, with overrides
+    */
+   protected ConnectionFactory createConnectionFactory(String uri, Map<String, String> overrides, String name) throws Exception {
+      ConnectionFactoryParser parser = new ConnectionFactoryParser();
+      return parser.newObject(parser.expandURI(uri), overrides, name);
+   }
+
+   public JMSFactoryType getFactoryType(String uri) throws Exception {
+      ConnectionFactoryParser parser = new ConnectionFactoryParser();
+      Map<String, String> queryParams = URISchema.parseQuery(parser.expandURI(uri).getQuery(), null);
+      String type = queryParams.get("type");
+      return type == null ? null : JMSConnectionOptions.convertCFType(type);
    }
 }

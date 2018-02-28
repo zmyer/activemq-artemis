@@ -16,9 +16,6 @@
  */
 package org.apache.activemq.transport.amqp.client;
 
-import javax.jms.IllegalStateException;
-import javax.jms.JMSException;
-import javax.jms.TransactionRolledBackException;
 import java.io.IOException;
 import java.nio.BufferOverflowException;
 import java.util.HashMap;
@@ -26,6 +23,10 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+
+import javax.jms.IllegalStateException;
+import javax.jms.JMSException;
+import javax.jms.TransactionRolledBackException;
 
 import org.apache.activemq.transport.amqp.client.util.AsyncResult;
 import org.apache.activemq.transport.amqp.client.util.IOExceptionSupport;
@@ -67,7 +68,7 @@ public class AmqpTransactionCoordinator extends AmqpAbstractResource<Sender> {
    }
 
    @Override
-   public void processDeliveryUpdates(AmqpConnection connection) throws IOException {
+   public void processDeliveryUpdates(AmqpConnection connection, Delivery delivery) throws IOException {
       try {
          Iterator<Delivery> deliveries = pendingDeliveries.iterator();
          while (deliveries.hasNext()) {
@@ -89,22 +90,19 @@ public class AmqpTransactionCoordinator extends AmqpAbstractResource<Sender> {
                Declared declared = (Declared) state;
                txId.setRemoteTxId(declared.getTxnId());
                pendingRequest.onSuccess();
-            }
-            else if (state instanceof Rejected) {
+            } else if (state instanceof Rejected) {
                LOG.debug("Last TX request failed: {}", txId.getTxId());
                Rejected rejected = (Rejected) state;
                Exception cause = AmqpSupport.convertToException(rejected.getError());
                JMSException failureCause = null;
                if (txId.isCommit()) {
                   failureCause = new TransactionRolledBackException(cause.getMessage());
-               }
-               else {
+               } else {
                   failureCause = new JMSException(cause.getMessage());
                }
 
                pendingRequest.onFailure(failureCause);
-            }
-            else {
+            } else {
                LOG.debug("Last TX request succeeded: {}", txId.getTxId());
                pendingRequest.onSuccess();
             }
@@ -115,16 +113,15 @@ public class AmqpTransactionCoordinator extends AmqpAbstractResource<Sender> {
             deliveries.remove();
          }
 
-         super.processDeliveryUpdates(connection);
-      }
-      catch (Exception e) {
+         super.processDeliveryUpdates(connection, delivery);
+      } catch (Exception e) {
          throw IOExceptionSupport.create(e);
       }
    }
 
    public void declare(AmqpTransactionId txId, AsyncResult request) throws Exception {
       if (txId.getRemoteTxId() != null) {
-         throw new IllegalStateException("Declar called while a TX is still Active.");
+         throw new IllegalStateException("Declare called while a TX is still Active.");
       }
 
       if (isClosed()) {
@@ -153,8 +150,7 @@ public class AmqpTransactionCoordinator extends AmqpAbstractResource<Sender> {
 
          if (commit) {
             failureCause = new TransactionRolledBackException("Transaction inbout: Coordinator remotely closed");
-         }
-         else {
+         } else {
             failureCause = new JMSException("Rollback cannot complete: Coordinator remotely closed");
          }
 
@@ -220,8 +216,7 @@ public class AmqpTransactionCoordinator extends AmqpAbstractResource<Sender> {
          try {
             encodedSize = message.encode(buffer, 0, buffer.length);
             break;
-         }
-         catch (BufferOverflowException e) {
+         } catch (BufferOverflowException e) {
             buffer = new byte[buffer.length * 2];
          }
       }

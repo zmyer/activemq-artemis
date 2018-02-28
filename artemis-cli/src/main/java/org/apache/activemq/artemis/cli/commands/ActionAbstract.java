@@ -17,6 +17,7 @@
 package org.apache.activemq.artemis.cli.commands;
 
 import java.io.File;
+import java.net.URI;
 
 import io.airlift.airline.Option;
 
@@ -28,6 +29,10 @@ public abstract class ActionAbstract implements Action {
    private String brokerInstance;
 
    private String brokerHome;
+
+   private String brokerEtc;
+
+   private URI brokerInstanceURI;
 
    protected ActionContext context;
 
@@ -62,6 +67,38 @@ public abstract class ActionAbstract implements Action {
       return brokerInstance;
    }
 
+   public String getBrokerEtc() {
+      if (brokerEtc == null) {
+         brokerEtc = System.getProperty("artemis.instance.etc");
+         if (brokerEtc != null) {
+            brokerEtc = brokerEtc.replace("\\", "/");
+         } else {
+            brokerEtc = getBrokerInstance() + "/etc";
+         }
+         System.setProperty("artemis.instance.etc", brokerEtc);
+      }
+      return brokerEtc;
+   }
+
+
+   public URI getBrokerURIInstance() {
+
+      if (brokerInstanceURI == null) {
+         String instanceProperty = getBrokerInstance();
+
+         File artemisInstance = null;
+         if (artemisInstance == null && instanceProperty != null) {
+            artemisInstance = new File(instanceProperty);
+         }
+
+         if (artemisInstance != null) {
+            brokerInstanceURI = artemisInstance.toURI();
+         }
+      }
+      return brokerInstanceURI;
+   }
+
+
    @Override
    public String getBrokerHome() {
       if (brokerHome == null) {
@@ -87,6 +124,11 @@ public abstract class ActionAbstract implements Action {
       this.context = context;
 
       return null;
+   }
+
+   @Override
+   public void checkOptions(String[] options) throws InvalidOptionsError {
+      OptionsUtil.checkCommandOptions(this.getClass(), options);
    }
 
 }

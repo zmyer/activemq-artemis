@@ -18,21 +18,31 @@ package org.apache.activemq.artemis.core.security.jaas;
 
 import javax.management.remote.JMXPrincipal;
 import javax.security.auth.Subject;
+import javax.security.auth.callback.Callback;
+import javax.security.auth.callback.UnsupportedCallbackException;
 import javax.security.auth.login.LoginException;
 import javax.security.cert.X509Certificate;
+import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.net.URL;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 
 import org.apache.activemq.artemis.core.server.ActiveMQServerLogger;
+import org.apache.activemq.artemis.spi.core.security.jaas.CertificateCallback;
 import org.apache.activemq.artemis.spi.core.security.jaas.CertificateLoginModule;
 import org.apache.activemq.artemis.spi.core.security.jaas.JaasCallbackHandler;
 import org.apache.activemq.artemis.spi.core.security.jaas.PropertiesLoader;
 import org.apache.activemq.artemis.spi.core.security.jaas.TextFileCertificateLoginModule;
+import org.jboss.logging.Logger;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
 public class TextFileCertificateLoginModuleTest {
+
+   private static final Logger logger = Logger.getLogger(TextFileCertificateLoginModuleTest.class);
 
    private static final String CERT_USERS_FILE_SMALL = "cert-users-SMALL.properties";
    private static final String CERT_USERS_FILE_LARGE = "cert-users-LARGE.properties";
@@ -45,8 +55,13 @@ public class TextFileCertificateLoginModuleTest {
       if (path == null) {
          URL resource = TextFileCertificateLoginModuleTest.class.getClassLoader().getResource("login.config");
          if (resource != null) {
-            path = resource.getFile();
-            System.setProperty("java.security.auth.login.config", path);
+            try {
+               path = URLDecoder.decode(resource.getFile(), StandardCharsets.UTF_8.name());
+               System.setProperty("java.security.auth.login.config", path);
+            } catch (UnsupportedEncodingException e) {
+               logger.error(e.getMessage(), e);
+               throw new RuntimeException(e);
+            }
          }
       }
    }
@@ -110,10 +125,23 @@ public class TextFileCertificateLoginModuleTest {
    private JaasCallbackHandler getJaasCertificateCallbackHandler(String user) {
       JMXPrincipal principal = new JMXPrincipal(user);
       X509Certificate cert = new StubX509Certificate(principal);
-      return new JaasCallbackHandler(null, null, new X509Certificate[]{cert});
+      return new JaasCallbackHandler(null, null, null) {
+         @Override
+         public void handle(Callback[] callbacks) throws IOException, UnsupportedCallbackException {
+            for (Callback callback : callbacks) {
+               if (callback instanceof CertificateCallback) {
+                  CertificateCallback certCallback = (CertificateCallback) callback;
+                  certCallback.setCertificates(new X509Certificate[]{cert});
+               } else {
+                  throw new UnsupportedCallbackException(callback);
+               }
+            }
+         }
+      };
    }
 
-   private Subject doAuthenticate(HashMap<String, ?> options, JaasCallbackHandler callbackHandler) throws LoginException {
+   private Subject doAuthenticate(HashMap<String, ?> options,
+                                  JaasCallbackHandler callbackHandler) throws LoginException {
       Subject mySubject = new Subject();
       loginModule.initialize(mySubject, callbackHandler, null, options);
       loginModule.login();

@@ -93,14 +93,13 @@ public class JMSBridgeExample {
          targetConnection.start();
 
          // Step 10. Receive a message from the *target* queue
-         TextMessage messageReceived = (TextMessage) targetConsumer.receive(5000);
+         TextMessage messageReceived = (TextMessage) targetConsumer.receive(500000);
          System.out.format("%nReceived from %s: %s%n", ((Queue) messageReceived.getJMSDestination()).getQueueName(), messageReceived.getText());
 
          // Step 11. Display the received message's ID and this "bridged" message ID
          System.out.format("Message ID         : %s%n", messageReceived.getJMSMessageID());
          System.out.format("Bridged Message ID : %s%n", messageReceived.getStringProperty("AMQ_BRIDGE_MSG_ID_LIST"));
-      }
-      finally {
+      } finally {
          // Step 12. Be sure to close the resources!
          jmsBridge.stop();
          if (sourceContext != null) {
@@ -128,7 +127,7 @@ public class JMSBridgeExample {
       jndiProps.put("connectionFactory.ConnectionFactory", server);
       jndiProps.put("java.naming.factory.initial", "org.apache.activemq.artemis.jndi.ActiveMQInitialContextFactory");
       jndiProps.put("queue.target/queue", "target");
-      jndiProps.put("topic.source/topic", "topic");
+      jndiProps.put("topic.source/topic", "source");
       return jndiProps;
    }
 }

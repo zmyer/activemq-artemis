@@ -117,8 +117,7 @@ public final class ActiveMQMessageConsumer implements QueueReceiver, TopicSubscr
 
       try {
          consumer.setMessageHandler(coreListener);
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          throw JMSExceptionHelper.convertFromActiveMQException(e);
       }
    }
@@ -149,8 +148,7 @@ public final class ActiveMQMessageConsumer implements QueueReceiver, TopicSubscr
          }
 
          session.removeConsumer(this);
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          throw JMSExceptionHelper.convertFromActiveMQException(e);
       }
    }
@@ -209,8 +207,7 @@ public final class ActiveMQMessageConsumer implements QueueReceiver, TopicSubscr
 
          if (noWait) {
             coreMessage = consumer.receiveImmediate();
-         }
-         else {
+         } else {
             coreMessage = consumer.receive(timeout);
          }
 
@@ -219,42 +216,41 @@ public final class ActiveMQMessageConsumer implements QueueReceiver, TopicSubscr
          if (coreMessage != null) {
             ClientSession coreSession = session.getCoreSession();
             boolean needSession = ackMode == Session.CLIENT_ACKNOWLEDGE ||
-                                             ackMode == ActiveMQJMSConstants.INDIVIDUAL_ACKNOWLEDGE ||
-                                             coreMessage.getType() == ActiveMQObjectMessage.TYPE;
+               ackMode == ActiveMQJMSConstants.INDIVIDUAL_ACKNOWLEDGE ||
+               coreMessage.getType() == ActiveMQObjectMessage.TYPE;
             jmsMsg = ActiveMQMessage.createMessage(coreMessage, needSession ? coreSession : null, options);
 
             try {
                jmsMsg.doBeforeReceive();
-            }
-            catch (IndexOutOfBoundsException ioob) {
-               ((ClientSessionInternal)session.getCoreSession()).markRollbackOnly();
+            } catch (IndexOutOfBoundsException ioob) {
+               ((ClientSessionInternal) session.getCoreSession()).markRollbackOnly();
                // In case this exception happen you will need to know where it happened.
                // it has been a bug here in the past, and this was used to debug it.
                // nothing better than keep it for future investigations in case it happened again
                IndexOutOfBoundsException newIOOB = new IndexOutOfBoundsException(ioob.getMessage() + "@" + jmsMsg.getCoreMessage());
                newIOOB.initCause(ioob);
-               ActiveMQClientLogger.LOGGER.warn(newIOOB.getMessage(), newIOOB);
+               ActiveMQClientLogger.LOGGER.unableToGetMessage(newIOOB);
                throw ioob;
             }
 
-            // We Do the ack after doBeforeRecive, as in the case of large messages, this may fail so we don't want messages redelivered
+            // We Do the ack after doBeforeReceive, as in the case of large messages, this may fail so we don't want messages redelivered
             // https://issues.jboss.org/browse/JBPAPP-6110
             if (session.getAcknowledgeMode() == ActiveMQJMSConstants.INDIVIDUAL_ACKNOWLEDGE) {
                jmsMsg.setIndividualAcknowledge();
-            }
-            else {
+            } else if (session.getAcknowledgeMode() == Session.CLIENT_ACKNOWLEDGE) {
+               jmsMsg.setClientAcknowledge();
+               coreMessage.acknowledge();
+            } else {
                coreMessage.acknowledge();
             }
          }
 
          return jmsMsg;
-      }
-      catch (ActiveMQException e) {
-         ((ClientSessionInternal)session.getCoreSession()).markRollbackOnly();
+      } catch (ActiveMQException e) {
+         ((ClientSessionInternal) session.getCoreSession()).markRollbackOnly();
          throw JMSExceptionHelper.convertFromActiveMQException(e);
-      }
-      catch (ActiveMQInterruptedException e) {
-         ((ClientSessionInternal)session.getCoreSession()).markRollbackOnly();
+      } catch (ActiveMQInterruptedException e) {
+         ((ClientSessionInternal) session.getCoreSession()).markRollbackOnly();
          throw JMSExceptionHelper.convertFromActiveMQException(e);
       }
    }

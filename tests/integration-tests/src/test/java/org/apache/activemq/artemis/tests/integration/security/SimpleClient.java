@@ -17,12 +17,12 @@
 package org.apache.activemq.artemis.tests.integration.security;
 
 import org.apache.activemq.artemis.api.core.TransportConfiguration;
+import org.apache.activemq.artemis.api.core.client.ActiveMQClient;
 import org.apache.activemq.artemis.api.core.client.ClientConsumer;
 import org.apache.activemq.artemis.api.core.client.ClientMessage;
 import org.apache.activemq.artemis.api.core.client.ClientProducer;
 import org.apache.activemq.artemis.api.core.client.ClientSession;
 import org.apache.activemq.artemis.api.core.client.ClientSessionFactory;
-import org.apache.activemq.artemis.api.core.client.ActiveMQClient;
 import org.apache.activemq.artemis.api.core.client.ServerLocator;
 import org.apache.activemq.artemis.jms.client.ActiveMQTextMessage;
 import org.apache.activemq.artemis.utils.RandomUtil;
@@ -37,12 +37,14 @@ final class SimpleClient {
          if (args.length != 1) {
             throw new Exception("require 1 argument: connector factory class name");
          }
+
+         System.out.println("I'm here");
          String connectorFactoryClassName = args[0];
 
          String queueName = RandomUtil.randomString();
          String messageText = RandomUtil.randomString();
 
-         ServerLocator locator = ActiveMQClient.createServerLocatorWithoutHA(new TransportConfiguration(connectorFactoryClassName));
+         ServerLocator locator = ActiveMQClient.createServerLocatorWithoutHA(new TransportConfiguration(connectorFactoryClassName)).setReconnectAttempts(1).setInitialConnectAttempts(1);
          try {
             ClientSessionFactory sf = locator.createSessionFactory();
             ClientSession session = sf.createSession(false, true, true);
@@ -73,12 +75,11 @@ final class SimpleClient {
             session.close();
             sf.close();
             System.out.println("OK");
-         }
-         finally {
+         } finally {
             locator.close();
          }
-      }
-      catch (Throwable t) {
+      } catch (Throwable t) {
+         t.printStackTrace(System.out);
 
          String allStack = t.getMessage() + "|";
          StackTraceElement[] stackTrace = t.getStackTrace();

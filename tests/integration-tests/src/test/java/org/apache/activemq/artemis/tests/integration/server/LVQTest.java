@@ -29,6 +29,7 @@ import org.apache.activemq.artemis.core.server.ActiveMQServers;
 import org.apache.activemq.artemis.core.server.Queue;
 import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
 import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
+import org.apache.activemq.artemis.tests.util.Wait;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
@@ -506,7 +507,7 @@ public class LVQTest extends ActiveMQTestBase {
 
    @Test
    public void testScheduledMessages() throws Exception {
-      final long DELAY_TIME = 5000;
+      final long DELAY_TIME = 10;
       final int MESSAGE_COUNT = 5;
       Queue queue = server.locateQueue(qName1);
       ClientProducer producer = clientSession.createProducer(address);
@@ -518,25 +519,16 @@ public class LVQTest extends ActiveMQTestBase {
          m.setDurable(true);
          m.putStringProperty(Message.HDR_LAST_VALUE_NAME, rh);
          timeSent = System.currentTimeMillis();
-         m.putLongProperty(Message.HDR_SCHEDULED_DELIVERY_TIME, timeSent + DELAY_TIME);
+         m.putLongProperty(Message.HDR_SCHEDULED_DELIVERY_TIME, timeSent + (i * DELAY_TIME));
          producer.send(m);
-         Thread.sleep(100);
       }
 
       // allow schedules to elapse so the messages will be delivered to the queue
-      long start = System.currentTimeMillis();
-      while (queue.getScheduledCount() > 0 && System.currentTimeMillis() - start <= DELAY_TIME) {
-         Thread.sleep(50);
-      }
-
-      assertTrue(queue.getScheduledCount() == 0);
+      Wait.waitFor(() -> queue.getScheduledCount() == 0);
 
       clientSession.start();
-      ClientMessage m = consumer.receive(DELAY_TIME);
+      ClientMessage m = consumer.receive(5000);
       assertNotNull(m);
-      long actualDelay = System.currentTimeMillis() - timeSent + 50;
-      assertTrue(actualDelay >= DELAY_TIME);
-      m.acknowledge();
       assertEquals(m.getBodyBuffer().readString(), "m" + (MESSAGE_COUNT - 1));
       assertEquals(0, queue.getScheduledCount());
    }
@@ -626,18 +618,39 @@ public class LVQTest extends ActiveMQTestBase {
       clientSessionTxReceives.commit();
    }
 
+   @Test
+   public void testLargeMessage() throws Exception {
+      ClientProducer producer = clientSessionTxReceives.createProducer(address);
+      ClientConsumer consumer = clientSessionTxReceives.createConsumer(qName1);
+      SimpleString rh = new SimpleString("SMID1");
+
+      for (int i = 0; i < 50; i++) {
+         ClientMessage message = clientSession.createMessage(true);
+         message.setBodyInputStream(createFakeLargeStream(300 * 1024));
+         message.putStringProperty(Message.HDR_LAST_VALUE_NAME, rh);
+         producer.send(message);
+         clientSession.commit();
+      }
+      clientSessionTxReceives.start();
+      ClientMessage m = consumer.receive(1000);
+      Assert.assertNotNull(m);
+      m.acknowledge();
+      Assert.assertNull(consumer.receiveImmediate());
+      clientSessionTxReceives.commit();
+   }
+
    @Override
    @Before
    public void setUp() throws Exception {
       super.setUp();
 
-      server = addServer(ActiveMQServers.newActiveMQServer(createDefaultInVMConfig(), false));
+      server = addServer(ActiveMQServers.newActiveMQServer(createDefaultNettyConfig(), true));
       // start the server
       server.start();
 
-      server.getAddressSettingsRepository().addMatch(address.toString(), new AddressSettings().setLastValueQueue(true));
+      server.getAddressSettingsRepository().addMatch(address.toString(), new AddressSettings().setDefaultLastValueQueue(true));
       // then we create a client as normalServer
-      ServerLocator locator = createInVMNonHALocator().setBlockOnAcknowledge(true).setAckBatchSize(0);
+      ServerLocator locator = createNettyNonHALocator().setBlockOnAcknowledge(true).setAckBatchSize(0);
 
       ClientSessionFactory sf = createSessionFactory(locator);
       clientSession = addClientSession(sf.createSession(false, true, true));

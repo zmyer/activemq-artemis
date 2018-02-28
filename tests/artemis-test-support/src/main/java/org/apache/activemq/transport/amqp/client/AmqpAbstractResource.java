@@ -1,4 +1,4 @@
-/**
+/*
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
  * this work for additional information regarding copyright ownership.
@@ -19,6 +19,7 @@ package org.apache.activemq.transport.amqp.client;
 import java.io.IOException;
 
 import org.apache.activemq.transport.amqp.client.util.AsyncResult;
+import org.apache.qpid.proton.engine.Delivery;
 import org.apache.qpid.proton.engine.Endpoint;
 import org.apache.qpid.proton.engine.EndpointState;
 import org.slf4j.Logger;
@@ -27,9 +28,8 @@ import org.slf4j.LoggerFactory;
 /**
  * Abstract base for all AmqpResource implementations to extend.
  *
- * This abstract class wraps up the basic state management bits so that the concrete
- * object don't have to reproduce it.  Provides hooks for the subclasses to initialize
- * and shutdown.
+ * This abstract class wraps up the basic state management bits so that the concrete object
+ * don't have to reproduce it. Provides hooks for the subclasses to initialize and shutdown.
  */
 public abstract class AmqpAbstractResource<E extends Endpoint> implements AmqpResource {
 
@@ -73,8 +73,7 @@ public abstract class AmqpAbstractResource<E extends Endpoint> implements AmqpRe
          }
 
          request.onSuccess();
-      }
-      else {
+      } else {
          this.closeRequest = request;
          doDetach();
       }
@@ -91,8 +90,7 @@ public abstract class AmqpAbstractResource<E extends Endpoint> implements AmqpRe
          }
 
          request.onSuccess();
-      }
-      else {
+      } else {
          this.closeRequest = request;
          doClose();
       }
@@ -215,8 +213,7 @@ public abstract class AmqpAbstractResource<E extends Endpoint> implements AmqpRe
       if (isAwaitingClose()) {
          LOG.debug("{} is now closed: ", this);
          closed();
-      }
-      else {
+      } else {
          remotelyClosed(connection);
       }
    }
@@ -227,27 +224,24 @@ public abstract class AmqpAbstractResource<E extends Endpoint> implements AmqpRe
       if (isAwaitingClose()) {
          LOG.debug("{} is now closed: ", this);
          closed();
-      }
-      else if (isAwaitingOpen()) {
+      } else if (isAwaitingOpen()) {
          // Error on Open, create exception and signal failure.
          LOG.warn("Open of {} failed: ", this);
          Exception openError;
          if (hasRemoteError()) {
             openError = AmqpSupport.convertToException(getEndpoint().getRemoteCondition());
-         }
-         else {
+         } else {
             openError = getOpenAbortException();
          }
 
          failed(openError);
-      }
-      else {
+      } else {
          remotelyClosed(connection);
       }
    }
 
    @Override
-   public void processDeliveryUpdates(AmqpConnection connection) throws IOException {
+   public void processDeliveryUpdates(AmqpConnection connection, Delivery delivery) throws IOException {
    }
 
    @Override
@@ -255,18 +249,17 @@ public abstract class AmqpAbstractResource<E extends Endpoint> implements AmqpRe
    }
 
    /**
-    * Perform the open operation on the managed endpoint.  A subclass may
-    * override this method to provide additional open actions or configuration
-    * updates.
+    * Perform the open operation on the managed endpoint. A subclass may override this method to
+    * provide additional open actions or configuration updates.
     */
    protected void doOpen() {
       getEndpoint().open();
    }
 
    /**
-    * Perform the close operation on the managed endpoint.  A subclass may
-    * override this method to provide additional close actions or alter the
-    * standard close path such as endpoint detach etc.
+    * Perform the close operation on the managed endpoint. A subclass may override this method
+    * to provide additional close actions or alter the standard close path such as endpoint
+    * detach etc.
     */
    protected void doClose() {
       getEndpoint().close();
@@ -275,17 +268,16 @@ public abstract class AmqpAbstractResource<E extends Endpoint> implements AmqpRe
    /**
     * Perform the detach operation on the managed endpoint.
     *
-    * By default this method throws an UnsupportedOperationException, a subclass
-    * must implement this and do a detach if its resource supports that.
+    * By default this method throws an UnsupportedOperationException, a subclass must implement
+    * this and do a detach if its resource supports that.
     */
    protected void doDetach() {
       throw new UnsupportedOperationException("Endpoint cannot be detached.");
    }
 
    /**
-    * Complete the open operation on the managed endpoint. A subclass may
-    * override this method to provide additional verification actions or configuration
-    * updates.
+    * Complete the open operation on the managed endpoint. A subclass may override this method
+    * to provide additional verification actions or configuration updates.
     */
    protected void doOpenCompletion() {
       LOG.debug("{} is now open: ", this);
@@ -293,15 +285,14 @@ public abstract class AmqpAbstractResource<E extends Endpoint> implements AmqpRe
    }
 
    /**
-    * When aborting the open operation, and there isn't an error condition,
-    * provided by the peer, the returned exception will be used instead.
-    * A subclass may override this method to provide alternative behaviour.
+    * When aborting the open operation, and there isn't an error condition, provided by the
+    * peer, the returned exception will be used instead. A subclass may override this method to
+    * provide alternative behaviour.
     */
    protected Exception getOpenAbortException() {
       return new IOException("Open failed unexpectedly.");
    }
 
-   // TODO - Fina a more generic way to do this.
    protected abstract void doOpenInspection();
 
    protected abstract void doClosedInspection();
@@ -309,7 +300,7 @@ public abstract class AmqpAbstractResource<E extends Endpoint> implements AmqpRe
    protected void doDetachedInspection() {
    }
 
-   //----- Private implementation utility methods ---------------------------//
+   // ----- Private implementation utility methods ---------------------------//
 
    private boolean isAwaitingOpen() {
       return this.openRequest != null;

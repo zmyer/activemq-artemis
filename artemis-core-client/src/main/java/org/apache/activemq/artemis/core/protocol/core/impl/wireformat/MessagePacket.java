@@ -16,22 +16,21 @@
  */
 package org.apache.activemq.artemis.core.protocol.core.impl.wireformat;
 
-import org.apache.activemq.artemis.api.core.Message;
-import org.apache.activemq.artemis.core.message.impl.MessageInternal;
+import org.apache.activemq.artemis.api.core.ICoreMessage;
 import org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl;
 
 public abstract class MessagePacket extends PacketImpl implements MessagePacketI {
 
-   protected MessageInternal message;
+   protected ICoreMessage message;
 
-   public MessagePacket(final byte type, final MessageInternal message) {
+   public MessagePacket(final byte type, final ICoreMessage message) {
       super(type);
 
       this.message = message;
    }
 
    @Override
-   public Message getMessage() {
+   public ICoreMessage getMessage() {
       return message;
    }
 
@@ -39,6 +38,5 @@ public abstract class MessagePacket extends PacketImpl implements MessagePacketI
    public String getParentString() {
       return super.getParentString() + ", message=" + message;
    }
-
 
 }

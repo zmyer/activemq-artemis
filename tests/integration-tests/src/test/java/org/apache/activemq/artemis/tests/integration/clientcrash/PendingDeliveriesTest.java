@@ -26,6 +26,8 @@ import javax.jms.MessageProducer;
 import javax.jms.Session;
 
 import org.apache.activemq.artemis.api.core.SimpleString;
+import org.apache.activemq.artemis.api.core.RoutingType;
+import org.apache.activemq.artemis.core.server.impl.AddressInfo;
 import org.apache.activemq.artemis.jms.client.ActiveMQConnectionFactory;
 import org.apache.activemq.artemis.logs.AssertionLoggerHandler;
 import org.apache.activemq.artemis.tests.util.SpawnedVMSupport;
@@ -37,10 +39,10 @@ import org.junit.Test;
 
 public class PendingDeliveriesTest extends ClientTestBase {
 
-
    @Before
    public void createQueue() throws Exception {
-      server.createQueue(SimpleString.toSimpleString("jms.queue.queue1"), SimpleString.toSimpleString("jms.queue.queue1"), null, true, false);
+      server.addAddressInfo(new AddressInfo(SimpleString.toSimpleString("queue1"), RoutingType.ANYCAST));
+      server.createQueue(SimpleString.toSimpleString("queue1"), RoutingType.ANYCAST, SimpleString.toSimpleString("queue1"), null, true, false);
    }
 
    @After
@@ -53,6 +55,7 @@ public class PendingDeliveriesTest extends ClientTestBase {
    private static final String AMQP_URI = "amqp://localhost:61616?amqp.saslLayer=false";
    private static final String CORE_URI_NO_RECONNECT = "tcp://localhost:61616?confirmationWindowSize=-1";
    private static final String CORE_URI_WITH_RECONNECT = "tcp://localhost:61616?confirmationWindowSize=" + (1024 * 1024);
+   private static final int NUMBER_OF_MESSAGES = 100;
 
    public static void main(String[] arg) {
       if (arg.length != 3) {
@@ -60,11 +63,9 @@ public class PendingDeliveriesTest extends ClientTestBase {
          System.exit(-1);
       }
 
-
       String uri = arg[0];
       String destinationName = arg[1];
       boolean cleanShutdown = Boolean.valueOf(arg[2]);
-
 
       ConnectionFactory factory;
 
@@ -80,7 +81,7 @@ public class PendingDeliveriesTest extends ClientTestBase {
          MessageConsumer consumer = session.createConsumer(destination);
          MessageProducer producer = session.createProducer(destination);
 
-         for (int i = 0; i < 100; i++) {
+         for (int i = 0; i < NUMBER_OF_MESSAGES; i++) {
             producer.send(session.createTextMessage("hello"));
          }
 
@@ -93,12 +94,10 @@ public class PendingDeliveriesTest extends ClientTestBase {
 
          System.exit(0);
 
-      }
-      catch (Throwable e) {
+      } catch (Throwable e) {
          e.printStackTrace();
          System.exit(-1);
       }
-
 
    }
 
@@ -106,8 +105,7 @@ public class PendingDeliveriesTest extends ClientTestBase {
       ConnectionFactory factory;
       if (uri.startsWith("amqp")) {
          factory = new JmsConnectionFactory(uri);
-      }
-      else {
+      } else {
          factory = new ActiveMQConnectionFactory(uri);
       }
       return factory;
@@ -116,7 +114,7 @@ public class PendingDeliveriesTest extends ClientTestBase {
    @Test
    public void testWithoutReconnect() throws Exception {
 
-      internalNoReconnect(AMQP_URI, "jms.queue.queue1");
+      internalNoReconnect(AMQP_URI, "queue1");
       internalNoReconnect(CORE_URI_NO_RECONNECT, "queue1");
    }
 
@@ -131,22 +129,22 @@ public class PendingDeliveriesTest extends ClientTestBase {
          Destination destination = session.createQueue(destinationName);
          MessageConsumer consumer = session.createConsumer(destination);
 
-         for (int i = 0; i < 100; i++) {
-            Assert.assertNotNull(consumer.receive(1000));
+         for (int i = 0; i < NUMBER_OF_MESSAGES; i++) {
+            // give more time to receive first message but do not wait so long for last as all message were most likely sent
+            Assert.assertNotNull("consumer.receive(...) returned null for " + i + "th message. Number of expected messages" +
+                    " to be received is " + NUMBER_OF_MESSAGES, i == NUMBER_OF_MESSAGES - 1 ? consumer.receive(500) : consumer.receive(5000));
          }
-      }
-      finally {
+      } finally {
          connection.stop();
          connection.close();
 
       }
 
       if (cf instanceof ActiveMQConnectionFactory) {
-         ((ActiveMQConnectionFactory)cf).close();
+         ((ActiveMQConnectionFactory) cf).close();
       }
 
    }
-
 
    @Test
    public void testWithtReconnect() throws Exception {
@@ -160,22 +158,20 @@ public class PendingDeliveriesTest extends ClientTestBase {
          MessageConsumer consumer = session.createConsumer(destination);
 
          int i = 0;
-         for (; i < 100; i++) {
-            Message msg = consumer.receive(100);
+         for (; i < NUMBER_OF_MESSAGES; i++) {
+            Message msg = consumer.receive(1000);
             if (msg == null) {
                break;
             }
          }
 
-         Assert.assertTrue(i < 100);
-      }
-      finally {
+         Assert.assertTrue(i < NUMBER_OF_MESSAGES);
+      } finally {
          connection.stop();
          connection.close();
 
       }
    }
-
 
    @Test
    public void testCleanShutdownNoLogger() throws Exception {
@@ -192,13 +188,15 @@ public class PendingDeliveriesTest extends ClientTestBase {
       Assert.assertTrue(AssertionLoggerHandler.findText(1000, "clearing up resources"));
    }
 
-
    @Test
    public void testCleanShutdown() throws Exception {
 
    }
 
-   private void startClient(String uriToUse, String destinationName, boolean log, boolean cleanShutdown) throws Exception {
+   private void startClient(String uriToUse,
+                            String destinationName,
+                            boolean log,
+                            boolean cleanShutdown) throws Exception {
       Process process = SpawnedVMSupport.spawnVM(PendingDeliveriesTest.class.getName(), log, uriToUse, destinationName, Boolean.toString(cleanShutdown));
       Assert.assertEquals(0, process.waitFor());
    }

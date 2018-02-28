@@ -16,26 +16,22 @@
  */
 package org.apache.activemq.artemis.tests.integration.management;
 
-import javax.jms.Queue;
-import javax.jms.Topic;
 import javax.management.MBeanServer;
 import javax.management.MBeanServerInvocationHandler;
 import javax.management.ObjectName;
 
+import org.apache.activemq.artemis.api.config.ActiveMQDefaultConfiguration;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.api.core.management.AcceptorControl;
+import org.apache.activemq.artemis.api.core.management.ActiveMQServerControl;
 import org.apache.activemq.artemis.api.core.management.AddressControl;
 import org.apache.activemq.artemis.api.core.management.BridgeControl;
 import org.apache.activemq.artemis.api.core.management.BroadcastGroupControl;
 import org.apache.activemq.artemis.api.core.management.ClusterConnectionControl;
 import org.apache.activemq.artemis.api.core.management.DivertControl;
-import org.apache.activemq.artemis.api.core.management.ActiveMQServerControl;
 import org.apache.activemq.artemis.api.core.management.ObjectNameBuilder;
 import org.apache.activemq.artemis.api.core.management.QueueControl;
-import org.apache.activemq.artemis.api.jms.management.ConnectionFactoryControl;
-import org.apache.activemq.artemis.api.jms.management.JMSQueueControl;
-import org.apache.activemq.artemis.api.jms.management.JMSServerControl;
-import org.apache.activemq.artemis.api.jms.management.TopicControl;
+import org.apache.activemq.artemis.api.core.RoutingType;
 
 public class ManagementControlHelper {
 
@@ -59,8 +55,8 @@ public class ManagementControlHelper {
       return (BridgeControl) ManagementControlHelper.createProxy(ObjectNameBuilder.DEFAULT.getBridgeObjectName(name), BridgeControl.class, mbeanServer);
    }
 
-   public static DivertControl createDivertControl(final String name, final MBeanServer mbeanServer) throws Exception {
-      return (DivertControl) ManagementControlHelper.createProxy(ObjectNameBuilder.DEFAULT.getDivertObjectName(name), DivertControl.class, mbeanServer);
+   public static DivertControl createDivertControl(final String name, String address, final MBeanServer mbeanServer) throws Exception {
+      return (DivertControl) ManagementControlHelper.createProxy(ObjectNameBuilder.DEFAULT.getDivertObjectName(name, address), DivertControl.class, mbeanServer);
    }
 
    public static ClusterConnectionControl createClusterConnectionControl(final String name,
@@ -75,35 +71,19 @@ public class ManagementControlHelper {
    public static QueueControl createQueueControl(final SimpleString address,
                                                  final SimpleString name,
                                                  final MBeanServer mbeanServer) throws Exception {
-      return (QueueControl) ManagementControlHelper.createProxy(ObjectNameBuilder.DEFAULT.getQueueObjectName(address, name), QueueControl.class, mbeanServer);
+      return (QueueControl) ManagementControlHelper.createProxy(ObjectNameBuilder.DEFAULT.getQueueObjectName(address, name, ActiveMQDefaultConfiguration.getDefaultRoutingType()), QueueControl.class, mbeanServer);
+   }
+
+   public static QueueControl createQueueControl(final SimpleString address,
+                                                 final SimpleString name,
+                                                 final RoutingType routingType,
+                                                 final MBeanServer mbeanServer) throws Exception {
+      return (QueueControl) ManagementControlHelper.createProxy(ObjectNameBuilder.DEFAULT.getQueueObjectName(address, name, routingType), QueueControl.class, mbeanServer);
    }
 
    public static AddressControl createAddressControl(final SimpleString address,
                                                      final MBeanServer mbeanServer) throws Exception {
       return (AddressControl) ManagementControlHelper.createProxy(ObjectNameBuilder.DEFAULT.getAddressObjectName(address), AddressControl.class, mbeanServer);
-   }
-
-   public static JMSQueueControl createJMSQueueControl(final Queue queue,
-                                                       final MBeanServer mbeanServer) throws Exception {
-      return ManagementControlHelper.createJMSQueueControl(queue.getQueueName(), mbeanServer);
-   }
-
-   public static JMSQueueControl createJMSQueueControl(final String name,
-                                                       final MBeanServer mbeanServer) throws Exception {
-      return (JMSQueueControl) ManagementControlHelper.createProxy(ObjectNameBuilder.DEFAULT.getJMSQueueObjectName(name), JMSQueueControl.class, mbeanServer);
-   }
-
-   public static JMSServerControl createJMSServerControl(final MBeanServer mbeanServer) throws Exception {
-      return (JMSServerControl) ManagementControlHelper.createProxy(ObjectNameBuilder.DEFAULT.getJMSServerObjectName(), JMSServerControl.class, mbeanServer);
-   }
-
-   public static ConnectionFactoryControl createConnectionFactoryControl(final String name,
-                                                                         final MBeanServer mbeanServer) throws Exception {
-      return (ConnectionFactoryControl) ManagementControlHelper.createProxy(ObjectNameBuilder.DEFAULT.getConnectionFactoryObjectName(name), ConnectionFactoryControl.class, mbeanServer);
-   }
-
-   public static TopicControl createTopicControl(final Topic topic, final MBeanServer mbeanServer) throws Exception {
-      return (TopicControl) ManagementControlHelper.createProxy(ObjectNameBuilder.DEFAULT.getJMSTopicObjectName(topic.getTopicName()), TopicControl.class, mbeanServer);
    }
 
    // Constructors --------------------------------------------------
@@ -116,7 +96,7 @@ public class ManagementControlHelper {
 
    // Private -------------------------------------------------------
 
-   private static Object createProxy(final ObjectName objectName,
+   public static Object createProxy(final ObjectName objectName,
                                      final Class mbeanInterface,
                                      final MBeanServer mbeanServer) {
       return MBeanServerInvocationHandler.newProxyInstance(mbeanServer, objectName, mbeanInterface, false);

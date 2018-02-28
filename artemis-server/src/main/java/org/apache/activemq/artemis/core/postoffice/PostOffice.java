@@ -16,17 +16,21 @@
  */
 package org.apache.activemq.artemis.core.postoffice;
 
+import java.util.EnumSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.apache.activemq.artemis.api.core.Message;
 import org.apache.activemq.artemis.api.core.Pair;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.core.server.ActiveMQComponent;
 import org.apache.activemq.artemis.core.server.MessageReference;
 import org.apache.activemq.artemis.core.server.Queue;
-import org.apache.activemq.artemis.core.server.QueueCreator;
 import org.apache.activemq.artemis.core.server.RoutingContext;
-import org.apache.activemq.artemis.core.server.ServerMessage;
+import org.apache.activemq.artemis.api.core.RoutingType;
+import org.apache.activemq.artemis.core.server.cluster.impl.MessageLoadBalancingType;
+import org.apache.activemq.artemis.core.server.impl.AddressInfo;
 import org.apache.activemq.artemis.core.transaction.Transaction;
 
 /**
@@ -41,6 +45,34 @@ import org.apache.activemq.artemis.core.transaction.Transaction;
  * A Queue instance can only be bound against a single address in the post office.
  */
 public interface PostOffice extends ActiveMQComponent {
+
+   /**
+    * @param addressInfo
+    * @return true if the address was added, false if it wasn't added
+    */
+   boolean addAddressInfo(AddressInfo addressInfo) throws Exception;
+
+   default void reloadAddressInfo(AddressInfo addressInfo) throws Exception {
+      addAddressInfo(addressInfo);
+   }
+
+   AddressInfo removeAddressInfo(SimpleString address) throws Exception;
+
+   AddressInfo removeAddressInfo(SimpleString address, boolean force) throws Exception;
+
+   AddressInfo getAddressInfo(SimpleString address);
+
+   AddressInfo updateAddressInfo(SimpleString addressName, EnumSet<RoutingType> routingTypes) throws Exception;
+
+   QueueBinding updateQueue(SimpleString name,
+                            RoutingType routingType,
+                            Integer maxConsumers,
+                            Boolean purgeOnNoConsumers,
+                            Boolean exclusive) throws Exception;
+
+   List<Queue> listQueuesForAddress(SimpleString address) throws Exception;
+
+
 
    void addBinding(Binding binding) throws Exception;
 
@@ -66,36 +98,48 @@ public interface PostOffice extends ActiveMQComponent {
 
    Bindings getMatchingBindings(SimpleString address) throws Exception;
 
+   Bindings getDirectBindings(SimpleString address) throws Exception;
+
    Map<SimpleString, Binding> getAllBindings();
 
-   RoutingStatus route(ServerMessage message, QueueCreator queueCreator, boolean direct) throws Exception;
+   SimpleString getMatchingQueue(SimpleString address, RoutingType routingType) throws Exception;
 
-   RoutingStatus route(ServerMessage message, QueueCreator queueCreator, Transaction tx, boolean direct) throws Exception;
+   SimpleString getMatchingQueue(SimpleString address, SimpleString queueName, RoutingType routingType) throws Exception;
 
-   RoutingStatus route(ServerMessage message,
-              QueueCreator queueCreator,
-              Transaction tx,
-              boolean direct,
-              boolean rejectDuplicates) throws Exception;
+   RoutingStatus route(Message message, boolean direct) throws Exception;
 
-   RoutingStatus route(ServerMessage message,
-                    QueueCreator queueCreator,
-                    RoutingContext context,
-                    boolean direct) throws Exception;
+   RoutingStatus route(Message message,
+                       Transaction tx,
+                       boolean direct) throws Exception;
 
-   RoutingStatus route(ServerMessage message,
-                    QueueCreator queueCreator,
-                    RoutingContext context,
-                    boolean direct,
-                    boolean rejectDuplicates) throws Exception;
+   RoutingStatus route(Message message,
+                       Transaction tx,
+                       boolean direct,
+                       boolean rejectDuplicates) throws Exception;
 
-   MessageReference reroute(ServerMessage message, Queue queue, Transaction tx) throws Exception;
+   RoutingStatus route(Message message,
+                       Transaction tx,
+                       boolean direct,
+                       boolean rejectDuplicates,
+                       Binding binding) throws Exception;
 
-   Pair<RoutingContext, ServerMessage> redistribute(ServerMessage message,
-                                                    final Queue originatingQueue,
+   RoutingStatus route(Message message,
+                       RoutingContext context,
+                       boolean direct) throws Exception;
+
+   RoutingStatus route(Message message,
+                       RoutingContext context,
+                       boolean direct,
+                       boolean rejectDuplicates,
+                       Binding binding) throws Exception;
+
+   MessageReference reroute(Message message, Queue queue, Transaction tx) throws Exception;
+
+   Pair<RoutingContext, Message> redistribute(Message message,
+                                                    Queue originatingQueue,
                                                     Transaction tx) throws Exception;
 
-   void processRoute(final ServerMessage message, final RoutingContext context, final boolean direct) throws Exception;
+   void processRoute(Message message, RoutingContext context, boolean direct) throws Exception;
 
    DuplicateIDCache getDuplicateIDCache(SimpleString address);
 
@@ -106,8 +150,9 @@ public interface PostOffice extends ActiveMQComponent {
    // we can't start expiry scanner until the system is load otherwise we may get weird races - https://issues.jboss.org/browse/HORNETQ-1142
    void startExpiryScanner();
 
-   boolean isAddressBound(final SimpleString address) throws Exception;
+   boolean isAddressBound(SimpleString address) throws Exception;
 
    Set<SimpleString> getAddresses();
 
+   void updateMessageLoadBalancingTypeForAddress(SimpleString  address, MessageLoadBalancingType messageLoadBalancingType) throws Exception;
 }

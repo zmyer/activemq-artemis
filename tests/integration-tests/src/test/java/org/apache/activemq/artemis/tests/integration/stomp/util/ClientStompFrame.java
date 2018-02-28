@@ -18,6 +18,8 @@ package org.apache.activemq.artemis.tests.integration.stomp.util;
 
 import java.nio.ByteBuffer;
 
+import io.netty.buffer.ByteBuf;
+
 /**
  * pls use factory to create frames.
  */
@@ -25,13 +27,15 @@ public interface ClientStompFrame {
 
    ByteBuffer toByteBuffer();
 
+   ByteBuf toNettyByteBuf();
+
    boolean needsReply();
 
-   void setCommand(String command);
+   ClientStompFrame setCommand(String command);
 
-   void addHeader(String string, String string2);
+   ClientStompFrame addHeader(String string, String string2);
 
-   void setBody(String string);
+   ClientStompFrame setBody(String string);
 
    String getCommand();
 
@@ -41,10 +45,12 @@ public interface ClientStompFrame {
 
    ByteBuffer toByteBufferWithExtra(String str);
 
+   ByteBuf toNettyByteBufWithExtras(String str);
+
    boolean isPing();
 
-   void setForceOneway();
+   ClientStompFrame setForceOneway();
 
-   void setPing(boolean b);
+   ClientStompFrame setPing(boolean b);
 
 }

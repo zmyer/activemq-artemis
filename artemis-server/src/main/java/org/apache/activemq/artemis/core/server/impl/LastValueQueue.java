@@ -18,26 +18,29 @@ package org.apache.activemq.artemis.core.server.impl;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledExecutorService;
 
+import org.apache.activemq.artemis.api.core.ActiveMQException;
 import org.apache.activemq.artemis.api.core.Message;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.core.filter.Filter;
 import org.apache.activemq.artemis.core.paging.cursor.PageSubscription;
 import org.apache.activemq.artemis.core.persistence.StorageManager;
 import org.apache.activemq.artemis.core.postoffice.PostOffice;
+import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.core.server.ActiveMQServerLogger;
 import org.apache.activemq.artemis.core.server.MessageReference;
 import org.apache.activemq.artemis.core.server.Queue;
-import org.apache.activemq.artemis.core.server.ServerMessage;
+import org.apache.activemq.artemis.core.server.QueueFactory;
 import org.apache.activemq.artemis.core.settings.HierarchicalRepository;
 import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
 import org.apache.activemq.artemis.core.transaction.Transaction;
+import org.apache.activemq.artemis.utils.actors.ArtemisExecutor;
 
 /**
  * A queue that will discard messages if a newer message with the same
- * {@link org.apache.activemq.artemis.core.message.impl.MessageImpl#HDR_LAST_VALUE_NAME} property value. In other words it only retains the last
+ * {@link org.apache.activemq.artemis.core.message.impl.CoreMessage#HDR_LAST_VALUE_NAME} property value. In other words it only retains the last
  * value
  * <p>
  * This is useful for example, for stock prices, where you're only interested in the latest value
@@ -56,13 +59,18 @@ public class LastValueQueue extends QueueImpl {
                          final boolean durable,
                          final boolean temporary,
                          final boolean autoCreated,
+                         final RoutingType routingType,
+                         final Integer maxConsumers,
+                         final Boolean exclusive,
+                         final Boolean purgeOnNoConsumers,
                          final ScheduledExecutorService scheduledExecutor,
                          final PostOffice postOffice,
                          final StorageManager storageManager,
                          final HierarchicalRepository<AddressSettings> addressSettingsRepository,
-                         final Executor executor) {
-      super(persistenceID, address, name, filter, pageSubscription, user, durable, temporary, autoCreated, scheduledExecutor, postOffice, storageManager, addressSettingsRepository, executor);
-      new Exception("LastValueQeue " + this).toString();
+                         final ArtemisExecutor executor,
+                         final ActiveMQServer server,
+                         final QueueFactory factory) {
+      super(persistenceID, address, name, filter, pageSubscription, user, durable, temporary, autoCreated, routingType, maxConsumers, exclusive, purgeOnNoConsumers, scheduledExecutor, postOffice, storageManager, addressSettingsRepository, executor, server, factory);
    }
 
    @Override
@@ -71,7 +79,7 @@ public class LastValueQueue extends QueueImpl {
          return;
       }
 
-      SimpleString prop = ref.getMessage().getSimpleStringProperty(Message.HDR_LAST_VALUE_NAME);
+      SimpleString prop = ref.getMessage().getLastValueProperty();
 
       if (prop != null) {
          HolderReference hr = map.get(prop);
@@ -81,55 +89,50 @@ public class LastValueQueue extends QueueImpl {
 
             replaceLVQMessage(ref, hr);
 
-         }
-         else {
+         } else {
             hr = new HolderReference(prop, ref);
 
             map.put(prop, hr);
 
             super.addTail(hr, direct);
          }
-      }
-      else {
+      } else {
          super.addTail(ref, direct);
       }
    }
 
    @Override
    public synchronized void addHead(final MessageReference ref, boolean scheduling) {
-      SimpleString prop = ref.getMessage().getSimpleStringProperty(Message.HDR_LAST_VALUE_NAME);
 
-      if (prop != null) {
-         HolderReference hr = map.get(prop);
+      SimpleString lastValueProp = ref.getMessage().getLastValueProperty();
+
+      if (lastValueProp != null) {
+         HolderReference hr = map.get(lastValueProp);
 
          if (hr != null) {
             if (scheduling) {
                // We need to overwrite the old ref with the new one and ack the old one
 
                replaceLVQMessage(ref, hr);
-            }
-            else {
+            } else {
                // We keep the current ref and ack the one we are returning
 
-               super.referenceHandled();
+               super.referenceHandled(ref);
 
                try {
                   super.acknowledge(ref);
-               }
-               catch (Exception e) {
+               } catch (Exception e) {
                   ActiveMQServerLogger.LOGGER.errorAckingOldReference(e);
                }
             }
-         }
-         else {
-            hr = new HolderReference(prop, ref);
+         } else {
+            hr = new HolderReference(lastValueProp, ref);
 
-            map.put(prop, hr);
+            map.put(lastValueProp, hr);
 
             super.addHead(hr, scheduling);
          }
-      }
-      else {
+      } else {
          super.addHead(ref, scheduling);
       }
    }
@@ -137,23 +140,21 @@ public class LastValueQueue extends QueueImpl {
    private void replaceLVQMessage(MessageReference ref, HolderReference hr) {
       MessageReference oldRef = hr.getReference();
 
-      referenceHandled();
+      referenceHandled(ref);
 
       try {
          oldRef.acknowledge();
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          ActiveMQServerLogger.LOGGER.errorAckingOldReference(e);
       }
 
       hr.setReference(ref);
    }
 
-
    @Override
    protected void refRemoved(MessageReference ref) {
       synchronized (this) {
-         SimpleString prop = ref.getMessage().getSimpleStringProperty(Message.HDR_LAST_VALUE_NAME);
+         SimpleString prop = ref.getMessage().getLastValueProperty();
 
          if (prop != null) {
             map.remove(prop);
@@ -161,6 +162,11 @@ public class LastValueQueue extends QueueImpl {
       }
 
       super.refRemoved(ref);
+   }
+
+   @Override
+   public boolean isLastValue() {
+      return true;
    }
 
    private class HolderReference implements MessageReference {
@@ -228,8 +234,13 @@ public class LastValueQueue extends QueueImpl {
       }
 
       @Override
-      public ServerMessage getMessage() {
+      public Message getMessage() {
          return ref.getMessage();
+      }
+
+      @Override
+      public long getMessageID() {
+         return getMessage().getMessageID();
       }
 
       @Override
@@ -313,6 +324,11 @@ public class LastValueQueue extends QueueImpl {
       public Long getConsumerId() {
          return this.consumerId;
       }
+
+      @Override
+      public long getPersistentSize() throws ActiveMQException {
+         return ref.getPersistentSize();
+      }
    }
 
    @Override
@@ -339,8 +355,7 @@ public class LastValueQueue extends QueueImpl {
          if (other.map != null) {
             return false;
          }
-      }
-      else if (!map.equals(other.map)) {
+      } else if (!map.equals(other.map)) {
          return false;
       }
       return true;

@@ -17,13 +17,11 @@
 package org.apache.activemq.artemis.tests.unit.core.config.impl;
 
 import org.apache.activemq.artemis.core.config.FileDeploymentManager;
-import org.junit.Test;
-
-import org.junit.Assert;
-
 import org.apache.activemq.artemis.core.config.impl.FileConfiguration;
 import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.apache.activemq.artemis.utils.XMLUtil;
+import org.junit.Assert;
+import org.junit.Test;
 import org.w3c.dom.Element;
 
 public class ConfigurationValidationTest extends ActiveMQTestBase {
@@ -58,5 +56,21 @@ public class ConfigurationValidationTest extends ActiveMQTestBase {
       deploymentManager.readConfiguration();
 
       Assert.assertEquals(true, fc.isPersistDeliveryCountBeforeDelivery());
+   }
+
+   @Test
+   public void testChangeConfiguration() throws Exception {
+      FileConfiguration fc = new FileConfiguration();
+      FileDeploymentManager deploymentManager = new FileDeploymentManager("ConfigurationTest-full-config.xml");
+      deploymentManager.addDeployable(fc);
+      deploymentManager.readConfiguration();
+      deploymentManager = new FileDeploymentManager("ConfigurationTest-full-config-wrong-address.xml");
+      deploymentManager.addDeployable(fc);
+
+      try {
+         deploymentManager.readConfiguration();
+         fail("Exception expected");
+      } catch (Exception ignored) {
+      }
    }
 }

@@ -58,7 +58,6 @@
             <include>org.apache.activemq:artemis-native</include>
             <include>org.apache.activemq:artemis-amqp-protocol</include>
             <include>org.apache.activemq:artemis-openwire-protocol</include>
-            <include>org.apache.activemq:artemis-proton-plug</include>
             <include>org.apache.activemq:artemis-hornetq-protocol</include>
             <include>org.apache.activemq:artemis-hqclient-protocol</include>
             <include>org.apache.activemq:artemis-stomp-protocol</include>
@@ -66,6 +65,7 @@
             <include>org.apache.activemq:artemis-ra</include>
             <include>org.apache.activemq:artemis-selector</include>
             <include>org.apache.activemq:artemis-server</include>
+            <include>org.apache.activemq:artemis-tools</include>
             <include>org.apache.activemq:artemis-service-extensions</include>
             <include>org.apache.activemq:artemis-web</include>
             <include>org.apache.activemq.rest:artemis-rest</include>
@@ -78,6 +78,7 @@
             <include>org.apache.geronimo.specs:geronimo-jta_1.1_spec</include>
             <include>org.jboss.logmanager:jboss-logmanager</include>
             <include>org.jboss.logging:jboss-logging</include>
+            <include>org.jboss.slf4j:slf4j-jboss-logmanager</include>
             <include>io.netty:netty-all</include>
             <include>org.apache.qpid:proton-j</include>
             <include>org.apache.activemq:activemq-client</include>
@@ -90,16 +91,27 @@
             <include>commons-beanutils:commons-beanutils</include>
             <include>commons-logging:commons-logging</include>
             <include>commons-collections:commons-collections</include>
+            <include>org.apache.commons:commons-configuration2</include>
+            <include>org.apache.commons:commons-lang3</include>
             <include>org.fusesource.hawtbuf:hawtbuf</include>
             <include>org.jgroups:jgroups</include>
-            <include>io.netty:netty-codec-mqtt</include>
             <include>org.apache.geronimo.specs:geronimo-json_1.0_spec</include>
             <include>org.apache.johnzon:johnzon-core</include>
+            <include>org.hdrhistogram:HdrHistogram</include>
          </includes>
          <!--excludes>
             <exclude>org.apache.activemq:artemis-website</exclude>
          </excludes-->
          <outputDirectory>lib</outputDirectory>
+         <unpack>false</unpack>
+      </dependencySet>
+      <dependencySet>
+         <directoryMode>755</directoryMode>
+         <fileMode>644</fileMode>
+         <includes>
+            <include>org.apache.activemq:artemis-jms-client-all</include>
+         </includes>
+         <outputDirectory>lib/client</outputDirectory>
          <unpack>false</unpack>
       </dependencySet>
       <!-- native -->
@@ -132,13 +144,33 @@
          <outputDirectory>web/api</outputDirectory>
          <unpack>true</unpack>
       </dependencySet>
+      
+      <!-- Management Console Dependencies -->
       <dependencySet>
          <includes>
-            <include>org.jolokia:jolokia-war:war</include>
+            <include>org.apache.activemq:artemis-console:war</include>
          </includes>
          <outputDirectory>web</outputDirectory>
          <unpack>false</unpack>
+         <outputFileNameMapping>console.war</outputFileNameMapping>
       </dependencySet>
+      <dependencySet>
+         <includes>
+            <include>org.apache.activemq:activemq-branding:war</include>
+         </includes>
+         <outputDirectory>web</outputDirectory>
+         <unpack>false</unpack>
+         <outputFileNameMapping>activemq-branding.war</outputFileNameMapping>
+      </dependencySet>
+      <dependencySet>
+         <includes>
+            <include>org.apache.activemq:artemis-plugin:war</include>
+         </includes>
+         <outputDirectory>web</outputDirectory>
+         <unpack>false</unpack>
+         <outputFileNameMapping>artemis-plugin.war</outputFileNameMapping>
+      </dependencySet>
+      
    </dependencySets>
    <fileSets>
       <!-- schema -->
@@ -188,6 +220,7 @@
             <exclude>**/target/**</exclude>
             <exclude>**/**/*.iml</exclude>
             <exclude>**/**/*.dat</exclude>
+            <exclude>**/**/*.md</exclude>
          </excludes>
       </fileSet>
       <!-- Include license and notice files -->

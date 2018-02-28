@@ -41,6 +41,7 @@ import org.apache.activemq.artemis.core.paging.PagingStore;
 import org.apache.activemq.artemis.core.persistence.impl.journal.DescribeJournal;
 import org.apache.activemq.artemis.core.persistence.impl.journal.JournalStorageManager;
 import org.apache.activemq.artemis.core.server.Queue;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.core.server.files.FileMoveManager;
 import org.apache.activemq.artemis.tests.integration.cluster.util.BackupSyncDelay;
 import org.apache.activemq.artemis.tests.integration.cluster.util.TestableServer;
@@ -78,7 +79,7 @@ public class BackupSyncJournalTest extends FailoverTestBase {
       startBackupServer = false;
       super.setUp();
       setNumberOfMessages(defaultNMsgs);
-      locator = (ServerLocatorInternal) getServerLocator().setBlockOnNonDurableSend(true).setBlockOnDurableSend(true).setReconnectAttempts(-1);
+      locator = (ServerLocatorInternal) getServerLocator().setBlockOnNonDurableSend(true).setBlockOnDurableSend(true).setReconnectAttempts(15);
       sessionFactory = createSessionFactoryAndWaitForTopology(locator, 1);
       syncDelay = new BackupSyncDelay(backupServer, liveServer);
 
@@ -93,7 +94,7 @@ public class BackupSyncJournalTest extends FailoverTestBase {
 
    @Test
    public void testReserveFileIdValuesOnBackup() throws Exception {
-      final int totalRounds = 50;
+      final int totalRounds = 5;
       createProducerSendSomeMessages();
       JournalImpl messageJournal = getMessageJournalFromServer(liveServer);
       for (int i = 0; i < totalRounds; i++) {
@@ -194,8 +195,7 @@ public class BackupSyncJournalTest extends FailoverTestBase {
 
          receiveMsgsInRange(0, n_msgs);
          assertNoMoreMessages();
-      }
-      catch (AssertionError error) {
+      } catch (AssertionError error) {
          printJournal(liveServer);
          printJournal(backupServer);
          // test failed
@@ -210,8 +210,7 @@ public class BackupSyncJournalTest extends FailoverTestBase {
          DescribeJournal.describeBindingsJournal(config.getBindingsLocation());
          System.out.println("\n\n MESSAGES JOURNAL\n\n");
          DescribeJournal.describeMessagesJournal(config.getJournalLocation());
-      }
-      catch (Exception ignored) {
+      } catch (Exception ignored) {
          ignored.printStackTrace();
       }
    }
@@ -255,8 +254,7 @@ public class BackupSyncJournalTest extends FailoverTestBase {
          UUID uuid = new UUID(UUID.TYPE_TIME_BASED, bytes);
          SimpleString storedNodeId = new SimpleString(uuid.toString());
          assertEquals("nodeId must match", backupServer.getServer().getNodeID(), storedNodeId);
-      }
-      finally {
+      } finally {
          raFile.close();
       }
    }
@@ -294,8 +292,7 @@ public class BackupSyncJournalTest extends FailoverTestBase {
          liveServer.start();
          assertTrue("must have become a backup", liveServer.getServer().getHAPolicy().isBackup());
          Assert.assertEquals(0, liveMoveManager.getNumberOfFolders());
-      }
-      finally {
+      } finally {
          liveServer.getServer().unlockActivation();
       }
       waitForServerToStart(liveServer.getServer());
@@ -335,7 +332,7 @@ public class BackupSyncJournalTest extends FailoverTestBase {
 
    protected void createProducerSendSomeMessages() throws ActiveMQException {
       session = addClientSession(sessionFactory.createSession(true, true));
-      session.createQueue(ADDRESS, ADDRESS, null, true);
+      session.createQueue(ADDRESS, RoutingType.MULTICAST, ADDRESS, null, true);
       if (producer != null)
          producer.close();
       producer = addClientProducer(session.createProducer(ADDRESS));

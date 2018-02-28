@@ -18,11 +18,13 @@ package org.apache.activemq.artemis.core.server.impl;
 
 import java.util.concurrent.ScheduledExecutorService;
 
+import org.apache.activemq.artemis.api.config.ActiveMQDefaultConfiguration;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.core.filter.Filter;
 import org.apache.activemq.artemis.core.paging.cursor.PageSubscription;
 import org.apache.activemq.artemis.core.persistence.StorageManager;
 import org.apache.activemq.artemis.core.postoffice.PostOffice;
+import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.core.server.Queue;
 import org.apache.activemq.artemis.core.server.QueueConfig;
 import org.apache.activemq.artemis.core.server.QueueFactory;
@@ -48,17 +50,19 @@ public class QueueFactoryImpl implements QueueFactory {
 
    protected final ExecutorFactory executorFactory;
 
+   protected final ActiveMQServer server;
+
    public QueueFactoryImpl(final ExecutorFactory executorFactory,
                            final ScheduledExecutorService scheduledExecutor,
                            final HierarchicalRepository<AddressSettings> addressSettingsRepository,
-                           final StorageManager storageManager) {
+                           final StorageManager storageManager,
+                           final ActiveMQServer server) {
+
       this.addressSettingsRepository = addressSettingsRepository;
-
       this.scheduledExecutor = scheduledExecutor;
-
       this.storageManager = storageManager;
-
       this.executorFactory = executorFactory;
+      this.server = server;
    }
 
    @Override
@@ -68,14 +72,14 @@ public class QueueFactoryImpl implements QueueFactory {
 
    @Override
    public Queue createQueueWith(final QueueConfig config) {
-      final AddressSettings addressSettings = addressSettingsRepository.getMatch(config.address().toString());
       final Queue queue;
-      if (addressSettings.isLastValueQueue()) {
-         queue = new LastValueQueue(config.id(), config.address(), config.name(), config.filter(), config.pageSubscription(), config.user(), config.isDurable(), config.isTemporary(), config.isAutoCreated(), scheduledExecutor, postOffice, storageManager, addressSettingsRepository, executorFactory.getExecutor());
+      if (config.isLastValue()) {
+         queue = new LastValueQueue(config.id(), config.address(), config.name(), config.filter(), config.pageSubscription(), config.user(), config.isDurable(), config.isTemporary(), config.isAutoCreated(), config.deliveryMode(), config.maxConsumers(), config.isExclusive(), config.isPurgeOnNoConsumers(), scheduledExecutor, postOffice, storageManager, addressSettingsRepository, executorFactory.getExecutor(), server, this);
+      } else {
+         queue = new QueueImpl(config.id(), config.address(), config.name(), config.filter(), config.pageSubscription(), config.user(), config.isDurable(), config.isTemporary(), config.isAutoCreated(), config.deliveryMode(), config.maxConsumers(), config.isExclusive(), config.isPurgeOnNoConsumers(), scheduledExecutor, postOffice, storageManager, addressSettingsRepository, executorFactory.getExecutor(), server, this);
       }
-      else {
-         queue = new QueueImpl(config.id(), config.address(), config.name(), config.filter(), config.pageSubscription(), config.user(), config.isDurable(), config.isTemporary(), config.isAutoCreated(), scheduledExecutor, postOffice, storageManager, addressSettingsRepository, executorFactory.getExecutor());
-      }
+
+      server.getCriticalAnalyzer().add(queue);
       return queue;
    }
 
@@ -89,17 +93,27 @@ public class QueueFactoryImpl implements QueueFactory {
                             final SimpleString user,
                             final boolean durable,
                             final boolean temporary,
-                            final boolean autoCreated) {
+                            final boolean autoCreated) throws Exception {
+
+      // Add default address info if one doesn't exist
+      postOffice.addAddressInfo(new AddressInfo(address));
+
       AddressSettings addressSettings = addressSettingsRepository.getMatch(address.toString());
 
       Queue queue;
-      if (addressSettings.isLastValueQueue()) {
-         queue = new LastValueQueue(persistenceID, address, name, filter, pageSubscription, user, durable, temporary, autoCreated, scheduledExecutor, postOffice, storageManager, addressSettingsRepository, executorFactory.getExecutor());
-      }
-      else {
-         queue = new QueueImpl(persistenceID, address, name, filter, pageSubscription, user, durable, temporary, autoCreated, scheduledExecutor, postOffice, storageManager, addressSettingsRepository, executorFactory.getExecutor());
+      if (addressSettings.isDefaultLastValueQueue()) {
+         queue = new LastValueQueue(persistenceID, address, name, filter, pageSubscription, user, durable, temporary, autoCreated, ActiveMQDefaultConfiguration.getDefaultRoutingType(), ActiveMQDefaultConfiguration.getDefaultMaxQueueConsumers(), ActiveMQDefaultConfiguration.getDefaultExclusive(), ActiveMQDefaultConfiguration.getDefaultPurgeOnNoConsumers(),  scheduledExecutor, postOffice, storageManager, addressSettingsRepository, executorFactory.getExecutor(), server, this);
+      } else {
+         queue = new QueueImpl(persistenceID, address, name, filter, pageSubscription, user, durable, temporary, autoCreated, scheduledExecutor, postOffice, storageManager, addressSettingsRepository, executorFactory.getExecutor(), server, this);
       }
 
+      server.getCriticalAnalyzer().add(queue);
+
       return queue;
+   }
+
+   @Override
+   public void queueRemoved(Queue queue) {
+      server.getCriticalAnalyzer().remove(queue);
    }
 }

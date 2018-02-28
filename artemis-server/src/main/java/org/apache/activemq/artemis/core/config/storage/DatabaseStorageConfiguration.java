@@ -30,6 +30,10 @@ public class DatabaseStorageConfiguration implements StoreConfiguration {
 
    private String largeMessagesTableName = ActiveMQDefaultConfiguration.getDefaultLargeMessagesTableName();
 
+   private String pageStoreTableName = ActiveMQDefaultConfiguration.getDefaultPageStoreTableName();
+
+   private String nodeManagerStoreTableName = ActiveMQDefaultConfiguration.getDefaultNodeManagerStoreTableName();
+
    private String jdbcConnectionUrl = ActiveMQDefaultConfiguration.getDefaultDatabaseUrl();
 
    private String jdbcDriverClassName = ActiveMQDefaultConfiguration.getDefaultDriverClassName();
@@ -37,6 +41,14 @@ public class DatabaseStorageConfiguration implements StoreConfiguration {
    private DataSource dataSource;
 
    private SQLProvider.Factory sqlProviderFactory;
+
+   private int jdbcNetworkTimeout = ActiveMQDefaultConfiguration.getDefaultJdbcNetworkTimeout();
+
+   private long jdbcLockRenewPeriodMillis = ActiveMQDefaultConfiguration.getDefaultJdbcLockRenewPeriodMillis();
+
+   private long jdbcLockExpirationMillis = ActiveMQDefaultConfiguration.getDefaultJdbcLockExpirationMillis();
+
+   private long jdbcLockAcquisitionTimeoutMillis = ActiveMQDefaultConfiguration.getDefaultJdbcLockAcquisitionTimeoutMillis();
 
    @Override
    public StoreType getStoreType() {
@@ -65,6 +77,22 @@ public class DatabaseStorageConfiguration implements StoreConfiguration {
 
    public void setLargeMessageTableName(String largeMessagesTableName) {
       this.largeMessagesTableName = largeMessagesTableName;
+   }
+
+   public String getPageStoreTableName() {
+      return pageStoreTableName;
+   }
+
+   public void setNodeManagerStoreTableName(String nodeManagerStoreTableName) {
+      this.nodeManagerStoreTableName = nodeManagerStoreTableName;
+   }
+
+   public String getNodeManagerStoreTableName() {
+      return nodeManagerStoreTableName;
+   }
+
+   public void setPageStoreTableName(String pageStoreTableName) {
+      this.pageStoreTableName = pageStoreTableName;
    }
 
    public void setJdbcConnectionUrl(String jdbcConnectionUrl) {
@@ -103,8 +131,8 @@ public class DatabaseStorageConfiguration implements StoreConfiguration {
 
    /**
     * The {@link SQLProvider.Factory} used to communicate with the JDBC data store.
-    * It can be {@code null}. If the value is {@code null} and {@code dataSource} is set, the {@code {@link org.apache.activemq.artemis.jdbc.store.sql.GenericSQLProvider.Factory} will be user,
-    * else the type of the factory will be determined based on the {@code jdbcDriverClassName).
+    * It can be {@code null}. If the value is {@code null} and {@code dataSource} is set, the {@code {@link org.apache.activemq.artemis.jdbc.store.sql.PropertySQLProvider.Factory}} will be used,
+    * else the type of the factory will be determined based on the {@code jdbcDriverClassName}.
     *
     * @return the factory used to communicate with the JDBC data store.
     */
@@ -114,5 +142,37 @@ public class DatabaseStorageConfiguration implements StoreConfiguration {
 
    public void setSqlProvider(SQLProvider.Factory sqlProviderFactory) {
       this.sqlProviderFactory = sqlProviderFactory;
+   }
+
+   public int getJdbcNetworkTimeout() {
+      return this.jdbcNetworkTimeout;
+   }
+
+   public void setJdbcNetworkTimeout(int jdbcNetworkTimeout) {
+      this.jdbcNetworkTimeout = jdbcNetworkTimeout;
+   }
+
+   public long getJdbcLockRenewPeriodMillis() {
+      return jdbcLockRenewPeriodMillis;
+   }
+
+   public void setJdbcLockRenewPeriodMillis(long jdbcLockRenewPeriodMillis) {
+      this.jdbcLockRenewPeriodMillis = jdbcLockRenewPeriodMillis;
+   }
+
+   public long getJdbcLockExpirationMillis() {
+      return jdbcLockExpirationMillis;
+   }
+
+   public void setJdbcLockExpirationMillis(long jdbcLockExpirationMillis) {
+      this.jdbcLockExpirationMillis = jdbcLockExpirationMillis;
+   }
+
+   public long getJdbcLockAcquisitionTimeoutMillis() {
+      return jdbcLockAcquisitionTimeoutMillis;
+   }
+
+   public void setJdbcLockAcquisitionTimeoutMillis(long jdbcLockAcquisitionTimeoutMillis) {
+      this.jdbcLockAcquisitionTimeoutMillis = jdbcLockAcquisitionTimeoutMillis;
    }
 }

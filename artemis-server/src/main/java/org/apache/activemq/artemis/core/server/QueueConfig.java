@@ -16,6 +16,8 @@
  */
 package org.apache.activemq.artemis.core.server;
 
+import org.apache.activemq.artemis.api.config.ActiveMQDefaultConfiguration;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.core.filter.Filter;
 import org.apache.activemq.artemis.core.filter.FilterUtils;
@@ -33,6 +35,11 @@ public final class QueueConfig {
    private final boolean durable;
    private final boolean temporary;
    private final boolean autoCreated;
+   private final RoutingType routingType;
+   private final int maxConsumers;
+   private final boolean exclusive;
+   private final boolean lastValue;
+   private final boolean purgeOnNoConsumers;
 
    public static final class Builder {
 
@@ -45,6 +52,11 @@ public final class QueueConfig {
       private boolean durable;
       private boolean temporary;
       private boolean autoCreated;
+      private RoutingType routingType;
+      private int maxConsumers;
+      private boolean exclusive;
+      private boolean lastValue;
+      private boolean purgeOnNoConsumers;
 
       private Builder(final long id, final SimpleString name) {
          this(id, name, name);
@@ -60,6 +72,11 @@ public final class QueueConfig {
          this.durable = true;
          this.temporary = false;
          this.autoCreated = true;
+         this.routingType = ActiveMQDefaultConfiguration.getDefaultRoutingType();
+         this.maxConsumers = ActiveMQDefaultConfiguration.getDefaultMaxQueueConsumers();
+         this.exclusive = ActiveMQDefaultConfiguration.getDefaultExclusive();
+         this.lastValue = ActiveMQDefaultConfiguration.getDefaultLastValue();
+         this.purgeOnNoConsumers = ActiveMQDefaultConfiguration.getDefaultPurgeOnNoConsumers();
          validateState();
       }
 
@@ -69,10 +86,10 @@ public final class QueueConfig {
 
       private void validateState() {
          if (isEmptyOrNull(this.name)) {
-            throw new IllegalStateException("name can't be null!");
+            throw new IllegalStateException("name can't be null or empty!");
          }
          if (isEmptyOrNull(this.address)) {
-            throw new IllegalStateException("address can't be null!");
+            throw new IllegalStateException("address can't be null or empty!");
          }
       }
 
@@ -80,7 +97,6 @@ public final class QueueConfig {
          this.filter = filter;
          return this;
       }
-
 
       public Builder pagingManager(final PagingManager pagingManager) {
          this.pagingManager = pagingManager;
@@ -107,6 +123,31 @@ public final class QueueConfig {
          return this;
       }
 
+      public Builder maxConsumers(final int maxConsumers) {
+         this.maxConsumers = maxConsumers;
+         return this;
+      }
+
+      public Builder exclusive(final boolean exclusive) {
+         this.exclusive = exclusive;
+         return this;
+      }
+
+      public Builder lastValue(final boolean lastValue) {
+         this.lastValue = lastValue;
+         return this;
+      }
+
+
+      public Builder purgeOnNoConsumers(final boolean purgeOnNoConsumers) {
+         this.purgeOnNoConsumers = purgeOnNoConsumers;
+         return this;
+      }
+
+      public Builder routingType(RoutingType routingType) {
+         this.routingType = routingType;
+         return this;
+      }
 
       /**
        * Returns a new {@link QueueConfig} using the parameters configured on the {@link Builder}.
@@ -123,15 +164,13 @@ public final class QueueConfig {
          if (pagingManager != null && !FilterUtils.isTopicIdentification(filter)) {
             try {
                pageSubscription = this.pagingManager.getPageStore(address).getCursorProvider().createSubscription(id, filter, durable);
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                throw new IllegalStateException(e);
             }
-         }
-         else {
+         } else {
             pageSubscription = null;
          }
-         return new QueueConfig(id, address, name, filter, pageSubscription, user, durable, temporary, autoCreated);
+         return new QueueConfig(id, address, name, filter, pageSubscription, user, durable, temporary, autoCreated, routingType, maxConsumers, exclusive, lastValue, purgeOnNoConsumers);
       }
 
    }
@@ -142,7 +181,7 @@ public final class QueueConfig {
     * The {@code address} is defaulted to the {@code name} value.
     * The reference parameters aren't defensively copied.
     *
-    * @param id the id of the queue to be created
+    * @param id   the id of the queue to be created
     * @param name the name of the queue to be created
     * @throws IllegalStateException if {@code name} is {@code null} or empty
     */
@@ -155,8 +194,8 @@ public final class QueueConfig {
     * <br>
     * The reference parameters aren't defensively copied.
     *
-    * @param id the id of the queue to be created
-    * @param name the name of the queue to be created
+    * @param id      the id of the queue to be created
+    * @param name    the name of the queue to be created
     * @param address the address of the queue to be created
     * @throws IllegalStateException if {@code name} or {@code address} are {@code null} or empty
     */
@@ -172,7 +211,12 @@ public final class QueueConfig {
                        final SimpleString user,
                        final boolean durable,
                        final boolean temporary,
-                       final boolean autoCreated) {
+                       final boolean autoCreated,
+                       final RoutingType routingType,
+                       final int maxConsumers,
+                       final boolean exclusive,
+                       final boolean lastValue,
+                       final boolean purgeOnNoConsumers) {
       this.id = id;
       this.address = address;
       this.name = name;
@@ -182,6 +226,11 @@ public final class QueueConfig {
       this.durable = durable;
       this.temporary = temporary;
       this.autoCreated = autoCreated;
+      this.routingType = routingType;
+      this.purgeOnNoConsumers = purgeOnNoConsumers;
+      this.exclusive = exclusive;
+      this.lastValue = lastValue;
+      this.maxConsumers = maxConsumers;
    }
 
    public long id() {
@@ -220,6 +269,26 @@ public final class QueueConfig {
       return autoCreated;
    }
 
+   public boolean isPurgeOnNoConsumers() {
+      return purgeOnNoConsumers;
+   }
+
+   public int maxConsumers() {
+      return maxConsumers;
+   }
+
+   public boolean isExclusive() {
+      return exclusive;
+   }
+
+   public boolean isLastValue() {
+      return lastValue;
+   }
+
+   public RoutingType deliveryMode() {
+      return routingType;
+   }
+
    @Override
    public boolean equals(Object o) {
       if (this == o)
@@ -245,6 +314,16 @@ public final class QueueConfig {
          return false;
       if (pageSubscription != null ? !pageSubscription.equals(that.pageSubscription) : that.pageSubscription != null)
          return false;
+      if (routingType != that.routingType)
+         return false;
+      if (maxConsumers != that.maxConsumers)
+         return false;
+      if (exclusive != that.exclusive)
+         return false;
+      if (lastValue != that.lastValue)
+         return false;
+      if (purgeOnNoConsumers != that.purgeOnNoConsumers)
+         return false;
       return user != null ? user.equals(that.user) : that.user == null;
 
    }
@@ -260,11 +339,30 @@ public final class QueueConfig {
       result = 31 * result + (durable ? 1 : 0);
       result = 31 * result + (temporary ? 1 : 0);
       result = 31 * result + (autoCreated ? 1 : 0);
+      result = 31 * result + routingType.getType();
+      result = 31 * result + maxConsumers;
+      result = 31 * result + (exclusive ? 1 : 0);
+      result = 31 * result + (lastValue ? 1 : 0);
+      result = 31 * result + (purgeOnNoConsumers ? 1 : 0);
       return result;
    }
 
    @Override
    public String toString() {
-      return "QueueConfig{" + "id=" + id + ", address=" + address + ", name=" + name + ", filter=" + filter + ", pageSubscription=" + pageSubscription + ", user=" + user + ", durable=" + durable + ", temporary=" + temporary + ", autoCreated=" + autoCreated + '}';
+      return "QueueConfig{"
+         + "id=" + id
+         + ", address=" + address
+         + ", name=" + name
+         + ", filter=" + filter
+         + ", pageSubscription=" + pageSubscription
+         + ", user=" + user
+         + ", durable=" + durable
+         + ", temporary=" + temporary
+         + ", autoCreated=" + autoCreated
+         + ", routingType=" + routingType
+         + ", maxConsumers=" + maxConsumers
+         + ", exclusive=" + exclusive
+         + ", lastValue=" + lastValue
+         + ", purgeOnNoConsumers=" + purgeOnNoConsumers + '}';
    }
 }

@@ -70,7 +70,7 @@ public class StompDualAuthenticationExample {
          // jms.queue.exampleQueue address with a text body
          String text = "Hello, world from Stomp!";
          String message = "SEND\n" +
-            "destination: jms.queue.exampleQueue\n" +
+            "destination: exampleQueue\n" +
             "\n" +
             text +
             END_OF_FRAME;
@@ -106,8 +106,7 @@ public class StompDualAuthenticationExample {
          // Step 10. Receive the message
          TextMessage messageReceived = (TextMessage) consumer.receive(5000);
          System.out.println("Received JMS message: " + messageReceived.getText());
-      }
-      finally {
+      } finally {
          // Step 11. Be sure to close our JMS resources!
          if (initialContext != null) {
             initialContext.close();

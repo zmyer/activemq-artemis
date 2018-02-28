@@ -16,12 +16,13 @@
  */
 package org.apache.activemq.artemis.core.server.cluster.ha;
 
+import java.util.Map;
+
 import org.apache.activemq.artemis.api.config.ActiveMQDefaultConfiguration;
+import org.apache.activemq.artemis.core.server.NetworkHealthCheck;
 import org.apache.activemq.artemis.core.server.impl.Activation;
 import org.apache.activemq.artemis.core.server.impl.ActiveMQServerImpl;
 import org.apache.activemq.artemis.core.server.impl.SharedNothingBackupActivation;
-
-import java.util.Map;
 
 public class ReplicaPolicy extends BackupPolicy {
 
@@ -38,9 +39,32 @@ public class ReplicaPolicy extends BackupPolicy {
 
    private long initialReplicationSyncTimeout = ActiveMQDefaultConfiguration.getDefaultInitialReplicationSyncTimeout();
 
+   /*
+   * what quorum size to use for voting
+   * */
+   private int quorumSize;
+
+   /*
+   * whether or not this live broker should vote to remain live
+   * */
+   private boolean voteOnReplicationFailure;
+
    private ReplicatedPolicy replicatedPolicy;
 
-   public ReplicaPolicy() {
+   private final NetworkHealthCheck networkHealthCheck;
+
+   private int voteRetries;
+
+   private long voteRetryWait;
+
+   public ReplicaPolicy(final NetworkHealthCheck networkHealthCheck) {
+      this.networkHealthCheck = networkHealthCheck;
+   }
+
+   public ReplicaPolicy(final NetworkHealthCheck networkHealthCheck,
+                        ReplicatedPolicy replicatedPolicy) {
+      this.networkHealthCheck = networkHealthCheck;
+      this.replicatedPolicy = replicatedPolicy;
    }
 
    public ReplicaPolicy(String clusterName,
@@ -49,24 +73,36 @@ public class ReplicaPolicy extends BackupPolicy {
                         boolean restartBackup,
                         boolean allowFailback,
                         long initialReplicationSyncTimeout,
-                        ScaleDownPolicy scaleDownPolicy) {
+                        ScaleDownPolicy scaleDownPolicy,
+                        NetworkHealthCheck networkHealthCheck,
+                        boolean voteOnReplicationFailure,
+                        int quorumSize,
+                        int voteRetries,
+                        long voteRetryWait) {
       this.clusterName = clusterName;
       this.maxSavedReplicatedJournalsSize = maxSavedReplicatedJournalsSize;
       this.groupName = groupName;
       this.restartBackup = restartBackup;
       this.allowFailback = allowFailback;
       this.initialReplicationSyncTimeout = initialReplicationSyncTimeout;
+      this.quorumSize = quorumSize;
+      this.voteRetries = voteRetries;
+      this.voteRetryWait = voteRetryWait;
       this.scaleDownPolicy = scaleDownPolicy;
+      this.networkHealthCheck = networkHealthCheck;
+      this.voteOnReplicationFailure = voteOnReplicationFailure;
    }
 
    public ReplicaPolicy(String clusterName,
                         int maxSavedReplicatedJournalsSize,
                         String groupName,
-                        ReplicatedPolicy replicatedPolicy) {
+                        ReplicatedPolicy replicatedPolicy,
+                        NetworkHealthCheck networkHealthCheck) {
       this.clusterName = clusterName;
       this.maxSavedReplicatedJournalsSize = maxSavedReplicatedJournalsSize;
       this.groupName = groupName;
       this.replicatedPolicy = replicatedPolicy;
+      this.networkHealthCheck = networkHealthCheck;
    }
 
    public String getClusterName() {
@@ -87,7 +123,7 @@ public class ReplicaPolicy extends BackupPolicy {
 
    public ReplicatedPolicy getReplicatedPolicy() {
       if (replicatedPolicy == null) {
-         replicatedPolicy = new ReplicatedPolicy(false, allowFailback, initialReplicationSyncTimeout, groupName, clusterName, this);
+         replicatedPolicy = new ReplicatedPolicy(false, allowFailback, initialReplicationSyncTimeout, groupName, clusterName, this, networkHealthCheck, voteOnReplicationFailure, quorumSize, voteRetries, voteRetryWait);
       }
       return replicatedPolicy;
    }
@@ -162,8 +198,40 @@ public class ReplicaPolicy extends BackupPolicy {
                                       boolean wasLive,
                                       Map<String, Object> activationParams,
                                       ActiveMQServerImpl.ShutdownOnCriticalErrorListener shutdownOnCriticalIO) throws Exception {
-      SharedNothingBackupActivation backupActivation = new SharedNothingBackupActivation(server, wasLive, activationParams, shutdownOnCriticalIO, this);
+      SharedNothingBackupActivation backupActivation = new SharedNothingBackupActivation(server, wasLive, activationParams, shutdownOnCriticalIO, this, networkHealthCheck);
       backupActivation.init();
       return backupActivation;
+   }
+
+   public void setQuorumSize(int quorumSize) {
+      this.quorumSize = quorumSize;
+   }
+
+   public int getQuorumSize() {
+      return quorumSize;
+   }
+
+   public void setVoteOnReplicationFailure(boolean voteOnReplicationFailure) {
+      this.voteOnReplicationFailure = voteOnReplicationFailure;
+   }
+
+   public boolean isVoteOnReplicationFailure() {
+      return voteOnReplicationFailure;
+   }
+
+   public void setVoteRetries(int voteRetries) {
+      this.voteRetries = voteRetries;
+   }
+
+   public void setVoteRetryWait(long voteRetryWait) {
+      this.voteRetryWait = voteRetryWait;
+   }
+
+   public int getVoteRetries() {
+      return voteRetries;
+   }
+
+   public long getVoteRetryWait() {
+      return voteRetryWait;
    }
 }

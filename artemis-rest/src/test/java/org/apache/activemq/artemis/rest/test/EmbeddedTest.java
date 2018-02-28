@@ -86,8 +86,7 @@ public class EmbeddedTest {
          message.setObject(object);
 
          producer.send(message);
-      }
-      finally {
+      } finally {
          conn.close();
       }
    }
@@ -95,7 +94,7 @@ public class EmbeddedTest {
    @Test
    public void testTransform() throws Exception {
 
-      ClientRequest request = new ClientRequest(TestPortProvider.generateURL("/queues/jms.queue.exampleQueue"));
+      ClientRequest request = new ClientRequest(TestPortProvider.generateURL("/queues/exampleQueue"));
 
       ClientResponse<?> response = request.head();
       response.releaseConnection();

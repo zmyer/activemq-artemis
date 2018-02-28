@@ -19,6 +19,7 @@ package org.apache.activemq.artemis.tests.unit.core.remoting.impl.netty;
 import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelInboundHandlerAdapter;
@@ -26,11 +27,12 @@ import io.netty.channel.embedded.EmbeddedChannel;
 import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
 import org.apache.activemq.artemis.api.core.ActiveMQBuffers;
 import org.apache.activemq.artemis.api.core.ActiveMQException;
-import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.apache.activemq.artemis.core.remoting.impl.netty.NettyConnection;
 import org.apache.activemq.artemis.core.server.ActiveMQComponent;
+import org.apache.activemq.artemis.spi.core.remoting.ClientConnectionLifeCycleListener;
+import org.apache.activemq.artemis.spi.core.remoting.ClientProtocolManager;
 import org.apache.activemq.artemis.spi.core.remoting.Connection;
-import org.apache.activemq.artemis.spi.core.remoting.ConnectionLifeCycleListener;
+import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -43,7 +45,7 @@ public class NettyConnectionTest extends ActiveMQTestBase {
       Channel channel = createChannel();
       NettyConnection conn = new NettyConnection(emptyMap, channel, new MyListener(), false, false);
 
-      Assert.assertEquals(channel.hashCode(), conn.getID());
+      Assert.assertEquals(channel.id(), conn.getID());
    }
 
    @Test
@@ -72,16 +74,26 @@ public class NettyConnectionTest extends ActiveMQTestBase {
 
    }
 
+   @Test(expected = IllegalStateException.class)
+   public void throwsExceptionOnBlockUntilWritableIfClosed() {
+      EmbeddedChannel channel = createChannel();
+      NettyConnection conn = new NettyConnection(emptyMap, channel, new MyListener(), false, false);
+      conn.close();
+      //to make sure the channel is closed it needs to run the pending tasks
+      channel.runPendingTasks();
+      conn.blockUntilWritable(0, 0, TimeUnit.NANOSECONDS);
+   }
+
    private static EmbeddedChannel createChannel() {
       return new EmbeddedChannel(new ChannelInboundHandlerAdapter());
    }
 
-   class MyListener implements ConnectionLifeCycleListener {
+   class MyListener implements ClientConnectionLifeCycleListener {
 
       @Override
       public void connectionCreated(final ActiveMQComponent component,
                                     final Connection connection,
-                                    final String protocol) {
+                                    final ClientProtocolManager protocol) {
 
       }
 

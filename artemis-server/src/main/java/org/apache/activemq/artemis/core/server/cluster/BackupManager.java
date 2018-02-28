@@ -83,8 +83,8 @@ public class BackupManager implements ActiveMQComponent {
       for (ClusterConnectionConfiguration config : configuration.getClusterConfigurations()) {
          deployBackupConnector(config);
       }
-      //start each connector and if we are backup and shared store announce ourselves. NB with replication we dont do this
-      //as we wait for replication to start and be notififed by the replication manager.
+      //start each connector and if we are backup and shared store announce ourselves. NB with replication we don't do this
+      //as we wait for replication to start and be notified by the replication manager.
       for (BackupConnector conn : backupConnectors) {
          conn.start();
          if (server.getHAPolicy().isBackup() && server.getHAPolicy().isSharedStore()) {
@@ -139,8 +139,7 @@ public class BackupManager implements ActiveMQComponent {
          DiscoveryBackupConnector backupConnector = new DiscoveryBackupConnector(dg, config.getName(), connector, config.getRetryInterval(), clusterManager);
 
          backupConnectors.add(backupConnector);
-      }
-      else {
+      } else {
          TransportConfiguration[] tcConfigs = config.getTransportConfigurations(configuration);
 
          StaticBackupConnector backupConnector = new StaticBackupConnector(tcConfigs, config.getName(), connector, config.getRetryInterval(), clusterManager);
@@ -236,7 +235,7 @@ public class BackupManager implements ActiveMQComponent {
                   ServerLocatorInternal localBackupLocator = backupServerLocator;
                   if (localBackupLocator == null) {
                      if (!stopping)
-                        ActiveMQServerLogger.LOGGER.error("Error announcing backup: backupServerLocator is null. " + this);
+                        ActiveMQServerLogger.LOGGER.errorAnnouncingBackup(this.toString());
                      return;
                   }
                   if (logger.isDebugEnabled()) {
@@ -253,11 +252,9 @@ public class BackupManager implements ActiveMQComponent {
                      ActiveMQServerLogger.LOGGER.backupAnnounced();
                      backupAnnounced = true;
                   }
-               }
-               catch (RejectedExecutionException e) {
+               } catch (RejectedExecutionException e) {
                   // assumption is that the whole server is being stopped. So the exception is ignored.
-               }
-               catch (Exception e) {
+               } catch (Exception e) {
                   if (scheduledExecutor.isShutdown())
                      return;
                   if (stopping)
@@ -271,8 +268,7 @@ public class BackupManager implements ActiveMQComponent {
                      }
 
                   }, retryInterval, TimeUnit.MILLISECONDS);
-               }
-               finally {
+               } finally {
                   announcingBackup = false;
                }
             }

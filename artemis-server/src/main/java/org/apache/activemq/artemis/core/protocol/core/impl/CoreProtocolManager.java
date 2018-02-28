@@ -17,6 +17,7 @@
 package org.apache.activemq.artemis.core.protocol.core.impl;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -29,6 +30,8 @@ import org.apache.activemq.artemis.api.core.ActiveMQBuffers;
 import org.apache.activemq.artemis.api.core.BaseInterceptor;
 import org.apache.activemq.artemis.api.core.Interceptor;
 import org.apache.activemq.artemis.api.core.Pair;
+import org.apache.activemq.artemis.api.core.RoutingType;
+import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.api.core.TransportConfiguration;
 import org.apache.activemq.artemis.api.core.client.ActiveMQClient;
 import org.apache.activemq.artemis.api.core.client.ClusterTopologyListener;
@@ -52,7 +55,6 @@ import org.apache.activemq.artemis.core.remoting.impl.netty.ActiveMQFrameDecoder
 import org.apache.activemq.artemis.core.remoting.impl.netty.NettyServerConnection;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.spi.core.protocol.ConnectionEntry;
-import org.apache.activemq.artemis.spi.core.protocol.MessageConverter;
 import org.apache.activemq.artemis.spi.core.protocol.ProtocolManager;
 import org.apache.activemq.artemis.spi.core.protocol.ProtocolManagerFactory;
 import org.apache.activemq.artemis.spi.core.protocol.RemotingConnection;
@@ -66,13 +68,15 @@ public class CoreProtocolManager implements ProtocolManager<Interceptor> {
 
    private static final List<String> websocketRegistryNames = Collections.EMPTY_LIST;
 
-   private final ActiveMQServer server;
+   protected final ActiveMQServer server;
 
    private final List<Interceptor> incomingInterceptors;
 
    private final List<Interceptor> outgoingInterceptors;
 
    private final CoreProtocolManagerFactory protocolManagerFactory;
+
+   private final Map<SimpleString, RoutingType> prefixes = new HashMap<>();
 
    public CoreProtocolManager(final CoreProtocolManagerFactory factory,
                               final ActiveMQServer server,
@@ -106,23 +110,13 @@ public class CoreProtocolManager implements ProtocolManager<Interceptor> {
       return false;
    }
 
-   /**
-    * no need to implement this now
-    *
-    * @return
-    */
-   @Override
-   public MessageConverter getConverter() {
-      return null;
-   }
-
    @Override
    public ConnectionEntry createConnectionEntry(final Acceptor acceptorUsed, final Connection connection) {
       final Configuration config = server.getConfiguration();
 
       Executor connectionExecutor = server.getExecutorFactory().getExecutor();
 
-      final CoreRemotingConnection rc = new RemotingConnectionImpl(ServerPacketDecoder.INSTANCE, connection, incomingInterceptors, outgoingInterceptors, config.isAsyncConnectionExecutionEnabled() ? connectionExecutor : null, server.getNodeID());
+      final CoreRemotingConnection rc = new RemotingConnectionImpl(new ServerPacketDecoder(), connection, incomingInterceptors, outgoingInterceptors, config.isAsyncConnectionExecutionEnabled() ? connectionExecutor : null, server.getNodeID());
 
       Channel channel1 = rc.getChannel(CHANNEL_ID.SESSION.id, -1);
 
@@ -180,13 +174,32 @@ public class CoreProtocolManager implements ProtocolManager<Interceptor> {
    public void handshake(NettyServerConnection connection, ActiveMQBuffer buffer) {
       //if we are not an old client then handshake
       if (isArtemis(buffer)) {
-         buffer.readBytes(7);
+         buffer.skipBytes(7);
       }
    }
 
    @Override
    public List<String> websocketSubprotocolIdentifiers() {
       return websocketRegistryNames;
+   }
+
+   @Override
+   public void setAnycastPrefix(String anycastPrefix) {
+      for (String prefix : anycastPrefix.split(",")) {
+         prefixes.put(SimpleString.toSimpleString(prefix), RoutingType.ANYCAST);
+      }
+   }
+
+   @Override
+   public void setMulticastPrefix(String multicastPrefix) {
+      for (String prefix : multicastPrefix.split(",")) {
+         prefixes.put(SimpleString.toSimpleString(prefix), RoutingType.MULTICAST);
+      }
+   }
+
+   @Override
+   public Map<SimpleString, RoutingType> getPrefixes() {
+      return prefixes;
    }
 
    private boolean isArtemis(ActiveMQBuffer buffer) {
@@ -236,19 +249,18 @@ public class CoreProtocolManager implements ProtocolManager<Interceptor> {
 
             // Just send a ping back
             channel0.send(packet);
-         }
-         else if (packet.getType() == PacketImpl.SUBSCRIBE_TOPOLOGY || packet.getType() == PacketImpl.SUBSCRIBE_TOPOLOGY_V2) {
+         } else if (packet.getType() == PacketImpl.SUBSCRIBE_TOPOLOGY || packet.getType() == PacketImpl.SUBSCRIBE_TOPOLOGY_V2) {
             SubscribeClusterTopologyUpdatesMessage msg = (SubscribeClusterTopologyUpdatesMessage) packet;
 
             if (packet.getType() == PacketImpl.SUBSCRIBE_TOPOLOGY_V2) {
-               channel0.getConnection().setClientVersion(((SubscribeClusterTopologyUpdatesMessageV2) msg).getClientVersion());
+               channel0.getConnection().setChannelVersion(((SubscribeClusterTopologyUpdatesMessageV2) msg).getClientVersion());
             }
 
             final ClusterTopologyListener listener = new ClusterTopologyListener() {
                @Override
                public void nodeUP(final TopologyMember topologyMember, final boolean last) {
                   try {
-                     final Pair<TransportConfiguration, TransportConfiguration> connectorPair = BackwardsCompatibilityUtils.getTCPair(channel0.getConnection().getClientVersion(), topologyMember);
+                     final Pair<TransportConfiguration, TransportConfiguration> connectorPair = BackwardsCompatibilityUtils.getTCPair(channel0.getConnection().getChannelVersion(), topologyMember);
 
                      final String nodeID = topologyMember.getNodeId();
                      // Using an executor as most of the notifications on the Topology
@@ -259,17 +271,14 @@ public class CoreProtocolManager implements ProtocolManager<Interceptor> {
                         public void run() {
                            if (channel0.supports(PacketImpl.CLUSTER_TOPOLOGY_V3)) {
                               channel0.send(new ClusterTopologyChangeMessage_V3(topologyMember.getUniqueEventID(), nodeID, topologyMember.getBackupGroupName(), topologyMember.getScaleDownGroupName(), connectorPair, last));
-                           }
-                           else if (channel0.supports(PacketImpl.CLUSTER_TOPOLOGY_V2)) {
+                           } else if (channel0.supports(PacketImpl.CLUSTER_TOPOLOGY_V2)) {
                               channel0.send(new ClusterTopologyChangeMessage_V2(topologyMember.getUniqueEventID(), nodeID, topologyMember.getBackupGroupName(), connectorPair, last));
-                           }
-                           else {
+                           } else {
                               channel0.send(new ClusterTopologyChangeMessage(nodeID, connectorPair, last));
                            }
                         }
                      });
-                  }
-                  catch (RejectedExecutionException ignored) {
+                  } catch (RejectedExecutionException ignored) {
                      // this could happen during a shutdown and we don't care, if we lost a nodeDown during a shutdown
                      // what can we do anyways?
                   }
@@ -287,14 +296,12 @@ public class CoreProtocolManager implements ProtocolManager<Interceptor> {
                         public void run() {
                            if (channel0.supports(PacketImpl.CLUSTER_TOPOLOGY_V2)) {
                               channel0.send(new ClusterTopologyChangeMessage_V2(uniqueEventID, nodeID));
-                           }
-                           else {
+                           } else {
                               channel0.send(new ClusterTopologyChangeMessage(nodeID));
                            }
                         }
                      });
-                  }
-                  catch (RejectedExecutionException ignored) {
+                  } catch (RejectedExecutionException ignored) {
                      // this could happen during a shutdown and we don't care, if we lost a nodeDown during a shutdown
                      // what can we do anyways?
                   }
@@ -315,8 +322,7 @@ public class CoreProtocolManager implements ProtocolManager<Interceptor> {
                      acceptorUsed.getClusterConnection().removeClusterTopologyListener(listener);
                   }
                });
-            }
-            else {
+            } else {
                // if not clustered, we send a single notification to the client containing the node-id where the server is connected to
                // This is done this way so Recovery discovery could also use the node-id for non-clustered setups
                entry.connectionExecutor.execute(new Runnable() {
@@ -326,8 +332,7 @@ public class CoreProtocolManager implements ProtocolManager<Interceptor> {
                      Pair<TransportConfiguration, TransportConfiguration> emptyConfig = new Pair<>(null, null);
                      if (channel0.supports(PacketImpl.CLUSTER_TOPOLOGY_V2)) {
                         channel0.send(new ClusterTopologyChangeMessage_V2(System.currentTimeMillis(), nodeId, null, emptyConfig, true));
-                     }
-                     else {
+                     } else {
                         channel0.send(new ClusterTopologyChangeMessage(nodeId, emptyConfig, true));
                      }
                   }

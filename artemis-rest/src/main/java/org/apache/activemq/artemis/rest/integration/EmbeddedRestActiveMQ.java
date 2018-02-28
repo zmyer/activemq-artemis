@@ -18,17 +18,17 @@ package org.apache.activemq.artemis.rest.integration;
 
 import org.apache.activemq.artemis.core.server.embedded.EmbeddedActiveMQ;
 import org.apache.activemq.artemis.jms.client.ConnectionFactoryOptions;
-import org.jboss.resteasy.plugins.server.tjws.TJWSEmbeddedJaxrsServer;
 import org.apache.activemq.artemis.rest.MessageServiceManager;
+import org.jboss.resteasy.plugins.server.tjws.TJWSEmbeddedJaxrsServer;
 import org.jboss.resteasy.test.TestPortProvider;
 
-public class EmbeddedRestActiveMQ {
+class EmbeddedRestActiveMQ {
 
-   protected TJWSEmbeddedJaxrsServer tjws = new TJWSEmbeddedJaxrsServer();
-   protected EmbeddedActiveMQ embeddedActiveMQ;
-   protected MessageServiceManager manager = new MessageServiceManager(null);
+   private TJWSEmbeddedJaxrsServer tjws = new TJWSEmbeddedJaxrsServer();
+   EmbeddedActiveMQ embeddedActiveMQ;
+   private MessageServiceManager manager = new MessageServiceManager(null);
 
-   public EmbeddedRestActiveMQ(ConnectionFactoryOptions jmsOptions) {
+   EmbeddedRestActiveMQ(ConnectionFactoryOptions jmsOptions) {
       int port = TestPortProvider.getPort();
       tjws.setPort(port);
       tjws.setRootResourcePath("");
@@ -39,18 +39,6 @@ public class EmbeddedRestActiveMQ {
 
    protected void initEmbeddedActiveMQ() {
       embeddedActiveMQ = new EmbeddedActiveMQ();
-   }
-
-   public TJWSEmbeddedJaxrsServer getTjws() {
-      return tjws;
-   }
-
-   public void setTjws(TJWSEmbeddedJaxrsServer tjws) {
-      this.tjws = tjws;
-   }
-
-   public EmbeddedActiveMQ getEmbeddedActiveMQ() {
-      return embeddedActiveMQ;
    }
 
    public MessageServiceManager getManager() {
@@ -68,13 +56,11 @@ public class EmbeddedRestActiveMQ {
    public void stop() throws Exception {
       try {
          tjws.stop();
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
       }
       try {
          manager.stop();
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
       }
       embeddedActiveMQ.stop();
    }

@@ -38,6 +38,7 @@ import org.apache.activemq.artemis.api.core.client.ServerLocator;
 import org.apache.activemq.artemis.core.config.Configuration;
 import org.apache.activemq.artemis.core.config.StoreConfiguration;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
 import org.apache.activemq.artemis.core.transaction.impl.XidImpl;
 import org.apache.activemq.artemis.ra.ActiveMQRAXAResource;
@@ -77,7 +78,7 @@ public class BasicXaTest extends ActiveMQTestBase {
 
    @Parameterized.Parameters(name = "storeType={0}")
    public static Collection<Object[]> data() {
-      Object[][] params = new Object[][] {{StoreConfiguration.StoreType.FILE}, {StoreConfiguration.StoreType.DATABASE}};
+      Object[][] params = new Object[][]{{StoreConfiguration.StoreType.FILE}, {StoreConfiguration.StoreType.DATABASE}};
       return Arrays.asList(params);
    }
 
@@ -90,12 +91,11 @@ public class BasicXaTest extends ActiveMQTestBase {
 
       if (storeType == StoreConfiguration.StoreType.DATABASE) {
          configuration = createDefaultJDBCConfig(true);
-      }
-      else {
+      } else {
          configuration = createDefaultNettyConfig();
       }
 
-      messagingService = createServer(false, configuration, -1, -1, addressSettings);
+      messagingService = createServer(true, configuration, -1, -1, addressSettings);
 
       // start the server
       messagingService.start();
@@ -117,7 +117,7 @@ public class BasicXaTest extends ActiveMQTestBase {
 
       ClientSession session = addClientSession(factory.createSession(true, false, false));
 
-      session.createQueue("Test", "Test");
+      session.createQueue("Test", RoutingType.ANYCAST, "Test");
 
       ClientProducer prod = session.createProducer("Test");
 
@@ -138,7 +138,7 @@ public class BasicXaTest extends ActiveMQTestBase {
 
       ClientSession session = addClientSession(factory.createSession(false, true, true));
 
-      session.createQueue("Test", "Test");
+      session.createQueue("Test", RoutingType.ANYCAST, "Test");
 
       ClientProducer prod = session.createProducer("Test");
 
@@ -420,8 +420,7 @@ public class BasicXaTest extends ActiveMQTestBase {
       try {
          session.start(xid, XAResource.TMRESUME);
          Assert.fail("XAException expected");
-      }
-      catch (XAException e) {
+      } catch (XAException e) {
          Assert.assertEquals(XAException.XAER_PROTO, e.errorCode);
       }
 
@@ -515,8 +514,7 @@ public class BasicXaTest extends ActiveMQTestBase {
       try {
          clientSession.forget(newXID());
          Assert.fail("should throw a XAERR_NOTA XAException");
-      }
-      catch (XAException e) {
+      } catch (XAException e) {
          Assert.assertEquals(XAException.XAER_NOTA, e.errorCode);
       }
    }
@@ -726,8 +724,7 @@ public class BasicXaTest extends ActiveMQTestBase {
 
             if (tr == 0) {
                session.rollback(xid);
-            }
-            else {
+            } else {
                session.commit(xid, onePhase);
             }
 
@@ -803,13 +800,11 @@ public class BasicXaTest extends ActiveMQTestBase {
 
             if (i == 0) {
                session.rollback(xid);
-            }
-            else {
+            } else {
                session.commit(xid, false);
             }
          }
-      }
-      finally {
+      } finally {
          if (session != null) {
             session.close();
          }
@@ -829,8 +824,7 @@ public class BasicXaTest extends ActiveMQTestBase {
       if (heuristicCommit) {
          Assert.assertTrue(messagingService.getActiveMQServerControl().commitPreparedTransaction(XidImpl.toBase64String(xid)));
          Assert.assertEquals(1, messagingService.getActiveMQServerControl().listHeuristicCommittedTransactions().length);
-      }
-      else {
+      } else {
          Assert.assertTrue(messagingService.getActiveMQServerControl().rollbackPreparedTransaction(XidImpl.toBase64String(xid)));
          Assert.assertEquals(1, messagingService.getActiveMQServerControl().listHeuristicRolledBackTransactions().length);
       }
@@ -839,26 +833,21 @@ public class BasicXaTest extends ActiveMQTestBase {
       try {
          if (isCommit) {
             clientSession.commit(xid, false);
-         }
-         else {
+         } else {
             clientSession.rollback(xid);
          }
          Assert.fail("neither commit not rollback must succeed on a heuristically completed tx");
-      }
-
-      catch (XAException e) {
+      } catch (XAException e) {
          if (heuristicCommit) {
             Assert.assertEquals(XAException.XA_HEURCOM, e.errorCode);
-         }
-         else {
+         } else {
             Assert.assertEquals(XAException.XA_HEURRB, e.errorCode);
          }
       }
 
       if (heuristicCommit) {
          Assert.assertEquals(1, messagingService.getActiveMQServerControl().listHeuristicCommittedTransactions().length);
-      }
-      else {
+      } else {
          Assert.assertEquals(1, messagingService.getActiveMQServerControl().listHeuristicRolledBackTransactions().length);
       }
    }
@@ -881,28 +870,24 @@ public class BasicXaTest extends ActiveMQTestBase {
          Xid xid = new XidImpl(UUIDGenerator.getInstance().generateStringUUID().getBytes(), 1, UUIDGenerator.getInstance().generateStringUUID().getBytes());
          try {
             session.start(xid, XAResource.TMNOFLAGS);
-         }
-         catch (XAException e) {
+         } catch (XAException e) {
             e.printStackTrace();
          }
 
          try {
             message.acknowledge();
-         }
-         catch (ActiveMQException e) {
+         } catch (ActiveMQException e) {
             BasicXaTest.log.error("Failed to process message", e);
          }
          try {
             session.end(xid, XAResource.TMSUCCESS);
             session.rollback(xid);
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             e.printStackTrace();
             failedToAck = true;
             try {
                session.close();
-            }
-            catch (ActiveMQException e1) {
+            } catch (ActiveMQException e1) {
                //
             }
          }

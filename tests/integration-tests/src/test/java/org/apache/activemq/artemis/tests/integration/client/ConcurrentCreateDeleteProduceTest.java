@@ -26,16 +26,17 @@ import org.apache.activemq.artemis.api.core.client.ClientProducer;
 import org.apache.activemq.artemis.api.core.client.ClientSession;
 import org.apache.activemq.artemis.api.core.client.ClientSessionFactory;
 import org.apache.activemq.artemis.api.core.client.ServerLocator;
-import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.apache.activemq.artemis.core.config.Configuration;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.core.server.Queue;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
+import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.junit.Before;
 import org.junit.Test;
 
 /**
- * The delete queue was reseting some fields on the Queue what would eventually turn a NPE.
+ * The delete queue was resetting some fields on the Queue what would eventually turn a NPE.
  * this test would eventually fail without the fix but it was a rare event as in most of the time
  * the NPE happened during depaging what let the server to recover itself on the next depage.
  * To verify a fix on this test against the previous version of QueueImpl look for NPEs on System.err
@@ -73,7 +74,7 @@ public class ConcurrentCreateDeleteProduceTest extends ActiveMQTestBase {
       ClientProducer producer = session.createProducer(ADDRESS);
 
       // just to make it page forever
-      Queue serverQueue = server.createQueue(ADDRESS, SimpleString.toSimpleString("everPage"), null, true, false);
+      Queue serverQueue = server.createQueue(ADDRESS, RoutingType.ANYCAST, SimpleString.toSimpleString("everPage"), null, true, false);
       serverQueue.getPageSubscription().getPagingStore().startPaging();
 
       Consumer[] consumers = new Consumer[10];
@@ -136,8 +137,7 @@ public class ConcurrentCreateDeleteProduceTest extends ActiveMQTestBase {
                System.out.println("Deleting " + queueName);
             }
             session.close();
-         }
-         catch (Throwable e) {
+         } catch (Throwable e) {
             this.ex = e;
             e.printStackTrace();
             running = false;

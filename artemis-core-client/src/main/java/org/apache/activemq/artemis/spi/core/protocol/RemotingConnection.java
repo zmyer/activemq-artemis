@@ -27,6 +27,8 @@ import org.apache.activemq.artemis.spi.core.remoting.BufferHandler;
 import org.apache.activemq.artemis.spi.core.remoting.Connection;
 import org.apache.activemq.artemis.spi.core.remoting.ReadyListener;
 
+import javax.security.auth.Subject;
+
 /**
  * A RemotingConnection is a connection between a client and a server.
  *
@@ -186,13 +188,14 @@ public interface RemotingConnection extends BufferHandler {
    boolean isWritable(ReadyListener callback);
 
    /**
-    *if slow consumer is killed,send the msessage to client.
+    * if slow consumer is killed,send the msessage to client.
     */
    void killMessage(SimpleString nodeID);
 
    /**
     * This will check if reconnects are supported on the protocol and configuration.
     * In case it's not supported a connection failure could remove messages right away from pending deliveries.
+    *
     * @return
     */
    boolean isSupportReconnect();
@@ -201,7 +204,42 @@ public interface RemotingConnection extends BufferHandler {
     * Return true if the protocol supports flow control.
     * This is because in some cases we may need to hold message producers in cases like disk full.
     * If the protocol doesn't support it we trash the connection and throw exceptions.
+    *
     * @return
     */
    boolean isSupportsFlowControl();
+
+   /**
+    * the possibly null identity associated with this connection
+    * @return
+    */
+   Subject getSubject();
+
+   /**
+    * Returns the name of the protocol for this Remoting Connection
+    * @return
+    */
+   String getProtocolName();
+
+   /**
+    * Sets the client ID associated with this connection
+    * @return
+    */
+   void setClientID(String cID);
+
+   /**
+    * Returns the Client ID associated with this connection
+    * @return
+    */
+   String getClientID();
+
+   /**
+    * Returns a string representation of the local address this connection is connected to.
+    * This is useful when the server is configured at 0.0.0.0 (or multiple IPs).
+    * This will give you the actual IP that's being used.
+    *
+    * @return the local address of transport connection
+    */
+   String getTransportLocalAddress();
+
 }

@@ -16,6 +16,7 @@
  */
 package org.apache.activemq.artemis.core.server.cluster;
 
+import org.apache.activemq.artemis.api.core.TransportConfiguration;
 import org.apache.activemq.artemis.api.core.client.ServerLocator;
 import org.apache.activemq.artemis.core.protocol.ServerPacketDecoder;
 import org.apache.activemq.artemis.core.protocol.core.impl.ActiveMQClientProtocolManager;
@@ -27,7 +28,6 @@ import org.apache.activemq.artemis.spi.core.remoting.ClientProtocolManagerFactor
  * A protocol manager that will replace the packet manager for inter-server communications
  */
 public class ActiveMQServerSideProtocolManagerFactory implements ClientProtocolManagerFactory {
-
 
    ServerLocator locator;
 
@@ -53,6 +53,11 @@ public class ActiveMQServerSideProtocolManagerFactory implements ClientProtocolM
    private static final long serialVersionUID = 1;
 
    @Override
+   public TransportConfiguration adaptTransportConfiguration(TransportConfiguration tc) {
+      return tc;
+   }
+
+   @Override
    public ClientProtocolManager newProtocolManager() {
       return new ActiveMQReplicationProtocolManager();
    }
@@ -60,8 +65,8 @@ public class ActiveMQServerSideProtocolManagerFactory implements ClientProtocolM
    class ActiveMQReplicationProtocolManager extends ActiveMQClientProtocolManager {
 
       @Override
-      protected PacketDecoder getPacketDecoder() {
-         return ServerPacketDecoder.INSTANCE;
+      protected PacketDecoder createPacketDecoder() {
+         return new ServerPacketDecoder();
       }
    }
 }

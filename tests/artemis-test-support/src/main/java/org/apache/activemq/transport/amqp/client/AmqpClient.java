@@ -21,8 +21,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.activemq.transport.amqp.client.transport.NettyTransport;
-import org.apache.activemq.transport.amqp.client.transport.NettyTransportFactory;
+import org.apache.activemq.transport.netty.NettyTransport;
+import org.apache.activemq.transport.netty.NettyTransportFactory;
 import org.apache.qpid.proton.amqp.Symbol;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -63,7 +63,7 @@ public class AmqpClient {
     * connect attempt immediately and will fail if the remote peer cannot be reached.
     *
     * @throws Exception if an error occurs attempting to connect to the Broker.
-    * @returns a new connection object used to interact with the connected peer.
+    * @return a new connection object used to interact with the connected peer.
     */
    public AmqpConnection connect() throws Exception {
 
@@ -76,13 +76,51 @@ public class AmqpClient {
    }
 
    /**
+    * Creates a connection with the broker at the given location, this method initiates a
+    * connect attempt immediately and will fail if the remote peer cannot be reached.
+    *
+    * @throws Exception if an error occurs attempting to connect to the Broker.
+    * @return a new connection object used to interact with the connected peer.
+    */
+   public AmqpConnection connect(boolean noContainerId) throws Exception {
+
+      AmqpConnection connection = createConnection();
+      connection.setNoContainerID();
+
+      LOG.debug("Attempting to create new connection to peer: {}", remoteURI);
+      connection.connect();
+
+      return connection;
+   }
+
+
+   /**
+    * Creates a connection with the broker at the given location, this method initiates a
+    * connect attempt immediately and will fail if the remote peer cannot be reached.
+    *
+    * @throws Exception if an error occurs attempting to connect to the Broker.
+    * @return a new connection object used to interact with the connected peer.
+    */
+   public AmqpConnection connect(String containerId) throws Exception {
+
+      AmqpConnection connection = createConnection();
+      connection.setContainerId(containerId);
+
+      LOG.debug("Attempting to create new connection to peer: {}", remoteURI);
+      connection.connect();
+
+      return connection;
+   }
+
+
+   /**
     * Creates a connection object using the configured values for user, password, remote URI
     * etc.  This method does not immediately initiate a connection to the remote leaving that
     * to the caller which provides a connection object that can have additional configuration
     * changes applied before the <code>connect</code> method is invoked.
     *
     * @throws Exception if an error occurs attempting to connect to the Broker.
-    * @returns a new connection object used to interact with the connected peer.
+    * @return a new connection object used to interact with the connected peer.
     */
    public AmqpConnection createConnection() throws Exception {
       if (username == null && password != null) {
@@ -218,7 +256,7 @@ public class AmqpClient {
     *
     * @param broker the address of the remote broker instance.
     * @throws Exception if an error occurs attempting to connect to the Broker.
-    * @returns a new connection object used to interact with the connected peer.
+    * @return a new connection object used to interact with the connected peer.
     */
    public static AmqpConnection connect(URI broker) throws Exception {
       return connect(broker, null, null);
@@ -231,7 +269,7 @@ public class AmqpClient {
     * @param username the user name to use to connect to the broker or null for anonymous.
     * @param password the password to use to connect to the broker, must be null if user name is null.
     * @throws Exception if an error occurs attempting to connect to the Broker.
-    * @returns a new connection object used to interact with the connected peer.
+    * @return a new connection object used to interact with the connected peer.
     */
    public static AmqpConnection connect(URI broker, String username, String password) throws Exception {
       if (username == null && password != null) {

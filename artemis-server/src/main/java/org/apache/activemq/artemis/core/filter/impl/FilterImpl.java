@@ -17,16 +17,18 @@
 package org.apache.activemq.artemis.core.filter.impl;
 
 import org.apache.activemq.artemis.api.core.ActiveMQException;
+import org.apache.activemq.artemis.api.core.FilterConstants;
+import org.apache.activemq.artemis.api.core.Message;
+import org.apache.activemq.artemis.api.core.SimpleString;
+import org.apache.activemq.artemis.core.filter.Filter;
+import org.apache.activemq.artemis.core.server.ActiveMQMessageBundle;
 import org.apache.activemq.artemis.core.server.ActiveMQServerLogger;
 import org.apache.activemq.artemis.selector.filter.BooleanExpression;
 import org.apache.activemq.artemis.selector.filter.FilterException;
 import org.apache.activemq.artemis.selector.filter.Filterable;
 import org.apache.activemq.artemis.selector.impl.SelectorParser;
-import org.apache.activemq.artemis.api.core.FilterConstants;
-import org.apache.activemq.artemis.api.core.SimpleString;
-import org.apache.activemq.artemis.core.filter.Filter;
-import org.apache.activemq.artemis.core.server.ActiveMQMessageBundle;
-import org.apache.activemq.artemis.core.server.ServerMessage;
+
+import static org.apache.activemq.artemis.api.core.FilterConstants.NATIVE_MESSAGE_ID;
 
 /**
  * This class implements an ActiveMQ Artemis filter
@@ -76,8 +78,7 @@ public class FilterImpl implements Filter {
       BooleanExpression booleanExpression;
       try {
          booleanExpression = SelectorParser.parse(filterStr.toString());
-      }
-      catch (Throwable e) {
+      } catch (Throwable e) {
          ActiveMQServerLogger.LOGGER.invalidFilter(filterStr);
          if (ActiveMQServerLogger.LOGGER.isDebugEnabled()) {
             ActiveMQServerLogger.LOGGER.debug("Invalid filter", e);
@@ -102,12 +103,11 @@ public class FilterImpl implements Filter {
    }
 
    @Override
-   public synchronized boolean match(final ServerMessage message) {
+   public synchronized boolean match(final Message message) {
       try {
          boolean result = booleanExpression.matches(new FilterableServerMessage(message));
          return result;
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          ActiveMQServerLogger.LOGGER.invalidFilter(sfilterString);
          if (ActiveMQServerLogger.LOGGER.isDebugEnabled()) {
             ActiveMQServerLogger.LOGGER.debug("Invalid filter", e);
@@ -136,8 +136,7 @@ public class FilterImpl implements Filter {
       if (sfilterString == null) {
          if (other.sfilterString != null)
             return false;
-      }
-      else if (!sfilterString.equals(other.sfilterString))
+      } else if (!sfilterString.equals(other.sfilterString))
          return false;
       return true;
    }
@@ -149,39 +148,44 @@ public class FilterImpl implements Filter {
 
    // Private --------------------------------------------------------------------------
 
-   private static Object getHeaderFieldValue(final ServerMessage msg, final SimpleString fieldName) {
+   private static Object getHeaderFieldValue(final Message msg, final SimpleString fieldName) {
       if (FilterConstants.ACTIVEMQ_USERID.equals(fieldName)) {
+         if (msg.getUserID() == null) {
+            // Proton stores JMSMessageID as NATIVE_MESSAGE_ID that is an arbitrary string
+            String amqpNativeID = msg.getStringProperty(NATIVE_MESSAGE_ID);
+            if (amqpNativeID != null) {
+               return new SimpleString(amqpNativeID);
+            }
+         }
          // It's the stringified (hex) representation of a user id that can be used in a selector expression
-         return new SimpleString("ID:" + msg.getUserID());
-      }
-      else if (FilterConstants.ACTIVEMQ_PRIORITY.equals(fieldName)) {
+         String userID = msg.getUserID().toString();
+         if (userID.startsWith("ID:")) {
+            return SimpleString.toSimpleString(userID);
+         } else {
+            return new SimpleString("ID:" + msg.getUserID());
+         }
+      } else if (FilterConstants.ACTIVEMQ_PRIORITY.equals(fieldName)) {
          return Integer.valueOf(msg.getPriority());
-      }
-      else if (FilterConstants.ACTIVEMQ_TIMESTAMP.equals(fieldName)) {
+      } else if (FilterConstants.ACTIVEMQ_TIMESTAMP.equals(fieldName)) {
          return msg.getTimestamp();
-      }
-      else if (FilterConstants.ACTIVEMQ_DURABLE.equals(fieldName)) {
+      } else if (FilterConstants.ACTIVEMQ_DURABLE.equals(fieldName)) {
          return msg.isDurable() ? FilterConstants.DURABLE : FilterConstants.NON_DURABLE;
-      }
-      else if (FilterConstants.ACTIVEMQ_EXPIRATION.equals(fieldName)) {
+      } else if (FilterConstants.ACTIVEMQ_EXPIRATION.equals(fieldName)) {
          return msg.getExpiration();
-      }
-      else if (FilterConstants.ACTIVEMQ_SIZE.equals(fieldName)) {
+      } else if (FilterConstants.ACTIVEMQ_SIZE.equals(fieldName)) {
          return msg.getEncodeSize();
-      }
-      else if (FilterConstants.ACTIVEMQ_ADDRESS.equals(fieldName)) {
+      } else if (FilterConstants.ACTIVEMQ_ADDRESS.equals(fieldName)) {
          return msg.getAddress();
-      }
-      else {
+      } else {
          return null;
       }
    }
 
    private static class FilterableServerMessage implements Filterable {
 
-      private final ServerMessage message;
+      private final Message message;
 
-      private FilterableServerMessage(ServerMessage message) {
+      private FilterableServerMessage(Message message) {
          this.message = message;
       }
 
@@ -192,7 +196,7 @@ public class FilterImpl implements Filter {
             result = getHeaderFieldValue(message, new SimpleString(id));
          }
          if (result == null) {
-            result = message.getObjectProperty(new SimpleString(id));
+            result = message.getObjectProperty(id);
          }
          if (result != null) {
             if (result.getClass() == SimpleString.class) {

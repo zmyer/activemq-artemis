@@ -16,6 +16,12 @@
  */
 package org.apache.activemq.artemis.tests.integration.client;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+
 import org.apache.activemq.artemis.api.core.TransportConfiguration;
 import org.apache.activemq.artemis.api.core.client.ClientConsumer;
 import org.apache.activemq.artemis.api.core.client.ClientMessage;
@@ -28,6 +34,7 @@ import org.apache.activemq.artemis.core.config.Configuration;
 import org.apache.activemq.artemis.core.remoting.impl.netty.TransportConstants;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.core.server.ActiveMQServers;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.core.settings.HierarchicalRepository;
 import org.apache.activemq.artemis.core.settings.impl.AddressFullMessagePolicy;
 import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
@@ -35,12 +42,6 @@ import org.apache.activemq.artemis.tests.integration.IntegrationTestLogger;
 import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.apache.activemq.artemis.utils.UUIDGenerator;
 import org.junit.Test;
-
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.CountDownLatch;
 
 public class NIOvsOIOTest extends ActiveMQTestBase {
 
@@ -203,8 +204,7 @@ public class NIOvsOIOTest extends ActiveMQTestBase {
          for (int i = 0; i < numMessages; i++) {
             try {
                producer.send(msg);
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                log.error("Caught exception", e);
             }
 
@@ -249,7 +249,7 @@ public class NIOvsOIOTest extends ActiveMQTestBase {
 
          queueName = UUIDGenerator.getInstance().generateStringUUID();
 
-         session.createQueue(dest, queueName);
+         session.createQueue(dest, RoutingType.ANYCAST, queueName);
 
          consumer = session.createConsumer(queueName);
 
@@ -272,8 +272,7 @@ public class NIOvsOIOTest extends ActiveMQTestBase {
       public void onMessage(ClientMessage msg) {
          try {
             msg.acknowledge();
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             log.error("Caught exception", e);
          }
 

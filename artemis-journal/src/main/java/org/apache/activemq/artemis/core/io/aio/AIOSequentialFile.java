@@ -18,6 +18,8 @@ package org.apache.activemq.artemis.core.io.aio;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadInfo;
 import java.nio.ByteBuffer;
 import java.util.PriorityQueue;
 import java.util.concurrent.Executor;
@@ -26,16 +28,19 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.activemq.artemis.api.core.ActiveMQException;
 import org.apache.activemq.artemis.api.core.ActiveMQNativeIOError;
-import org.apache.activemq.artemis.core.io.IOCallback;
 import org.apache.activemq.artemis.core.io.AbstractSequentialFile;
 import org.apache.activemq.artemis.core.io.DummyCallback;
+import org.apache.activemq.artemis.core.io.IOCallback;
 import org.apache.activemq.artemis.core.io.SequentialFile;
 import org.apache.activemq.artemis.core.journal.impl.SimpleWaitIOCallback;
 import org.apache.activemq.artemis.jlibaio.LibaioFile;
 import org.apache.activemq.artemis.journal.ActiveMQJournalLogger;
 import org.apache.activemq.artemis.utils.ReusableLatch;
+import org.jboss.logging.Logger;
 
 public class AIOSequentialFile extends AbstractSequentialFile {
+
+   private static final Logger logger = Logger.getLogger(AIOSequentialFileFactory.class);
 
    private boolean opened = false;
 
@@ -79,16 +84,8 @@ public class AIOSequentialFile extends AbstractSequentialFile {
    }
 
    @Override
-   public int getAlignment() {
-      // TODO: get the alignment from the file system, but we have to cache this, we can't call it every time
-      /* checkOpened();
-      return aioFile.getBlockSize(); */
-      return 512;
-   }
-
-   @Override
    public int calculateBlockStart(final int position) {
-      int alignment = getAlignment();
+      int alignment = factory.getAlignment();
 
       int pos = (position / alignment + (position % alignment != 0 ? 1 : 0)) * alignment;
 
@@ -97,31 +94,62 @@ public class AIOSequentialFile extends AbstractSequentialFile {
 
    @Override
    public SequentialFile cloneFile() {
-      return new AIOSequentialFile(aioFactory, -1, -1, getFile().getParentFile(), getFile().getName(), writerExecutor);
+      return new AIOSequentialFile(aioFactory, -1, -1, getFile().getParentFile(), getFile().getName(), null);
    }
 
+
    @Override
-   public synchronized void close() throws IOException, InterruptedException, ActiveMQException {
+   public void close() throws IOException, InterruptedException, ActiveMQException {
+      close(true);
+   }
+
+
+   @Override
+   public synchronized void close(boolean waitSync) throws IOException, InterruptedException, ActiveMQException {
       if (!opened) {
          return;
       }
 
       super.close();
 
-      if (!pendingCallbacks.await(10, TimeUnit.SECONDS)) {
-         factory.onIOError(new IOException("Timeout on close"), "Timeout on close", this);
+      if (waitSync) {
+         final String fileName = this.getFileName();
+         try {
+            int waitCount = 0;
+            while (!pendingCallbacks.await(10, TimeUnit.SECONDS)) {
+               waitCount++;
+               if (waitCount == 1) {
+                  final ThreadInfo[] threads = ManagementFactory.getThreadMXBean().dumpAllThreads(true, true);
+                  for (ThreadInfo threadInfo : threads) {
+                     ActiveMQJournalLogger.LOGGER.warn(threadInfo.toString());
+                  }
+                  factory.onIOError(new IOException("Timeout on close"), "Timeout on close", this);
+               }
+               ActiveMQJournalLogger.LOGGER.warn("waiting pending callbacks on " + fileName + " from " + (waitCount * 10) + " seconds!");
+            }
+         } catch (InterruptedException e) {
+            ActiveMQJournalLogger.LOGGER.warn("interrupted while waiting pending callbacks on " + fileName, e);
+            throw e;
+         } finally {
+
+            opened = false;
+
+            timedBuffer = null;
+
+            aioFile.close();
+
+            aioFile = null;
+
+         }
       }
-
-      opened = false;
-
-      timedBuffer = null;
-
-      aioFile.close();
-      aioFile = null;
    }
 
    @Override
    public synchronized void fill(final int size) throws Exception {
+      if (logger.isTraceEnabled()) {
+         logger.trace("Filling file: " + getFileName());
+      }
+
       checkOpened();
       aioFile.fill(size);
 
@@ -137,10 +165,14 @@ public class AIOSequentialFile extends AbstractSequentialFile {
    public synchronized void open(final int maxIO, final boolean useExecutor) throws ActiveMQException {
       opened = true;
 
-      try {
-         aioFile = aioFactory.libaioContext.openFile(getFile(), true);
+      if (logger.isTraceEnabled()) {
+         logger.trace("Opening file: " + getFileName());
       }
-      catch (IOException e) {
+
+      try {
+         aioFile = aioFactory.libaioContext.openFile(getFile(), factory.isDatasync());
+      } catch (IOException e) {
+         logger.error("Error opening file: " + getFileName());
          factory.onIOError(e, e.getMessage(), this);
          throw new ActiveMQNativeIOError(e.getMessage(), e);
       }
@@ -164,8 +196,8 @@ public class AIOSequentialFile extends AbstractSequentialFile {
          // because we want the buffer available.
          // Sending it through the callback would make it released
          aioFile.read(positionToRead, bytesToRead, bytes, getCallback(callback, null));
-      }
-      catch (IOException e) {
+      } catch (IOException e) {
+         logger.error("IOError reading file: " + getFileName(), e);
          factory.onIOError(e, e.getMessage(), this);
          throw new ActiveMQNativeIOError(e.getMessage(), e);
       }
@@ -186,14 +218,17 @@ public class AIOSequentialFile extends AbstractSequentialFile {
 
    @Override
    public void writeDirect(final ByteBuffer bytes, final boolean sync) throws Exception {
+      if (logger.isTraceEnabled()) {
+         logger.trace("Write Direct, Sync: " + sync + " File: " + getFileName());
+      }
+
       if (sync) {
          SimpleWaitIOCallback completion = new SimpleWaitIOCallback();
 
          writeDirect(bytes, true, completion);
 
          completion.waitCompletion();
-      }
-      else {
+      } else {
          writeDirect(bytes, false, DummyCallback.getInstance());
       }
    }
@@ -205,8 +240,7 @@ public class AIOSequentialFile extends AbstractSequentialFile {
    public void writeDirect(final ByteBuffer bytes, final boolean sync, final IOCallback callback) {
       try {
          checkOpened();
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          ActiveMQJournalLogger.LOGGER.warn(e.getMessage(), e);
          callback.onError(-1, e.getMessage());
          return;
@@ -218,12 +252,7 @@ public class AIOSequentialFile extends AbstractSequentialFile {
 
       AIOSequentialFileFactory.AIOSequentialCallback runnableCallback = getCallback(callback, bytes);
       runnableCallback.initWrite(positionToWrite, bytesToWrite);
-      if (writerExecutor != null) {
-         writerExecutor.execute(runnableCallback);
-      }
-      else {
-         runnableCallback.run();
-      }
+      runnableCallback.run();
    }
 
    AIOSequentialFileFactory.AIOSequentialCallback getCallback(IOCallback originalCallback, ByteBuffer buffer) {
@@ -244,8 +273,7 @@ public class AIOSequentialFile extends AbstractSequentialFile {
          callback.sequentialDone();
          pendingCallbacks.countDown();
          flushCallbacks();
-      }
-      else {
+      } else {
          pendingCallbackList.add(callback);
       }
 
@@ -269,8 +297,7 @@ public class AIOSequentialFile extends AbstractSequentialFile {
    public long size() throws Exception {
       if (aioFile == null) {
          return getFile().length();
-      }
-      else {
+      } else {
          return aioFile.getSize();
       }
    }

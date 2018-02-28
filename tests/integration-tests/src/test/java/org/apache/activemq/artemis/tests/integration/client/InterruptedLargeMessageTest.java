@@ -25,13 +25,13 @@ import javax.transaction.xa.Xid;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.activemq.artemis.api.core.ActiveMQException;
 import org.apache.activemq.artemis.api.core.Interceptor;
 import org.apache.activemq.artemis.api.core.Message;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.api.core.client.ActiveMQClient;
 import org.apache.activemq.artemis.api.core.client.ClientConsumer;
@@ -52,10 +52,8 @@ import org.apache.activemq.artemis.core.server.MessageReference;
 import org.apache.activemq.artemis.core.server.Queue;
 import org.apache.activemq.artemis.core.server.QueueConfig;
 import org.apache.activemq.artemis.core.server.QueueFactory;
-import org.apache.activemq.artemis.core.server.ServerSession;
 import org.apache.activemq.artemis.core.server.impl.ActiveMQServerImpl;
 import org.apache.activemq.artemis.core.server.impl.QueueImpl;
-import org.apache.activemq.artemis.core.server.impl.ServerSessionImpl;
 import org.apache.activemq.artemis.core.settings.HierarchicalRepository;
 import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
 import org.apache.activemq.artemis.jms.client.ActiveMQConnectionFactory;
@@ -64,6 +62,7 @@ import org.apache.activemq.artemis.tests.integration.IntegrationTestLogger;
 import org.apache.activemq.artemis.tests.integration.largemessage.LargeMessageTestBase;
 import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.apache.activemq.artemis.utils.ExecutorFactory;
+import org.apache.activemq.artemis.utils.actors.ArtemisExecutor;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
@@ -124,12 +123,12 @@ public class InterruptedLargeMessageTest extends LargeMessageTestBase {
       producer.send(clientFile);
 
       Thread.sleep(500);
+//
+//      for (ServerSession srvSession : server.getSessions()) {
+//         ((ServerSessionImpl) srvSession).clearLargeMessage();
+//      }
 
-      for (ServerSession srvSession : server.getSessions()) {
-         ((ServerSessionImpl) srvSession).clearLargeMessage();
-      }
-
-      server.stop(false);
+      server.fail(false);
 
       ActiveMQTestBase.forceGC();
 
@@ -185,8 +184,7 @@ public class InterruptedLargeMessageTest extends LargeMessageTestBase {
                }
 
                msg.checkCompletion();
-            }
-            catch (ActiveMQException e) {
+            } catch (ActiveMQException e) {
                e.printStackTrace();
                expectedErrors.incrementAndGet();
             }
@@ -215,9 +213,9 @@ public class InterruptedLargeMessageTest extends LargeMessageTestBase {
 
       server.start();
 
-      SimpleString jmsAddress = new SimpleString("jms.queue.Test");
+      SimpleString jmsAddress = new SimpleString("Test");
 
-      server.createQueue(jmsAddress, jmsAddress, null, true, false);
+      server.createQueue(jmsAddress, RoutingType.ANYCAST, jmsAddress, null, true, false);
 
       final AtomicInteger unexpectedErrors = new AtomicInteger(0);
       final AtomicInteger expectedErrors = new AtomicInteger(0);
@@ -238,12 +236,10 @@ public class InterruptedLargeMessageTest extends LargeMessageTestBase {
                   unexpectedErrors.incrementAndGet();
                   return;
                }
-            }
-            catch (JMSException e) {
+            } catch (JMSException e) {
                log.debug("This exception was ok as it was expected", e);
                expectedErrors.incrementAndGet();
-            }
-            catch (Throwable e) {
+            } catch (Throwable e) {
                log.warn("Captured unexpected exception", e);
                unexpectedErrors.incrementAndGet();
             }
@@ -310,7 +306,7 @@ public class InterruptedLargeMessageTest extends LargeMessageTestBase {
          session.rollback();
       }
 
-      server.stop(false);
+      server.fail(false);
       server.start();
 
       server.stop();
@@ -380,8 +376,7 @@ public class InterruptedLargeMessageTest extends LargeMessageTestBase {
          }
          if (h == 4) {
             session.commit();
-         }
-         else {
+         } else {
             session.rollback();
          }
 
@@ -389,7 +384,7 @@ public class InterruptedLargeMessageTest extends LargeMessageTestBase {
          sf.close();
       }
 
-      server.stop(false);
+      server.fail(false);
       server.start();
 
       validateNoFilesOnLargeDir();
@@ -447,7 +442,7 @@ public class InterruptedLargeMessageTest extends LargeMessageTestBase {
       session.close();
       sf.close();
 
-      server.stop(false);
+      server.fail(false);
       server.start();
 
       for (int start = 0; start < 2; start++) {
@@ -474,8 +469,7 @@ public class InterruptedLargeMessageTest extends LargeMessageTestBase {
 
          if (start == 1) {
             session.commit();
-         }
-         else {
+         } else {
             session.rollback();
          }
 
@@ -523,8 +517,9 @@ public class InterruptedLargeMessageTest extends LargeMessageTestBase {
                         PostOffice postOffice,
                         StorageManager storageManager,
                         HierarchicalRepository<AddressSettings> addressSettingsRepository,
-                        Executor executor) {
-            super(id, address, name, filter, pageSubscription, user, durable, temporary, autoCreated, scheduledExecutor, postOffice, storageManager, addressSettingsRepository, executor);
+                        ArtemisExecutor executor) {
+            super(id, address, name, filter, pageSubscription, user, durable, temporary, autoCreated, scheduledExecutor,
+                  postOffice, storageManager, addressSettingsRepository, executor, null, null);
          }
 
          @Override
@@ -639,7 +634,7 @@ public class InterruptedLargeMessageTest extends LargeMessageTestBase {
       }
 
       ((ActiveMQServerImpl) server).replaceQueueFactory(original);
-      server.stop(false);
+      server.fail(false);
       server.start();
 
       server.stop();
@@ -702,7 +697,7 @@ public class InterruptedLargeMessageTest extends LargeMessageTestBase {
       }
 
       ((ActiveMQServerImpl) server).replaceQueueFactory(original);
-      server.stop(false);
+      server.fail(false);
       server.start();
 
       server.stop();

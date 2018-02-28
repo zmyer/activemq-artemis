@@ -78,15 +78,14 @@ public final class InVMNodeManager extends NodeManager {
          if (state == PAUSED) {
             liveLock.release();
             Thread.sleep(2000);
-         }
-         else if (state == FAILING_BACK) {
+         } else if (state == FAILING_BACK) {
             liveLock.release();
             Thread.sleep(2000);
-         }
-         else if (state == LIVE) {
+         } else if (state == LIVE) {
             break;
          }
-      } while (true);
+      }
+      while (true);
       if (failoverPause > 0L) {
          Thread.sleep(failoverPause);
       }
@@ -110,23 +109,10 @@ public final class InVMNodeManager extends NodeManager {
       liveLock.acquire();
       return new ActivateCallback() {
          @Override
-         public void preActivate() {
-         }
-
-         @Override
-         public void activated() {
-         }
-
-         @Override
-         public void deActivate() {
-         }
-
-         @Override
          public void activationComplete() {
             try {
                state = LIVE;
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                ActiveMQServerLogger.LOGGER.warn(e.getMessage(), e);
             }
          }

@@ -16,6 +16,11 @@
  */
 package org.apache.activemq.artemis.tests.integration.cluster.reattach;
 
+import java.util.Timer;
+import java.util.TimerTask;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import org.apache.activemq.artemis.api.core.ActiveMQException;
 import org.apache.activemq.artemis.api.core.ActiveMQExceptionType;
 import org.apache.activemq.artemis.api.core.ActiveMQNotConnectedException;
@@ -34,6 +39,7 @@ import org.apache.activemq.artemis.core.protocol.core.Packet;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionProducerCreditsMessage;
 import org.apache.activemq.artemis.core.remoting.impl.invm.InVMConnector;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.jms.client.ActiveMQTextMessage;
 import org.apache.activemq.artemis.spi.core.protocol.RemotingConnection;
 import org.apache.activemq.artemis.tests.integration.IntegrationTestLogger;
@@ -42,11 +48,6 @@ import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
-
-import java.util.Timer;
-import java.util.TimerTask;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class ReattachTest extends ActiveMQTestBase {
 
@@ -192,7 +193,7 @@ public class ReattachTest extends ActiveMQTestBase {
 
       final double retryMultiplier = 1d;
 
-      final int reconnectAttempts = -1;
+      final int reconnectAttempts = 60;
 
       locator.setRetryInterval(retryInterval).setRetryIntervalMultiplier(retryMultiplier).setReconnectAttempts(reconnectAttempts).setConfirmationWindowSize(1024 * 1024);
 
@@ -224,8 +225,7 @@ public class ReattachTest extends ActiveMQTestBase {
          public void run() {
             try {
                Thread.sleep(retryInterval * 3);
-            }
-            catch (InterruptedException ignore) {
+            } catch (InterruptedException ignore) {
             }
 
             InVMConnector.failOnCreateConnection = false;
@@ -268,7 +268,7 @@ public class ReattachTest extends ActiveMQTestBase {
 
       final double retryMultiplier = 1d;
 
-      final int reconnectAttempts = -1;
+      final int reconnectAttempts = 60;
 
       final long asyncFailDelay = 2000;
 
@@ -330,8 +330,7 @@ public class ReattachTest extends ActiveMQTestBase {
          public void run() {
             try {
                Thread.sleep(asyncFailDelay);
-            }
-            catch (InterruptedException ignore) {
+            } catch (InterruptedException ignore) {
             }
 
             conn2.fail(new ActiveMQNotConnectedException("Did not receive pong from server"));
@@ -411,8 +410,7 @@ public class ReattachTest extends ActiveMQTestBase {
          public void run() {
             try {
                Thread.sleep(retryInterval * (reconnectAttempts + 1));
-            }
-            catch (InterruptedException ignore) {
+            } catch (InterruptedException ignore) {
             }
 
             InVMConnector.failOnCreateConnection = false;
@@ -429,11 +427,9 @@ public class ReattachTest extends ActiveMQTestBase {
          session.start();
 
          Assert.fail("Should throw exception");
-      }
-      catch (ActiveMQObjectClosedException oce) {
+      } catch (ActiveMQObjectClosedException oce) {
          //ok
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          fail("Invalid Exception type:" + e.getType());
       }
 
@@ -452,11 +448,11 @@ public class ReattachTest extends ActiveMQTestBase {
 
       try {
 
-         final long retryInterval = 50;
+         final long retryInterval = 100;
 
          final double retryMultiplier = 1d;
 
-         final int reconnectAttempts = -1;
+         final int reconnectAttempts = 300;
 
          locator.setRetryInterval(retryInterval).setRetryIntervalMultiplier(retryMultiplier).setReconnectAttempts(reconnectAttempts).setConfirmationWindowSize(1024 * 1024);
 
@@ -487,8 +483,7 @@ public class ReattachTest extends ActiveMQTestBase {
 
                      session.close();
                   }
-               }
-               catch (Throwable e) {
+               } catch (Throwable e) {
                   e.printStackTrace();
                   failure = e;
                }
@@ -508,8 +503,7 @@ public class ReattachTest extends ActiveMQTestBase {
             public void run() {
                try {
                   connFailure.fail(new ActiveMQNotConnectedException());
-               }
-               catch (Exception e) {
+               } catch (Exception e) {
                   ReattachTest.log.warn("Error on the timer " + e);
                }
             }
@@ -534,8 +528,7 @@ public class ReattachTest extends ActiveMQTestBase {
 
          sf.close();
 
-      }
-      finally {
+      } finally {
          timer.cancel();
 
          if (session != null) {
@@ -550,7 +543,7 @@ public class ReattachTest extends ActiveMQTestBase {
 
       final double retryMultiplier = 1d;
 
-      final int reconnectAttempts = -1;
+      final int reconnectAttempts = 60;
 
       locator.setRetryInterval(retryInterval).setRetryIntervalMultiplier(retryMultiplier).setReconnectAttempts(reconnectAttempts).setConfirmationWindowSize(1024 * 1024);
 
@@ -575,8 +568,7 @@ public class ReattachTest extends ActiveMQTestBase {
                ClientSession session = sf.createSession(false, true, true);
 
                session.close();
-            }
-            catch (Throwable e) {
+            } catch (Throwable e) {
                e.printStackTrace();
                failure = e;
             }
@@ -596,8 +588,7 @@ public class ReattachTest extends ActiveMQTestBase {
          public void run() {
             try {
                Thread.sleep(retryInterval * 3);
-            }
-            catch (InterruptedException ignore) {
+            } catch (InterruptedException ignore) {
             }
 
             InVMConnector.failOnCreateConnection = false;
@@ -631,11 +622,11 @@ public class ReattachTest extends ActiveMQTestBase {
 
    @Test
    public void testCreateQueue() throws Exception {
-      final long retryInterval = 50;
+      final long retryInterval = 100;
 
       final double retryMultiplier = 1d;
 
-      final int reconnectAttempts = -1;
+      final int reconnectAttempts = 300;
 
       locator.setRetryInterval(retryInterval).setRetryIntervalMultiplier(retryMultiplier).setReconnectAttempts(reconnectAttempts).setConfirmationWindowSize(1024 * 1024);
 
@@ -656,8 +647,7 @@ public class ReattachTest extends ActiveMQTestBase {
          public void run() {
             try {
                Thread.sleep(retryInterval * 3);
-            }
-            catch (InterruptedException ignore) {
+            } catch (InterruptedException ignore) {
             }
 
             InVMConnector.failOnCreateConnection = false;
@@ -667,7 +657,7 @@ public class ReattachTest extends ActiveMQTestBase {
       t.start();
 
       for (int i = 0; i < 10; i++) {
-         session.createQueue("address", "queue" + i);
+         session.createQueue("address", RoutingType.ANYCAST, "queue" + i);
       }
 
       //
@@ -759,7 +749,7 @@ public class ReattachTest extends ActiveMQTestBase {
 
       final double retryMultiplier = 1d;
 
-      final int reconnectAttempts = -1;
+      final int reconnectAttempts = 60;
 
       locator.setRetryInterval(retryInterval).setRetryIntervalMultiplier(retryMultiplier).setReconnectAttempts(reconnectAttempts).setConfirmationWindowSize(1024 * 1024);
 
@@ -793,8 +783,7 @@ public class ReattachTest extends ActiveMQTestBase {
          public void run() {
             try {
                Thread.sleep(retryInterval / 2);
-            }
-            catch (InterruptedException ignore) {
+            } catch (InterruptedException ignore) {
             }
             InVMConnector.failOnCreateConnection = false;
          }
@@ -839,7 +828,7 @@ public class ReattachTest extends ActiveMQTestBase {
 
       final double retryMultiplier = 2d;
 
-      final int reconnectAttempts = -1;
+      final int reconnectAttempts = 60;
 
       locator.setRetryInterval(retryInterval).setRetryIntervalMultiplier(retryMultiplier).setReconnectAttempts(reconnectAttempts).setConfirmationWindowSize(1024 * 1024);
 
@@ -906,7 +895,7 @@ public class ReattachTest extends ActiveMQTestBase {
 
       final double retryMultiplier = 2d;
 
-      final int reconnectAttempts = -1;
+      final int reconnectAttempts = 60;
 
       final long maxRetryInterval = 1000;
 

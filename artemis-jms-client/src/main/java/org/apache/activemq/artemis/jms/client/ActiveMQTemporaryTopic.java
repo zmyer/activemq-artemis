@@ -29,12 +29,35 @@ public class ActiveMQTemporaryTopic extends ActiveMQTopic implements TemporaryTo
    // Static --------------------------------------------------------
 
    // Constructors --------------------------------------------------
+   public ActiveMQTemporaryTopic() {
+      this(null, null);
+   }
 
-   protected ActiveMQTemporaryTopic(final String address, final String name, final ActiveMQSession session) {
-      super(address, name, true, session);
+   public ActiveMQTemporaryTopic(final String address, final ActiveMQSession session) {
+      super(address, true, session);
    }
 
    // Public --------------------------------------------------------
+
+   @Override
+   public boolean equals(final Object o) {
+      if (this == o) {
+         return true;
+      }
+
+      if (!(o instanceof ActiveMQTemporaryTopic)) {
+         return false;
+      }
+
+      ActiveMQTemporaryTopic that = (ActiveMQTemporaryTopic) o;
+
+      return super.getAddress().equals(that.getAddress());
+   }
+
+   @Override
+   public int hashCode() {
+      return super.getAddress().hashCode();
+   }
 
    // Package protected ---------------------------------------------
 

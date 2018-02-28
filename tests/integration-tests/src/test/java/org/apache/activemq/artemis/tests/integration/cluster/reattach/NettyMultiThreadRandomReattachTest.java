@@ -16,8 +16,10 @@
  */
 package org.apache.activemq.artemis.tests.integration.cluster.reattach;
 
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.api.core.client.ServerLocator;
 import org.apache.activemq.artemis.core.config.Configuration;
+import org.apache.activemq.artemis.core.config.CoreAddressConfiguration;
 
 public class NettyMultiThreadRandomReattachTest extends MultiThreadRandomReattachTest {
 
@@ -25,13 +27,14 @@ public class NettyMultiThreadRandomReattachTest extends MultiThreadRandomReattac
    protected void start() throws Exception {
       Configuration liveConf = createDefaultNettyConfig();
       server = createServer(false, liveConf);
+      server.getConfiguration().getAddressConfigurations().add(new CoreAddressConfiguration().setName(ADDRESS.toString()).addRoutingType(RoutingType.MULTICAST));
       server.start();
       waitForServerToStart(server);
    }
 
    @Override
    protected ServerLocator createLocator() throws Exception {
-      return createNettyNonHALocator().setReconnectAttempts(-1).setConfirmationWindowSize(1024 * 1024).setAckBatchSize(0);
+      return createNettyNonHALocator().setReconnectAttempts(15).setConfirmationWindowSize(1024 * 1024).setAckBatchSize(0);
    }
 
 }

@@ -21,11 +21,7 @@ import java.nio.ByteBuffer;
 import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
 import org.apache.activemq.artemis.api.core.ActiveMQException;
 
-/**
- * Class used to encode message body into buffers.
- * <br>
- * Used to send large streams over the wire
- */
+@Deprecated
 public interface BodyEncoder {
 
    /**

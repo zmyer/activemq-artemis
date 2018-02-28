@@ -34,9 +34,9 @@ import org.apache.activemq.artemis.core.server.ActiveMQMessageBundle;
 import org.apache.activemq.artemis.core.server.ActiveMQServerLogger;
 import org.apache.activemq.artemis.core.server.management.ManagementService;
 import org.apache.activemq.artemis.core.server.management.Notification;
-import org.apache.activemq.artemis.utils.ConcurrentHashSet;
 import org.apache.activemq.artemis.utils.ExecutorFactory;
-import org.apache.activemq.artemis.utils.TypedProperties;
+import org.apache.activemq.artemis.utils.collections.ConcurrentHashSet;
+import org.apache.activemq.artemis.utils.collections.TypedProperties;
 
 /**
  * A remote Grouping handler.
@@ -117,8 +117,7 @@ public final class RemoteGroupingHandler extends GroupHandlingAbstract {
          for (Notification notification : pendingNotifications) {
             managementService.sendNotification(notification);
          }
-      }
-      finally {
+      } finally {
          lock.unlock();
       }
    }
@@ -158,9 +157,9 @@ public final class RemoteGroupingHandler extends GroupHandlingAbstract {
             if (response != null) {
                break;
             }
-         } while (timeLimit > System.currentTimeMillis());
-      }
-      finally {
+         }
+         while (timeLimit > System.currentTimeMillis());
+      } finally {
          if (notification != null) {
             pendingNotifications.remove(notification);
          }
@@ -185,8 +184,7 @@ public final class RemoteGroupingHandler extends GroupHandlingAbstract {
             response.use();
             try {
                managementService.sendNotification(createProposalNotification(response.getGroupId(), response.getClusterName()));
-            }
-            catch (Exception ignored) {
+            } catch (Exception ignored) {
             }
          }
       }
@@ -249,8 +247,7 @@ public final class RemoteGroupingHandler extends GroupHandlingAbstract {
          // We could have more than one Requests waiting in case you have multiple producers
          // using different groups
          sendCondition.signalAll();
-      }
-      finally {
+      } finally {
          lock.unlock();
       }
    }

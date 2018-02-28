@@ -24,18 +24,19 @@ import org.apache.activemq.artemis.api.core.ActiveMQException;
 import org.apache.activemq.artemis.api.core.ActiveMQExceptionType;
 import org.apache.activemq.artemis.api.core.ActiveMQInternalErrorException;
 import org.apache.activemq.artemis.api.core.Message;
+import org.apache.activemq.artemis.core.buffers.impl.ChannelBufferWrapper;
 import org.apache.activemq.artemis.core.io.SequentialFile;
-import org.apache.activemq.artemis.core.message.BodyEncoder;
+import org.apache.activemq.artemis.core.message.LargeBodyEncoder;
+import org.apache.activemq.artemis.core.message.impl.CoreMessage;
 import org.apache.activemq.artemis.core.server.ActiveMQServerLogger;
 import org.apache.activemq.artemis.core.server.LargeServerMessage;
-import org.apache.activemq.artemis.core.server.MessageReference;
-import org.apache.activemq.artemis.core.server.ServerMessage;
-import org.apache.activemq.artemis.core.server.impl.ServerMessageImpl;
 import org.apache.activemq.artemis.utils.DataConstants;
-import org.apache.activemq.artemis.utils.TypedProperties;
+import org.apache.activemq.artemis.utils.collections.TypedProperties;
 import org.jboss.logging.Logger;
 
-public final class LargeServerMessageImpl extends ServerMessageImpl implements LargeServerMessage {
+import io.netty.buffer.Unpooled;
+
+public final class LargeServerMessageImpl extends CoreMessage implements LargeServerMessage {
 
    // Constants -----------------------------------------------------
    private static final Logger logger = Logger.getLogger(LargeServerMessageImpl.class);
@@ -44,7 +45,7 @@ public final class LargeServerMessageImpl extends ServerMessageImpl implements L
 
    private final JournalStorageManager storageManager;
 
-   private long pendingRecordID = -1;
+   private long pendingRecordID = NO_PENDING_ID;
 
    private boolean paged;
 
@@ -59,9 +60,8 @@ public final class LargeServerMessageImpl extends ServerMessageImpl implements L
 
    private final AtomicInteger delayDeletionCount = new AtomicInteger(0);
 
-   // Static --------------------------------------------------------
-
-   // Constructors --------------------------------------------------
+   // We cache this
+   private volatile int memoryEstimate = -1;
 
    public LargeServerMessageImpl(final JournalStorageManager storageManager) {
       this.storageManager = storageManager;
@@ -85,7 +85,24 @@ public final class LargeServerMessageImpl extends ServerMessageImpl implements L
       setMessageID(newID);
    }
 
-   // Public --------------------------------------------------------
+   private static String toDate(long timestamp) {
+      if (timestamp == 0) {
+         return "0";
+      } else {
+         return new java.util.Date(timestamp).toString();
+      }
+
+   }
+
+   @Override
+   public boolean isServerMessage() {
+      return true;
+   }
+
+   @Override
+   public long getPendingRecordID() {
+      return this.pendingRecordID;
+   }
 
    /**
     * @param pendingRecordID
@@ -93,11 +110,6 @@ public final class LargeServerMessageImpl extends ServerMessageImpl implements L
    @Override
    public void setPendingRecordID(long pendingRecordID) {
       this.pendingRecordID = pendingRecordID;
-   }
-
-   @Override
-   public long getPendingRecordID() {
-      return this.pendingRecordID;
    }
 
    @Override
@@ -118,40 +130,19 @@ public final class LargeServerMessageImpl extends ServerMessageImpl implements L
       bodySize += bytes.length;
    }
 
-   public void encodeBody(final ActiveMQBuffer bufferOut, final BodyEncoder context, final int size) {
-      try {
-         // This could maybe be optimized (maybe reading directly into bufferOut)
-         ByteBuffer bufferRead = ByteBuffer.allocate(size);
-
-         int bytesRead = context.encode(bufferRead);
-
-         bufferRead.flip();
-
-         if (bytesRead > 0) {
-            bufferOut.writeBytes(bufferRead.array(), 0, bytesRead);
-         }
-
-      }
-      catch (Exception e) {
-         throw new RuntimeException(e.getMessage(), e);
-      }
-   }
-
    @Override
    public synchronized int getEncodeSize() {
       return getHeadersAndPropertiesEncodeSize();
    }
 
-   @Override
    public void encode(final ActiveMQBuffer buffer1) {
-      super.encodeHeadersAndProperties(buffer1);
+      super.encodeHeadersAndProperties(buffer1.byteBuf());
    }
 
-   @Override
    public void decode(final ActiveMQBuffer buffer1) {
       file = null;
 
-      super.decodeHeadersAndProperties(buffer1);
+      super.decodeHeadersAndProperties(buffer1.byteBuf());
    }
 
    @Override
@@ -159,8 +150,7 @@ public final class LargeServerMessageImpl extends ServerMessageImpl implements L
       delayDeletionCount.incrementAndGet();
       try {
          incrementRefCount();
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          ActiveMQServerLogger.LOGGER.errorIncrementDelayDeletionCount(e);
       }
    }
@@ -177,7 +167,7 @@ public final class LargeServerMessageImpl extends ServerMessageImpl implements L
    }
 
    @Override
-   public BodyEncoder getBodyEncoder() throws ActiveMQException {
+   public LargeBodyEncoder getBodyEncoder() throws ActiveMQException {
       validateFile();
       return new DecodingContext();
    }
@@ -190,8 +180,7 @@ public final class LargeServerMessageImpl extends ServerMessageImpl implements L
 
          try {
             deleteFile();
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             ActiveMQServerLogger.LOGGER.error(e.getMessage(), e);
          }
       }
@@ -211,6 +200,28 @@ public final class LargeServerMessageImpl extends ServerMessageImpl implements L
       return currentRefCount;
    }
 
+   // Even though not recommended, in certain instances
+   // we may need to convert a large message back to a whole buffer
+   // in a way you can convert
+   @Override
+   public ActiveMQBuffer getReadOnlyBodyBuffer() {
+      try {
+         validateFile();
+         file.open();
+         int fileSize = (int) file.size();
+         ByteBuffer buffer = this.storageManager.largeMessagesFactory.newBuffer(fileSize);
+         file.read(buffer);
+         return new ChannelBufferWrapper(Unpooled.wrappedBuffer(buffer));
+      } catch (Exception e) {
+         throw new RuntimeException(e);
+      } finally {
+         try {
+            file.close();
+         } catch (Exception ignored) {
+         }
+      }
+   }
+
    @Override
    public boolean isLargeMessage() {
       return true;
@@ -222,9 +233,6 @@ public final class LargeServerMessageImpl extends ServerMessageImpl implements L
       releaseResources();
       storageManager.deleteLargeMessageFile(this);
    }
-
-   // We cache this
-   private volatile int memoryEstimate = -1;
 
    @Override
    public synchronized int getMemoryEstimate() {
@@ -244,43 +252,42 @@ public final class LargeServerMessageImpl extends ServerMessageImpl implements L
       if (file != null && file.isOpen()) {
          try {
             file.close();
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             ActiveMQServerLogger.LOGGER.largeMessageErrorReleasingResources(e);
          }
       }
    }
 
    @Override
-   public void setOriginalHeaders(final ServerMessage other,
-                                  final MessageReference originalReference,
-                                  final boolean expiry) {
-      super.setOriginalHeaders(other, originalReference, expiry);
+   public void referenceOriginalMessage(final Message original, String originalQueue) {
 
-      LargeServerMessageImpl otherLM = (LargeServerMessageImpl) other;
-      this.paged = otherLM.paged;
-      if (this.paged) {
-         this.removeProperty(Message.HDR_ORIG_MESSAGE_ID);
+      super.referenceOriginalMessage(original, originalQueue);
+
+      if (original instanceof LargeServerMessageImpl) {
+         LargeServerMessageImpl otherLM = (LargeServerMessageImpl) original;
+         this.paged = otherLM.paged;
+         if (this.paged) {
+            this.removeAnnotation(Message.HDR_ORIG_MESSAGE_ID);
+         }
       }
    }
 
    @Override
-   public ServerMessage copy() {
+   public Message copy() {
       SequentialFile newfile = storageManager.createFileForLargeMessage(messageID, durable);
 
-      ServerMessage newMessage = new LargeServerMessageImpl(this, properties, newfile, messageID);
+      Message newMessage = new LargeServerMessageImpl(this, properties, newfile, messageID);
       return newMessage;
    }
 
    @Override
-   public ServerMessage copy(final long newID) {
+   public Message copy(final long newID) {
       try {
          LargeServerMessage newMessage = storageManager.createLargeMessage(newID, this);
 
          boolean originallyOpen = file != null && file.isOpen();
 
          validateFile();
-
 
          byte[] bufferBytes = new byte[100 * 1024];
 
@@ -300,11 +307,12 @@ public final class LargeServerMessageImpl extends ServerMessageImpl implements L
             byte[] bufferToWrite;
             if (bytesRead <= 0) {
                break;
-            }
-            else if (bytesRead == bufferBytes.length) {
+            } else if (bytesRead == bufferBytes.length && !this.storageManager.isReplicated()) {
+               // ARTEMIS-1220: We cannot reuse the same buffer if it's replicated
+               // otherwise there could be another thread still using the buffer on a
+               // replication.
                bufferToWrite = bufferBytes;
-            }
-            else {
+            } else {
                bufferToWrite = new byte[bytesRead];
                System.arraycopy(bufferBytes, 0, bufferToWrite, 0, bytesRead);
             }
@@ -320,13 +328,12 @@ public final class LargeServerMessageImpl extends ServerMessageImpl implements L
 
          if (!originallyOpen) {
             file.close();
+            newMessage.getFile().close();
          }
 
          return newMessage;
 
-
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          ActiveMQServerLogger.LOGGER.lareMessageErrorCopying(e, this);
          return null;
       }
@@ -339,31 +346,20 @@ public final class LargeServerMessageImpl extends ServerMessageImpl implements L
    }
 
    @Override
-   public String toString() {
-      return "LargeServerMessage[messageID=" + messageID + ",durable=" + isDurable() + ",userID=" + getUserID() + ",priority=" + this.getPriority() +
-         ", timestamp=" + toDate(getTimestamp()) + ",expiration=" + toDate(getExpiration()) +
-         ", durable=" + durable + ", address=" + getAddress() + ",properties=" + properties.toString() + "]@" + System.identityHashCode(this);
+   public long getPersistentSize() throws ActiveMQException {
+      long size = super.getPersistentSize();
+      size += getBodyEncoder().getLargeBodySize();
+
+      return size;
    }
-
-   private static String toDate(long timestamp) {
-      if (timestamp == 0) {
-         return "0";
-      }
-      else {
-         return new java.util.Date(timestamp).toString();
-      }
-
-   }
-
-
-   // Package protected ---------------------------------------------
-
-   // Protected -----------------------------------------------------
-
    @Override
-   protected void finalize() throws Throwable {
-      releaseResources();
-      super.finalize();
+   public String toString() {
+      try {
+         return "LargeServerMessage[messageID=" + messageID + ",durable=" + isDurable() + ",userID=" + getUserID() + ",priority=" + this.getPriority() + ", timestamp=" + toDate(getTimestamp()) + ",expiration=" + toDate(getExpiration()) + ", durable=" + durable + ", address=" + getAddress() + ",size=" + getPersistentSize() + ",properties=" + (properties != null ? properties.toString() : "") + "]@" + System.identityHashCode(this);
+      } catch (Exception e) {
+         e.printStackTrace();
+         return "LargeServerMessage[messageID=" + messageID + "]";
+      }
    }
 
    // Private -------------------------------------------------------
@@ -381,8 +377,7 @@ public final class LargeServerMessageImpl extends ServerMessageImpl implements L
 
             bodySize = file.size();
          }
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          // TODO: There is an IO_ERROR on trunk now, this should be used here instead
          throw new ActiveMQInternalErrorException(e.getMessage(), e);
       }
@@ -398,8 +393,7 @@ public final class LargeServerMessageImpl extends ServerMessageImpl implements L
    protected void openFile() throws Exception {
       if (file == null) {
          validateFile();
-      }
-      else if (!file.isOpen()) {
+      } else if (!file.isOpen()) {
          file.open();
       }
    }
@@ -412,7 +406,7 @@ public final class LargeServerMessageImpl extends ServerMessageImpl implements L
 
    // Inner classes -------------------------------------------------
 
-   class DecodingContext implements BodyEncoder {
+   class DecodingContext implements LargeBodyEncoder {
 
       private SequentialFile cFile;
 
@@ -424,8 +418,7 @@ public final class LargeServerMessageImpl extends ServerMessageImpl implements L
             }
             cFile = file.cloneFile();
             cFile.open();
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             throw new ActiveMQException(ActiveMQExceptionType.INTERNAL_ERROR, e.getMessage(), e);
          }
       }
@@ -436,8 +429,7 @@ public final class LargeServerMessageImpl extends ServerMessageImpl implements L
             if (cFile != null) {
                cFile.close();
             }
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             throw new ActiveMQInternalErrorException(e.getMessage(), e);
          }
       }
@@ -446,8 +438,7 @@ public final class LargeServerMessageImpl extends ServerMessageImpl implements L
       public int encode(final ByteBuffer bufferRead) throws ActiveMQException {
          try {
             return cFile.read(bufferRead);
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             throw new ActiveMQInternalErrorException(e.getMessage(), e);
          }
       }
@@ -469,16 +460,15 @@ public final class LargeServerMessageImpl extends ServerMessageImpl implements L
       }
 
       /* (non-Javadoc)
-       * @see org.apache.activemq.artemis.core.message.BodyEncoder#getLargeBodySize()
+       * @see org.apache.activemq.artemis.core.message.LargeBodyEncoder#getLargeBodySize()
        */
       @Override
       public long getLargeBodySize() {
          if (bodySize < 0) {
             try {
                bodySize = file.size();
-            }
-            catch (Exception e) {
-               ActiveMQServerLogger.LOGGER.warn(e.getMessage(), e);
+            } catch (Exception e) {
+               ActiveMQServerLogger.LOGGER.unableToCalculateFileSize(e);
             }
          }
          return bodySize;

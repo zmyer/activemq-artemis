@@ -37,19 +37,41 @@ public class ActiveMQTemporaryQueue extends ActiveMQQueue implements TemporaryQu
    // TemporaryQueue implementation ------------------------------------------
 
    // Public --------------------------------------------------------
+   public ActiveMQTemporaryQueue() {
+      this(null, null);
+   }
 
    /**
     * @param address
-    * @param name
     * @param session
     */
-   public ActiveMQTemporaryQueue(String address, String name, ActiveMQSession session) {
-      super(address, name, true, session);
+   public ActiveMQTemporaryQueue(String address, ActiveMQSession session) {
+      super(address, true, session);
    }
 
    @Override
    public String toString() {
-      return "ActiveMQTemporaryQueue[" + name + "]";
+      return "ActiveMQTemporaryQueue[" + getAddress() + "]";
+   }
+
+   @Override
+   public boolean equals(final Object o) {
+      if (this == o) {
+         return true;
+      }
+
+      if (!(o instanceof ActiveMQTemporaryQueue)) {
+         return false;
+      }
+
+      ActiveMQTemporaryQueue that = (ActiveMQTemporaryQueue) o;
+
+      return super.getAddress().equals(that.getAddress());
+   }
+
+   @Override
+   public int hashCode() {
+      return super.getAddress().hashCode();
    }
 
    // Package protected ---------------------------------------------

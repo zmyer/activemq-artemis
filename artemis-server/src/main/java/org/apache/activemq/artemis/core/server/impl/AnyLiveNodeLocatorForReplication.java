@@ -19,7 +19,6 @@ package org.apache.activemq.artemis.core.server.impl;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -30,6 +29,7 @@ import org.apache.activemq.artemis.api.core.TransportConfiguration;
 import org.apache.activemq.artemis.api.core.client.TopologyMember;
 import org.apache.activemq.artemis.core.server.LiveNodeLocator;
 import org.apache.activemq.artemis.core.server.cluster.qourum.SharedNothingBackupQuorum;
+import org.apache.activemq.artemis.utils.ConcurrentUtil;
 
 /**
  * This implementation looks for any available live node, once tried with no success it is marked as
@@ -63,18 +63,17 @@ public class AnyLiveNodeLocatorForReplication extends LiveNodeLocator {
          if (untriedConnectors.isEmpty()) {
             try {
                if (timeout != -1L) {
-                  condition.await(timeout, TimeUnit.MILLISECONDS);
+                  ConcurrentUtil.await(condition, timeout);
+               } else {
+                  while (untriedConnectors.isEmpty()) {
+                     condition.await();
+                  }
                }
-               else {
-                  condition.await();
-               }
-            }
-            catch (InterruptedException e) {
+            } catch (InterruptedException e) {
 
             }
          }
-      }
-      finally {
+      } finally {
          lock.unlock();
       }
    }
@@ -89,8 +88,7 @@ public class AnyLiveNodeLocatorForReplication extends LiveNodeLocator {
             untriedConnectors.put(topologyMember.getNodeId(), connector);
             condition.signal();
          }
-      }
-      finally {
+      } finally {
          lock.unlock();
       }
    }
@@ -110,8 +108,7 @@ public class AnyLiveNodeLocatorForReplication extends LiveNodeLocator {
          if (untriedConnectors.size() > 0) {
             condition.signal();
          }
-      }
-      finally {
+      } finally {
          lock.unlock();
       }
    }
@@ -131,8 +128,7 @@ public class AnyLiveNodeLocatorForReplication extends LiveNodeLocator {
             nodeID = iterator.next();
          }
          return untriedConnectors.get(nodeID);
-      }
-      finally {
+      } finally {
          lock.unlock();
       }
    }
@@ -146,11 +142,9 @@ public class AnyLiveNodeLocatorForReplication extends LiveNodeLocator {
          if (tc != null) {
             triedConnectors.put(nodeID, tc);
          }
-      }
-      finally {
+      } finally {
          lock.unlock();
       }
       super.notifyRegistrationFailed(alreadyReplicating);
    }
 }
-

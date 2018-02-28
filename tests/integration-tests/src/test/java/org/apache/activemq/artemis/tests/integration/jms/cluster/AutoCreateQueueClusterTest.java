@@ -46,8 +46,8 @@ public class AutoCreateQueueClusterTest extends JMSClusteredTestBase {
 
    @Test
    public void testAutoCreate() throws Exception {
-      server1.getAddressSettingsRepository().getMatch("#").setAutoCreateJmsQueues(true).setRedistributionDelay(0);
-      server2.getAddressSettingsRepository().getMatch("#").setAutoCreateJmsQueues(true).setRedistributionDelay(0);
+      server1.getAddressSettingsRepository().getMatch("#").setAutoCreateQueues(true).setAutoCreateAddresses(true).setRedistributionDelay(0);
+      server2.getAddressSettingsRepository().getMatch("#").setAutoCreateQueues(true).setAutoCreateAddresses(true).setRedistributionDelay(0);
       Connection conn1 = cf1.createConnection();
       Connection conn2 = cf2.createConnection();
       conn1.start();
@@ -73,8 +73,7 @@ public class AutoCreateQueueClusterTest extends JMSClusteredTestBase {
          assertEquals("m1", received.getText());
 
          cons2.close();
-      }
-      finally {
+      } finally {
          conn1.close();
          conn2.close();
       }

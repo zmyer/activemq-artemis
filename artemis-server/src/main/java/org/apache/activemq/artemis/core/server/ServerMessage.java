@@ -16,17 +16,15 @@
  */
 package org.apache.activemq.artemis.core.server;
 
+import org.apache.activemq.artemis.api.core.ICoreMessage;
 import org.apache.activemq.artemis.api.core.SimpleString;
-import org.apache.activemq.artemis.core.journal.EncodingSupport;
 import org.apache.activemq.artemis.core.message.impl.MessageInternal;
 import org.apache.activemq.artemis.core.paging.PagingStore;
 
-/**
- * A ServerMessage
- */
-public interface ServerMessage extends MessageInternal, EncodingSupport {
+@Deprecated
+public interface ServerMessage extends MessageInternal {
 
-   ServerMessage setMessageID(long id);
+   ICoreMessage getICoreMessage();
 
    MessageReference createReference(Queue queue);
 
@@ -37,22 +35,6 @@ public interface ServerMessage extends MessageInternal, EncodingSupport {
     * @param address
     */
    void forceAddress(SimpleString address);
-
-   int incrementRefCount() throws Exception;
-
-   int decrementRefCount() throws Exception;
-
-   int incrementDurableRefCount();
-
-   int decrementDurableRefCount();
-
-   ServerMessage copy(long newID);
-
-   ServerMessage copy();
-
-   int getMemoryEstimate();
-
-   int getRefCount();
 
    ServerMessage makeCopyForExpiryOrDLA(long newID,
                                         MessageReference originalReference,
@@ -72,7 +54,4 @@ public interface ServerMessage extends MessageInternal, EncodingSupport {
 
    void encodeMessageIDToBuffer();
 
-   byte[] getDuplicateIDBytes();
-
-   Object getDuplicateProperty();
 }

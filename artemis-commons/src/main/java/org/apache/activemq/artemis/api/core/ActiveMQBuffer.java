@@ -54,7 +54,7 @@ public interface ActiveMQBuffer extends DataInput {
    /**
     * Sets the {@code readerIndex} of this buffer.
     *
-    * @param readerIndex The reader's index The reader infex
+    * @param readerIndex The reader's index
     * @throws IndexOutOfBoundsException if the specified {@code readerIndex} is
     *                                   less than {@code 0} or
     *                                   greater than {@code this.writerIndex}
@@ -1065,6 +1065,19 @@ public interface ActiveMQBuffer extends DataInput {
     */
    void writeBytes(ByteBuffer src);
 
+
+   /**
+    * Transfers the specified source buffer's data to this buffer starting at
+    * the current {@code writerIndex} until the source buffer's position
+    * reaches its limit, and increases the {@code writerIndex} by the
+    * number of the transferred bytes.
+    *
+    * @param src The source buffer
+    * @throws IndexOutOfBoundsException if {@code src.remaining()} is greater than
+    *                                   {@code this.writableBytes}
+    */
+   void writeBytes(ByteBuf src, int srcIndex, int length);
+
    /**
     * Returns a copy of this buffer's readable bytes.  Modifying the content
     * of the returned buffer or this buffer does not affect each other at all.
@@ -1149,4 +1162,10 @@ public interface ActiveMQBuffer extends DataInput {
     * @return A converted NIO Buffer
     */
    ByteBuffer toByteBuffer(int index, int length);
+
+   /**
+   * Release any underlying resources held by this buffer
+   */
+   void release();
+
 }

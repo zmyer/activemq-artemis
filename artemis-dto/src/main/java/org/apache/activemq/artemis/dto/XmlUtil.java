@@ -28,6 +28,7 @@ import javax.xml.validation.SchemaFactory;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
+import java.net.URI;
 import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -63,8 +64,7 @@ public class XmlUtil {
             String property = props.getProperty(group);
             if (property != null) {
                str = matcher.replaceFirst(Matcher.quoteReplacement(property));
-            }
-            else {
+            } else {
                start = matcher.end();
             }
          }
@@ -76,11 +76,17 @@ public class XmlUtil {
    private static final XMLInputFactory factory = XMLInputFactory.newInstance();
 
    public static <T> T decode(Class<T> clazz, File configuration) throws Exception {
-      return decode(clazz, configuration, null, null);
+      return decode(clazz, configuration, null, null, null);
    }
 
-   /** We offer parameters for artemisInstance and artemisHome as they could be coming from the CLI or Maven Plugin */
-   public static <T> T decode(Class<T> clazz, File configuration, String artemisHome, String artemisInstance) throws Exception {
+   /**
+    * We offer parameters for artemisInstance and artemisHome as they could be coming from the CLI or Maven Plugin
+    */
+   public static <T> T decode(Class<T> clazz,
+                              File configuration,
+                              String artemisHome,
+                              String artemisInstance,
+                              URI artemisURIInstance) throws Exception {
       JAXBContext jaxbContext = JAXBContext.newInstance("org.apache.activemq.artemis.dto");
 
       Unmarshaller unmarshaller = jaxbContext.createUnmarshaller();
@@ -98,6 +104,10 @@ public class XmlUtil {
 
       if (artemisInstance != null) {
          props.put("artemis.instance", artemisInstance);
+      }
+
+      if (artemisURIInstance != null) {
+         props.put("artemis.URI.instance", artemisURIInstance.toString());
       }
 
       XMLStreamReader reader = factory.createXMLStreamReader(new FileInputStream(configuration));

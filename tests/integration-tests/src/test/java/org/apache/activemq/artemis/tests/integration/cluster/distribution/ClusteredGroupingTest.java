@@ -16,6 +16,16 @@
  */
 package org.apache.activemq.artemis.tests.integration.cluster.distribution;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import org.apache.activemq.artemis.api.config.ActiveMQDefaultConfiguration;
 import org.apache.activemq.artemis.api.core.ActiveMQException;
 import org.apache.activemq.artemis.api.core.Message;
 import org.apache.activemq.artemis.api.core.SimpleString;
@@ -41,15 +51,6 @@ import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
 import org.apache.activemq.artemis.tests.integration.IntegrationTestLogger;
 import org.apache.activemq.artemis.utils.ActiveMQThreadFactory;
 import org.junit.Test;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class ClusteredGroupingTest extends ClusterTestBase {
 
@@ -257,6 +258,53 @@ public class ClusteredGroupingTest extends ClusterTestBase {
       setUpGroupHandler(GroupingHandlerConfiguration.TYPE.LOCAL, 0);
       setUpGroupHandler(GroupingHandlerConfiguration.TYPE.REMOTE, 1);
       setUpGroupHandler(GroupingHandlerConfiguration.TYPE.REMOTE, 2);
+
+      startServers(0, 1, 2);
+
+      setupSessionFactory(0, isNetty());
+      setupSessionFactory(1, isNetty());
+      setupSessionFactory(2, isNetty());
+
+      createQueue(0, "queues.testaddress", "queue0", null, false);
+      createQueue(1, "queues.testaddress", "queue0", null, false);
+      createQueue(2, "queues.testaddress", "queue0", null, false);
+
+      addConsumer(0, 0, "queue0", null);
+      addConsumer(1, 1, "queue0", null);
+      addConsumer(2, 2, "queue0", null);
+
+      waitForBindings(0, "queues.testaddress", 1, 1, true);
+      waitForBindings(1, "queues.testaddress", 1, 1, true);
+      waitForBindings(2, "queues.testaddress", 1, 1, true);
+
+      waitForBindings(0, "queues.testaddress", 2, 2, false);
+      waitForBindings(1, "queues.testaddress", 2, 2, false);
+      waitForBindings(2, "queues.testaddress", 2, 2, false);
+
+      sendWithProperty(0, "queues.testaddress", 10, false, Message.HDR_GROUP_ID, new SimpleString("id1"));
+
+      verifyReceiveAll(10, 0);
+
+   }
+
+   /**
+    * This is the same test as testGroupingSimple() just with the "address" removed from the cluster-connection and grouping-handler
+    */
+   @Test
+   public void testGroupingSimpleWithNoAddress() throws Exception {
+      setupServer(0, isFileStorage(), isNetty());
+      setupServer(1, isFileStorage(), isNetty());
+      setupServer(2, isFileStorage(), isNetty());
+
+      setupClusterConnection("cluster0", "", MessageLoadBalancingType.ON_DEMAND, 1, isNetty(), 0, 1, 2);
+
+      setupClusterConnection("cluster1", "", MessageLoadBalancingType.ON_DEMAND, 1, isNetty(), 1, 0, 2);
+
+      setupClusterConnection("cluster2", "", MessageLoadBalancingType.ON_DEMAND, 1, isNetty(), 2, 0, 1);
+
+      servers[0].getConfiguration().setGroupingHandlerConfiguration(new GroupingHandlerConfiguration().setName(new SimpleString("grouparbitrator")).setType(GroupingHandlerConfiguration.TYPE.LOCAL).setTimeout(5000).setGroupTimeout(-1).setReaperPeriod(ActiveMQDefaultConfiguration.getDefaultGroupingHandlerReaperPeriod()));
+      servers[1].getConfiguration().setGroupingHandlerConfiguration(new GroupingHandlerConfiguration().setName(new SimpleString("grouparbitrator")).setType(GroupingHandlerConfiguration.TYPE.REMOTE).setTimeout(5000).setGroupTimeout(-1).setReaperPeriod(ActiveMQDefaultConfiguration.getDefaultGroupingHandlerReaperPeriod()));
+      servers[2].getConfiguration().setGroupingHandlerConfiguration(new GroupingHandlerConfiguration().setName(new SimpleString("grouparbitrator")).setType(GroupingHandlerConfiguration.TYPE.REMOTE).setTimeout(5000).setGroupTimeout(-1).setReaperPeriod(ActiveMQDefaultConfiguration.getDefaultGroupingHandlerReaperPeriod()));
 
       startServers(0, 1, 2);
 
@@ -581,19 +629,16 @@ public class ClusteredGroupingTest extends ClusterTestBase {
                   if (count % 3 == 0) {
                      factory = sf2;
                      targetServer = 2;
-                  }
-                  else if (count % 2 == 0) {
+                  } else if (count % 2 == 0) {
                      factory = sf1;
                      targetServer = 1;
-                  }
-                  else {
+                  } else {
                      factory = sf0;
                   }
                   IntegrationTestLogger.LOGGER.debug("Creating producer session factory to node " + targetServer);
                   session = addClientSession(factory.createSession(false, true, true));
                   producer = addClientProducer(session.createProducer(ADDRESS));
-               }
-               catch (Exception e) {
+               } catch (Exception e) {
                   errors.incrementAndGet();
                   IntegrationTestLogger.LOGGER.warn("Producer thread couldn't establish connection", e);
                   return;
@@ -610,13 +655,11 @@ public class ClusteredGroupingTest extends ClusterTestBase {
                      producer.send(message);
                      totalMessageProduced.incrementAndGet();
                      messageCount++;
-                  }
-                  catch (ActiveMQException e) {
+                  } catch (ActiveMQException e) {
                      IntegrationTestLogger.LOGGER.warn("Producer thread threw exception while sending messages to " + targetServer + ": " + e.getMessage());
                      // in case of a failure we change the group to make possible errors more likely
                      group = group + "afterFail";
-                  }
-                  catch (Exception e) {
+                  } catch (Exception e) {
                      IntegrationTestLogger.LOGGER.warn("Producer thread threw unexpected exception while sending messages to " + targetServer + ": " + e.getMessage());
                      group = group + "afterFail";
                      break;
@@ -636,15 +679,13 @@ public class ClusteredGroupingTest extends ClusterTestBase {
             try {
                try {
                   Thread.sleep(2000);
-               }
-               catch (InterruptedException e) {
+               } catch (InterruptedException e) {
                   e.printStackTrace();
                   // ignore
                }
                System.out.println("Cycling server");
                cycleServer(1);
-            }
-            finally {
+            } finally {
                okToConsume.countDown();
             }
          }
@@ -664,8 +705,7 @@ public class ClusteredGroupingTest extends ClusterTestBase {
                try {
                   IntegrationTestLogger.LOGGER.info("Waiting to start consumer thread...");
                   okToConsume.await(20, TimeUnit.SECONDS);
-               }
-               catch (InterruptedException e) {
+               } catch (InterruptedException e) {
                   e.printStackTrace();
                   return;
                }
@@ -680,12 +720,10 @@ public class ClusteredGroupingTest extends ClusterTestBase {
                      if (consumerCounter.get() % 3 == 0) {
                         factory = sf2;
                         targetServer = 2;
-                     }
-                     else if (consumerCounter.get() % 2 == 0) {
+                     } else if (consumerCounter.get() % 2 == 0) {
                         factory = sf1;
                         targetServer = 1;
-                     }
-                     else {
+                     } else {
                         factory = sf0;
                      }
                      IntegrationTestLogger.LOGGER.info("Creating consumer session factory to node " + targetServer);
@@ -694,8 +732,7 @@ public class ClusteredGroupingTest extends ClusterTestBase {
                      session.start();
                      consumerCounter.incrementAndGet();
                   }
-               }
-               catch (Exception e) {
+               } catch (Exception e) {
                   IntegrationTestLogger.LOGGER.info("Consumer thread couldn't establish connection", e);
                   errors.incrementAndGet();
                   return;
@@ -710,12 +747,10 @@ public class ClusteredGroupingTest extends ClusterTestBase {
                      }
                      m.acknowledge();
                      IntegrationTestLogger.LOGGER.trace("Consumed message " + m.getStringProperty(Message.HDR_DUPLICATE_DETECTION_ID) + " from server " + targetServer + ". Total consumed: " + totalMessagesConsumed.incrementAndGet());
-                  }
-                  catch (ActiveMQException e) {
+                  } catch (ActiveMQException e) {
                      errors.incrementAndGet();
                      IntegrationTestLogger.LOGGER.warn("Consumer thread threw exception while receiving messages from server " + targetServer + ".: " + e.getMessage());
-                  }
-                  catch (Exception e) {
+                  } catch (Exception e) {
                      errors.incrementAndGet();
                      IntegrationTestLogger.LOGGER.warn("Consumer thread threw unexpected exception while receiving messages from server " + targetServer + ".: " + e.getMessage());
                      return;
@@ -741,8 +776,7 @@ public class ClusteredGroupingTest extends ClusterTestBase {
       try {
          stopServers(node);
          startServers(node);
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          e.printStackTrace();
       }
    }
@@ -1039,8 +1073,7 @@ public class ClusteredGroupingTest extends ClusterTestBase {
 
          // it should get the Retries on the latch
          assertTrue(latch.await(10, TimeUnit.SECONDS));
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          e.printStackTrace(); // To change body of catch statement use File | Settings | File Templates.
       }
 
@@ -1230,11 +1263,9 @@ public class ClusteredGroupingTest extends ClusterTestBase {
       int consumer = 0;
       if (consumers[0].consumer.receive(5000) != null) {
          consumer = 0;
-      }
-      else if (consumers[2].consumer.receive(5000) != null) {
+      } else if (consumers[2].consumer.receive(5000) != null) {
          consumer = 2;
-      }
-      else {
+      } else {
          fail("Message was not received.");
       }
 
@@ -1596,6 +1627,7 @@ public class ClusteredGroupingTest extends ClusterTestBase {
 
    }
 
+   @Test
    public void testGroupingMultipleSending() throws Exception {
       setupServer(0, isFileStorage(), isNetty());
       setupServer(1, isFileStorage(), isNetty());
@@ -1682,18 +1714,15 @@ public class ClusteredGroupingTest extends ClusterTestBase {
          if (wait) {
             try {
                latch.await(5, TimeUnit.SECONDS);
-            }
-            catch (InterruptedException e) {
+            } catch (InterruptedException e) {
                e.printStackTrace(); // To change body of catch statement use File | Settings | File Templates.
             }
-         }
-         else {
+         } else {
             latch.countDown();
          }
          try {
             sendInRange(node, "queues.testaddress", msgStart, msgEnd, false, Message.HDR_GROUP_ID, id);
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             e.printStackTrace(); // To change body of catch statement use File | Settings | File Templates.
          }
       }

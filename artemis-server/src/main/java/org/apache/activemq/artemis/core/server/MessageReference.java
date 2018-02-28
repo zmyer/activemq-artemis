@@ -16,7 +16,11 @@
  */
 package org.apache.activemq.artemis.core.server;
 
+
+import org.apache.activemq.artemis.api.core.ActiveMQException;
+import org.apache.activemq.artemis.api.core.Message;
 import org.apache.activemq.artemis.core.server.impl.AckReason;
+import org.apache.activemq.artemis.core.server.impl.MessageReferenceImpl;
 import org.apache.activemq.artemis.core.transaction.Transaction;
 
 /**
@@ -26,9 +30,16 @@ import org.apache.activemq.artemis.core.transaction.Transaction;
  */
 public interface MessageReference {
 
+   final class Factory {
+      public static MessageReference createReference(Message encode, final Queue queue) {
+         return new MessageReferenceImpl(encode, queue);
+      }
+   }
    boolean isPaged();
 
-   ServerMessage getMessage();
+   Message getMessage();
+
+   long getMessageID();
 
    /**
     * We define this method aggregation here because on paging we need to hold the original estimate,
@@ -38,12 +49,16 @@ public interface MessageReference {
     */
    int getMessageMemoryEstimate();
 
-   /** To be used on holding protocol specific data during the delivery.
-    *  This will be only valid while the message is on the delivering queue at the consumer  */
+   /**
+    * To be used on holding protocol specific data during the delivery.
+    * This will be only valid while the message is on the delivering queue at the consumer
+    */
    Object getProtocolData();
 
-   /** To be used on holding protocol specific data during the delivery.
-    *  This will be only valid while the message is on the delivering queue at the consumer  */
+   /**
+    * To be used on holding protocol specific data during the delivery.
+    * This will be only valid while the message is on the delivering queue at the consumer
+    */
    void setProtocolData(Object data);
 
    MessageReference copy(Queue queue);
@@ -85,4 +100,14 @@ public interface MessageReference {
    void setAlreadyAcked();
 
    boolean isAlreadyAcked();
+
+   /**
+    * This is the size of the message when persisted on disk which is used for metrics tracking
+    * Note that even if the message itself is not persisted on disk (ie non-durable) this value is
+    * still used for metrics tracking for the amount of data on a queue
+    *
+    * @return
+    * @throws ActiveMQException
+    */
+   long getPersistentSize() throws ActiveMQException;
 }

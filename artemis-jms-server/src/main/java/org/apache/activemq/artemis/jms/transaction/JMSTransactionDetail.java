@@ -16,11 +16,11 @@
  */
 package org.apache.activemq.artemis.jms.transaction;
 
+import javax.transaction.xa.Xid;
 import java.util.Map;
 
-import javax.transaction.xa.Xid;
-
-import org.apache.activemq.artemis.core.server.ServerMessage;
+import org.apache.activemq.artemis.api.core.ICoreMessage;
+import org.apache.activemq.artemis.api.core.Message;
 import org.apache.activemq.artemis.core.transaction.Transaction;
 import org.apache.activemq.artemis.core.transaction.TransactionDetail;
 import org.apache.activemq.artemis.jms.client.ActiveMQBytesMessage;
@@ -32,13 +32,16 @@ import org.apache.activemq.artemis.jms.client.ActiveMQTextMessage;
 
 public class JMSTransactionDetail extends TransactionDetail {
 
-   public JMSTransactionDetail(Xid xid, Transaction tx, Long creation) throws Exception {
+   public JMSTransactionDetail(Xid xid, Transaction tx, Long creation) {
       super(xid, tx, creation);
    }
 
    @Override
-   public String decodeMessageType(ServerMessage msg) {
-      int type = msg.getType();
+   public String decodeMessageType(Message msg) {
+      if (!(msg instanceof ICoreMessage)) {
+         return "N/A";
+      }
+      int type = ((ICoreMessage) msg).getType();
       switch (type) {
          case ActiveMQMessage.TYPE: // 0
             return "Default";
@@ -58,11 +61,10 @@ public class JMSTransactionDetail extends TransactionDetail {
    }
 
    @Override
-   public Map<String, Object> decodeMessageProperties(ServerMessage msg) {
+   public Map<String, Object> decodeMessageProperties(Message msg) {
       try {
          return ActiveMQMessage.coreMaptoJMSMap(msg.toMap());
-      }
-      catch (Throwable t) {
+      } catch (Throwable t) {
          return null;
       }
    }

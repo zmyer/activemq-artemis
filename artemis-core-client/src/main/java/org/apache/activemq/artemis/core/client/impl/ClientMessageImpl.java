@@ -28,14 +28,17 @@ import org.apache.activemq.artemis.api.core.ActiveMQPropertyConversionException;
 import org.apache.activemq.artemis.api.core.Message;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.core.client.ActiveMQClientMessageBundle;
-import org.apache.activemq.artemis.core.message.BodyEncoder;
-import org.apache.activemq.artemis.core.message.impl.MessageImpl;
+import org.apache.activemq.artemis.core.message.LargeBodyEncoder;
+import org.apache.activemq.artemis.core.message.impl.CoreMessage;
+import org.apache.activemq.artemis.core.message.impl.CoreMessageObjectPools;
 import org.apache.activemq.artemis.reader.MessageUtil;
+import org.apache.activemq.artemis.utils.UUID;
+import org.apache.activemq.artemis.utils.collections.TypedProperties;
 
 /**
  * A ClientMessageImpl
  */
-public class ClientMessageImpl extends MessageImpl implements ClientMessageInternal {
+public class ClientMessageImpl extends CoreMessage implements ClientMessageInternal {
 
    // added this constant here so that the client package have no dependency on JMS
    public static final SimpleString REPLYTO_HEADER_NAME = MessageUtil.REPLYTO_HEADER_NAME;
@@ -57,6 +60,39 @@ public class ClientMessageImpl extends MessageImpl implements ClientMessageInter
    public ClientMessageImpl() {
    }
 
+   public ClientMessageImpl(CoreMessageObjectPools coreMessageObjectPools) {
+      super(coreMessageObjectPools);
+   }
+
+   protected ClientMessageImpl(ClientMessageImpl other) {
+      super(other);
+   }
+
+   @Override
+   public ClientMessageImpl setDurable(boolean durable) {
+      super.setDurable(durable);
+      return this;
+   }
+
+   @Override
+   public ClientMessageImpl setExpiration(long expiration) {
+      super.setExpiration(expiration);
+      return this;
+   }
+
+   @Override
+   public ClientMessageImpl setPriority(byte priority) {
+      super.setPriority(priority);
+      return this;
+   }
+
+   @Override
+   public ClientMessageImpl setUserID(UUID userID) {
+
+      return this;
+   }
+
+
    /*
     * Construct messages before sending
     */
@@ -65,13 +101,25 @@ public class ClientMessageImpl extends MessageImpl implements ClientMessageInter
                             final long expiration,
                             final long timestamp,
                             final byte priority,
+                            final int initialMessageBufferSize,
+                            final CoreMessageObjectPools coreMessageObjectPools) {
+      super(coreMessageObjectPools);
+      this.setType(type).setExpiration(expiration).setTimestamp(timestamp).setDurable(durable).
+           setPriority(priority).initBuffer(initialMessageBufferSize);
+   }
+
+   public ClientMessageImpl(final byte type,
+                            final boolean durable,
+                            final long expiration,
+                            final long timestamp,
+                            final byte priority,
                             final int initialMessageBufferSize) {
-      super(type, durable, expiration, timestamp, priority, initialMessageBufferSize);
+      this(type, durable, expiration, timestamp, priority, initialMessageBufferSize, null);
    }
 
    @Override
-   public boolean isServerMessage() {
-      return false;
+   public TypedProperties getProperties() {
+      return this.checkProperties();
    }
 
    @Override
@@ -108,6 +156,11 @@ public class ClientMessageImpl extends MessageImpl implements ClientMessageInter
       return this;
    }
 
+
+   @Override
+   public void checkCompletion() throws ActiveMQException {
+   }
+
    @Override
    public int getFlowControlSize() {
       if (flowControlSize < 0) {
@@ -141,7 +194,7 @@ public class ClientMessageImpl extends MessageImpl implements ClientMessageInter
 
    @Override
    public String toString() {
-      return getClass().getSimpleName() + "[messageID=" + messageID + ", durable=" + durable + ", address=" + getAddress() + ",userID=" + (getUserID() != null ? getUserID() : "null") + ",properties=" + properties.toString() + "]";
+      return getClass().getSimpleName() + "[messageID=" + messageID + ", durable=" + durable + ", address=" + getAddress() + ",userID=" + (getUserID() != null ? getUserID() : "null") + ",properties=" + getProperties().toString() + "]";
    }
 
    @Override
@@ -151,8 +204,7 @@ public class ClientMessageImpl extends MessageImpl implements ClientMessageInter
          getBodyBuffer().readBytes(readBuffer);
          out.write(readBuffer);
          out.flush();
-      }
-      catch (IOException e) {
+      } catch (IOException e) {
          throw ActiveMQClientMessageBundle.BUNDLE.errorSavingBody(e);
       }
    }
@@ -190,7 +242,7 @@ public class ClientMessageImpl extends MessageImpl implements ClientMessageInter
    }
 
    @Override
-   public BodyEncoder getBodyEncoder() throws ActiveMQException {
+   public LargeBodyEncoder getBodyEncoder() throws ActiveMQException {
       return new DecodingContext();
    }
 
@@ -246,6 +298,11 @@ public class ClientMessageImpl extends MessageImpl implements ClientMessageInter
 
    @Override
    public ClientMessageImpl putStringProperty(final SimpleString key, final SimpleString value) {
+      return (ClientMessageImpl) super.putStringProperty(key, value);
+   }
+
+   @Override
+   public ClientMessageImpl putStringProperty(final SimpleString key, final String value) {
       return (ClientMessageImpl) super.putStringProperty(key, value);
    }
 
@@ -308,15 +365,17 @@ public class ClientMessageImpl extends MessageImpl implements ClientMessageInter
 
    @Override
    public ClientMessageImpl writeBodyBufferBytes(byte[] bytes) {
-      return (ClientMessageImpl) super.writeBodyBufferBytes(bytes);
+      getBodyBuffer().writeBytes(bytes);
+      return this;
    }
 
    @Override
    public ClientMessageImpl writeBodyBufferString(String string) {
-      return (ClientMessageImpl) super.writeBodyBufferString(string);
+      getBodyBuffer().writeString(string);
+      return this;
    }
 
-   private final class DecodingContext implements BodyEncoder {
+   private final class DecodingContext implements LargeBodyEncoder {
 
       private DecodingContext() {
       }
@@ -334,8 +393,7 @@ public class ClientMessageImpl extends MessageImpl implements ClientMessageInter
       public long getLargeBodySize() {
          if (isLargeMessage()) {
             return getBodyBuffer().writerIndex();
-         }
-         else {
+         } else {
             return getBodyBuffer().writerIndex() - BODY_OFFSET;
          }
       }
@@ -349,9 +407,15 @@ public class ClientMessageImpl extends MessageImpl implements ClientMessageInter
       @Override
       public int encode(final ActiveMQBuffer bufferOut, final int size) {
          byte[] bytes = new byte[size];
-         getWholeBuffer().readBytes(bytes);
+         buffer.readBytes(bytes);
          bufferOut.writeBytes(bytes, 0, size);
          return size;
       }
    }
+
+   @Override
+   public Message copy() {
+      return new ClientMessageImpl(this);
+   }
+
 }

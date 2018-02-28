@@ -6,7 +6,7 @@
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,18 +16,17 @@
  */
 package org.apache.activemq;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
-
-import java.util.concurrent.atomic.AtomicInteger;
-
 import javax.jms.TransactionRolledBackException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.activemq.transaction.Synchronization;
 import org.apache.activemq.transport.tcp.TcpTransportFactory;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
 
 public class TransactionContextTest {
 
@@ -40,8 +39,7 @@ public class TransactionContextTest {
       try {
          connection = factory.createActiveMQConnection();
          underTest = new TransactionContext(connection);
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          e.printStackTrace();
          throw e;
       }
@@ -71,7 +69,7 @@ public class TransactionContextTest {
 
          @Override
          public void afterCommit() throws Exception {
-            fail("exepcted rollback exception");
+            fail("expected rollback exception");
          }
 
          @Override
@@ -89,7 +87,7 @@ public class TransactionContextTest {
 
          @Override
          public void afterCommit() throws Exception {
-            fail("exepcted rollback exception");
+            fail("expected rollback exception");
          }
 
          @Override
@@ -101,9 +99,8 @@ public class TransactionContextTest {
 
       try {
          underTest.commit();
-         fail("exepcted rollback exception");
-      }
-      catch (TransactionRolledBackException expected) {
+         fail("expected rollback exception");
+      } catch (TransactionRolledBackException expected) {
       }
 
       assertEquals("beforeEnd A called once", 1, beforeEndCountA.get());
@@ -125,7 +122,7 @@ public class TransactionContextTest {
 
          @Override
          public void afterCommit() throws Exception {
-            fail("exepcted rollback exception");
+            fail("expected rollback exception");
          }
 
          @Override

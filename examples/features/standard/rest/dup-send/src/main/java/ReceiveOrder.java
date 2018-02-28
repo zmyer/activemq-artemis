@@ -23,7 +23,7 @@ public class ReceiveOrder {
 
    public static void main(String[] args) throws Exception {
       // first get the create URL for the shipping queue
-      ClientRequest request = new ClientRequest("http://localhost:8080/queues/jms.queue.orders");
+      ClientRequest request = new ClientRequest("http://localhost:8080/queues/orders");
       ClientResponse res = request.head();
       Link pullConsumers = res.getHeaderAsLink("msg-pull-consumers");
       res.releaseConnection();
@@ -36,13 +36,11 @@ public class ReceiveOrder {
          if (res.getStatus() == 503) {
             System.out.println("Timeout...");
             consumeNext = res.getHeaderAsLink("msg-consume-next");
-         }
-         else if (res.getStatus() == 200) {
+         } else if (res.getStatus() == 200) {
             Order order = (Order) res.getEntity(Order.class);
             System.out.println(order);
             consumeNext = res.getHeaderAsLink("msg-consume-next");
-         }
-         else {
+         } else {
             throw new RuntimeException("Failure! " + res.getStatus());
          }
          res.releaseConnection();

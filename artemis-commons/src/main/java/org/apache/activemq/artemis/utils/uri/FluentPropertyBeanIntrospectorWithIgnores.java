@@ -23,12 +23,13 @@ import java.lang.reflect.Method;
 import java.util.Locale;
 
 import org.apache.activemq.artemis.api.core.Pair;
-import org.apache.activemq.artemis.utils.ConcurrentHashSet;
+import org.apache.activemq.artemis.utils.collections.ConcurrentHashSet;
 import org.apache.commons.beanutils.FluentPropertyBeanIntrospector;
 import org.apache.commons.beanutils.IntrospectionContext;
 import org.jboss.logging.Logger;
 
 public class FluentPropertyBeanIntrospectorWithIgnores extends FluentPropertyBeanIntrospector {
+
    static Logger logger = Logger.getLogger(FluentPropertyBeanIntrospectorWithIgnores.class);
 
    private static ConcurrentHashSet<Pair<String, String>> ignores = new ConcurrentHashSet<>();
@@ -56,12 +57,10 @@ public class FluentPropertyBeanIntrospectorWithIgnores extends FluentPropertyBea
             try {
                if (pd == null) {
                   icontext.addPropertyDescriptor(createFluentPropertyDescritor(m, propertyName));
-               }
-               else if (pd.getWriteMethod() == null) {
+               } else if (pd.getWriteMethod() == null) {
                   pd.setWriteMethod(m);
                }
-            }
-            catch (IntrospectionException e) {
+            } catch (IntrospectionException e) {
                logger.debug(e.getMessage(), e);
             }
          }

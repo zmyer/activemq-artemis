@@ -16,26 +16,48 @@
  */
 package org.apache.activemq.artemis.tests.unit.util;
 
-import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
-import org.apache.activemq.artemis.api.core.ActiveMQBuffers;
-import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
-import org.junit.After;
-
-import org.junit.Test;
-
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 
-import org.junit.Assert;
-
+import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
+import org.apache.activemq.artemis.api.core.ActiveMQBuffers;
+import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.apache.activemq.artemis.utils.DataConstants;
 import org.apache.activemq.artemis.utils.RandomUtil;
 import org.apache.activemq.artemis.utils.UTF8Util;
+import org.junit.After;
+import org.junit.Assert;
+import org.junit.Test;
 
 public class UTF8Test extends ActiveMQTestBase {
+
+   @Test
+   public void testValidateUTFWithENDChars() {
+      testValidateUTFWithChars(1024, (char) 0);
+   }
+
+   @Test
+   public void testValidateUTFWithLastAsciiChars() {
+      testValidateUTFWithChars(1024, (char) Byte.MAX_VALUE);
+   }
+
+   private void testValidateUTFWithChars(final int size, final char c) {
+      final char[] chars = new char[size];
+      Arrays.fill(chars, c);
+      final String expectedUtf8String = new String(chars);
+      final ActiveMQBuffer buffer = ActiveMQBuffers.fixedBuffer(4 * chars.length);
+      UTF8Util.saveUTF(buffer.byteBuf(), expectedUtf8String);
+      final byte[] expectedBytes = expectedUtf8String.getBytes(StandardCharsets.UTF_8);
+      final int encodedSize = buffer.readUnsignedShort();
+      final byte[] realEncodedBytes = new byte[encodedSize];
+      buffer.getBytes(buffer.readerIndex(), realEncodedBytes);
+      Assert.assertArrayEquals(expectedBytes, realEncodedBytes);
+   }
 
    @Test
    public void testValidateUTF() throws Exception {
@@ -47,7 +69,7 @@ public class UTF8Test extends ActiveMQTestBase {
 
       String str = new String(bytes);
 
-      UTF8Util.saveUTF(buffer, str);
+      UTF8Util.saveUTF(buffer.byteBuf(), str);
 
       String newStr = UTF8Util.readUTF(buffer);
 
@@ -75,7 +97,7 @@ public class UTF8Test extends ActiveMQTestBase {
    }
 
    private void testValidateUTFOnDataInputStream(final String str, final ActiveMQBuffer wrap) throws Exception {
-      UTF8Util.saveUTF(wrap, str);
+      UTF8Util.saveUTF(wrap.byteBuf(), str);
 
       DataInputStream data = new DataInputStream(new ByteArrayInputStream(wrap.toByteBuffer().array()));
 
@@ -109,10 +131,9 @@ public class UTF8Test extends ActiveMQTestBase {
       ActiveMQBuffer buffer = ActiveMQBuffers.fixedBuffer(0xffff + 4);
 
       try {
-         UTF8Util.saveUTF(buffer, str);
+         UTF8Util.saveUTF(buffer.byteBuf(), str);
          Assert.fail("String is too big, supposed to throw an exception");
-      }
-      catch (Exception ignored) {
+      } catch (Exception ignored) {
       }
 
       Assert.assertEquals("A buffer was supposed to be untouched since the string was too big", 0, buffer.writerIndex());
@@ -126,10 +147,9 @@ public class UTF8Test extends ActiveMQTestBase {
       str = new String(chars);
 
       try {
-         UTF8Util.saveUTF(buffer, str);
+         UTF8Util.saveUTF(buffer.byteBuf(), str);
          Assert.fail("Encoded String is too big, supposed to throw an exception");
-      }
-      catch (Exception ignored) {
+      } catch (Exception ignored) {
       }
 
       Assert.assertEquals("A buffer was supposed to be untouched since the string was too big", 0, buffer.writerIndex());
@@ -143,7 +163,7 @@ public class UTF8Test extends ActiveMQTestBase {
 
       str = new String(chars);
 
-      UTF8Util.saveUTF(buffer, str);
+      UTF8Util.saveUTF(buffer.byteBuf(), str);
 
       Assert.assertEquals(0xffff + DataConstants.SIZE_SHORT, buffer.writerIndex());
 

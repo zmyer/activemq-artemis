@@ -16,7 +16,6 @@
  */
 package org.apache.activemq.artemis.spi.core.security;
 
-import javax.security.cert.X509Certificate;
 import java.util.Set;
 
 import org.apache.activemq.artemis.core.security.CheckType;
@@ -41,9 +40,10 @@ public interface ActiveMQSecurityManager3 extends ActiveMQSecurityManager {
     *
     * @param user     the user
     * @param password the users password
+    * @param remotingConnection
     * @return the name of the validated user or null if the user isn't validated
     */
-   String validateUser(String user, String password, X509Certificate[] certificates);
+   String validateUser(String user, String password, RemotingConnection remotingConnection);
 
    /**
     * Determine whether the given user is valid and whether they have
@@ -52,13 +52,18 @@ public interface ActiveMQSecurityManager3 extends ActiveMQSecurityManager {
     * This method is called instead of
     * {@link ActiveMQSecurityManager#validateUserAndRole(String, String, Set, CheckType)}.
     *
-    * @param user      the user
-    * @param password  the user's password
-    * @param roles     the user's roles
-    * @param checkType which permission to validate
-    * @param address   the address for which to perform authorization
-    * @param connection   the user's connection
+    * @param user       the user
+    * @param password   the user's password
+    * @param roles      the user's roles
+    * @param checkType  which permission to validate
+    * @param address    the address for which to perform authorization
+    * @param remotingConnection the user's connection
     * @return the name of the validated user or null if the user isn't validated
     */
-   String validateUserAndRole(String user, String password, Set<Role> roles, CheckType checkType, String address, RemotingConnection connection);
+   String validateUserAndRole(String user,
+                              String password,
+                              Set<Role> roles,
+                              CheckType checkType,
+                              String address,
+                              RemotingConnection remotingConnection);
 }

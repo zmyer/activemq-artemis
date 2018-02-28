@@ -89,17 +89,30 @@ public final class PageTransactionInfoImpl implements PageTransactionInfo {
    }
 
    @Override
-   public void onUpdate(final int update, final StorageManager storageManager, PagingManager pagingManager) {
-      int sizeAfterUpdate = numberOfMessages.addAndGet(-update);
-      if (sizeAfterUpdate == 0 && storageManager != null) {
-         try {
-            storageManager.deletePageTransactional(this.recordID);
-         }
-         catch (Exception e) {
-            ActiveMQServerLogger.LOGGER.pageTxDeleteError(e, recordID);
-         }
+   public boolean onUpdate(final int update, final StorageManager storageManager, PagingManager pagingManager) {
+      int afterUpdate = numberOfMessages.addAndGet(-update);
+      return internalCheckSize(storageManager, pagingManager, afterUpdate);
+   }
 
-         pagingManager.removeTransaction(this.transactionID);
+   @Override
+   public boolean checkSize(StorageManager storageManager, PagingManager pagingManager) {
+      return internalCheckSize(storageManager, pagingManager, numberOfMessages.get());
+   }
+
+   public boolean internalCheckSize(StorageManager storageManager, PagingManager pagingManager, int size) {
+      if (size <= 0) {
+         if (storageManager != null) {
+            try {
+               storageManager.deletePageTransactional(this.recordID);
+            } catch (Exception e) {
+               ActiveMQServerLogger.LOGGER.pageTxDeleteError(e, recordID);
+            }
+
+            pagingManager.removeTransaction(this.transactionID);
+         }
+         return false;
+      } else {
+         return true;
       }
    }
 
@@ -254,21 +267,18 @@ public final class PageTransactionInfoImpl implements PageTransactionInfo {
          cursor.addPendingDelivery(cursorPos);
          cursor.redeliver(iterator, cursorPos);
          return true;
-      }
-      else if (committed) {
+      } else if (committed) {
          if (logger.isTraceEnabled()) {
             logger.trace("committed on " + cursor + ", position=" + cursorPos + ", ignoring position");
          }
          return false;
-      }
-      else if (rolledback) {
+      } else if (rolledback) {
          if (logger.isTraceEnabled()) {
             logger.trace("rolled back, position ignored on " + cursor + ", position=" + cursorPos);
          }
          cursor.positionIgnored(cursorPos);
          return true;
-      }
-      else {
+      } else {
          if (logger.isTraceEnabled()) {
             logger.trace("deliverAftercommit/else, marking useRedelivery on " + cursor + ", position " + cursorPos);
          }

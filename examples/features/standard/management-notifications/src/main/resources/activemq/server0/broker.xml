@@ -1,4 +1,4 @@
-<?xml version='1.0'?>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!--
 Licensed to the Apache Software Foundation (ASF) under one
 or more contributor license agreements.  See the NOTICE file
@@ -17,19 +17,7 @@ KIND, either express or implied.  See the License for the
 specific language governing permissions and limitations
 under the License.
 -->
-
-<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-               xmlns="urn:activemq"
-               xsi:schemaLocation="urn:activemq ../../../../src/schema/artemis-server.xsd">
-
-   <jms xmlns="urn:activemq:jms">
-      <!--the queue used by the example-->
-      <queue name="exampleQueue"/>
-
-      <!--the notifications topic used by the example-->
-      <topic name="notificationsTopic"/>
-   </jms>
-
+<configuration xmlns="urn:activemq" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="urn:activemq ../../../../src/schema/artemis-configuration.xsd">
    <core xmlns="urn:activemq:core">
 
       <bindings-directory>./data/messaging/bindings</bindings-directory>
@@ -41,7 +29,7 @@ under the License.
       <paging-directory>./data/messaging/paging</paging-directory>
 
 
-      <management-notification-address>jms.topic.notificationsTopic</management-notification-address>
+      <management-notification-address>notificationsTopic</management-notification-address>
 
       <!-- Netty standard TCP acceptor -->
       <acceptors>
@@ -52,30 +40,40 @@ under the License.
 
       <security-settings>
          <!--security for example queue-->
-         <security-setting match="jms.queue.exampleQueue">
-            <permission type="createDurableQueue" roles="guest"/>
-            <permission type="deleteDurableQueue" roles="guest"/>
-            <permission type="createNonDurableQueue" roles="guest"/>
-            <permission type="deleteNonDurableQueue" roles="guest"/>
-            <permission type="consume" roles="guest"/>
-            <permission type="send" roles="guest"/>
+         <security-setting match="exampleQueue">
+            <permission roles="guest" type="createDurableQueue"/>
+            <permission roles="guest" type="deleteDurableQueue"/>
+            <permission roles="guest" type="createNonDurableQueue"/>
+            <permission roles="guest" type="deleteNonDurableQueue"/>
+            <permission roles="guest" type="consume"/>
+            <permission roles="guest" type="send"/>
          </security-setting>
 
          <!--security for notification queue-->
-         <security-setting match="jms.topic.notificationsTopic">
-            <permission type="consume" roles="guest"/>
-            <permission type="createNonDurableQueue" roles="guest"/>
-            <permission type="deleteNonDurableQueue" roles="guest"/>
+         <security-setting match="notificationsTopic">
+            <permission roles="guest" type="consume"/>
+            <permission roles="guest" type="createNonDurableQueue"/>
+            <permission roles="guest" type="deleteNonDurableQueue"/>
          </security-setting>
 
          <!-- security settings for JMS temporary queue -->
          <security-setting match="queuetempjms.*">
-            <permission type="createNonDurableQueue" roles="guest"/>
-            <permission type="deleteNonDurableQueue" roles="guest"/>
-            <permission type="consume" roles="guest"/>
-            <permission type="send" roles="guest"/>
+            <permission roles="guest" type="createNonDurableQueue"/>
+            <permission roles="guest" type="deleteNonDurableQueue"/>
+            <permission roles="guest" type="consume"/>
+            <permission roles="guest" type="send"/>
          </security-setting>
       </security-settings>
 
+      <addresses>
+         <address name="notificationsTopic">
+            <multicast/>
+         </address>
+         <address name="exampleQueue">
+            <anycast>
+               <queue name="jms.queue.exampleQueue"/>
+            </anycast>
+         </address>
+      </addresses>
    </core>
 </configuration>

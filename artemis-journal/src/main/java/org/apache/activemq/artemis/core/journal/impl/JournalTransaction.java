@@ -17,17 +17,22 @@
 package org.apache.activemq.artemis.core.journal.impl;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.activemq.artemis.api.core.ActiveMQExceptionType;
 import org.apache.activemq.artemis.core.journal.impl.dataformat.JournalInternalRecord;
+import org.jboss.logging.Logger;
 
 public class JournalTransaction {
+
+   private static final Logger logger = Logger.getLogger(JournalTransaction.class);
 
    private JournalRecordProvider journal;
 
@@ -45,11 +50,13 @@ public class JournalTransaction {
 
    private boolean compacting = false;
 
-   private Map<JournalFile, TransactionCallback> callbackList;
+   private final Map<JournalFile, TransactionCallback> callbackList = Collections.synchronizedMap(new HashMap<JournalFile, TransactionCallback>());
 
    private JournalFile lastFile = null;
 
    private final AtomicInteger counter = new AtomicInteger();
+
+   private CountDownLatch firstCallbackLatch;
 
    public JournalTransaction(final long id, final JournalRecordProvider journal) {
       this.id = id;
@@ -78,8 +85,7 @@ public class JournalTransaction {
    public long[] getPositiveArray() {
       if (pos == null) {
          return new long[0];
-      }
-      else {
+      } else {
          int i = 0;
          long[] ids = new long[pos.size()];
          for (JournalUpdate el : pos) {
@@ -140,9 +146,7 @@ public class JournalTransaction {
          pendingFiles.clear();
       }
 
-      if (callbackList != null) {
-         callbackList.clear();
-      }
+      callbackList.clear();
 
       if (pos != null) {
          pos.clear();
@@ -157,6 +161,8 @@ public class JournalTransaction {
       lastFile = null;
 
       currentCallback = null;
+
+      firstCallbackLatch = null;
    }
 
    /**
@@ -167,9 +173,13 @@ public class JournalTransaction {
       data.setNumberOfRecords(getCounter(currentFile));
    }
 
+   public TransactionCallback getCurrentCallback() {
+      return currentCallback;
+   }
+
    public TransactionCallback getCallback(final JournalFile file) throws Exception {
-      if (callbackList == null) {
-         callbackList = new HashMap<>();
+      if (firstCallbackLatch != null && callbackList.isEmpty()) {
+         firstCallbackLatch.countDown();
       }
 
       currentCallback = callbackList.get(file);
@@ -179,13 +189,17 @@ public class JournalTransaction {
          callbackList.put(file, currentCallback);
       }
 
-      if (currentCallback.getErrorMessage() != null) {
-         throw ActiveMQExceptionType.createException(currentCallback.getErrorCode(), currentCallback.getErrorMessage());
-      }
-
       currentCallback.countUp();
 
       return currentCallback;
+   }
+
+   public void checkErrorCondition() throws Exception {
+      if (currentCallback != null) {
+         if (currentCallback.getErrorMessage() != null) {
+            throw ActiveMQExceptionType.createException(currentCallback.getErrorCode(), currentCallback.getErrorMessage());
+         }
+      }
    }
 
    public void addPositive(final JournalFile file, final long id, final int size) {
@@ -218,11 +232,20 @@ public class JournalTransaction {
    public void commit(final JournalFile file) {
       JournalCompactor compactor = journal.getCompactor();
 
-      if (compacting) {
+      // https://issues.apache.org/jira/browse/ARTEMIS-1114
+      //   There was a race once where compacting was not set
+      //   because the Journal was missing a readLock and compacting was starting
+      //   without setting this properly...
+      if (compacting && compactor != null) {
+         if (logger.isTraceEnabled()) {
+            logger.trace("adding tx " + this.id + " into compacting");
+         }
          compactor.addCommandCommit(this, file);
-      }
-      else {
+      } else {
 
+         if (logger.isTraceEnabled()) {
+            logger.trace("no compact commit " + this.id);
+         }
          if (pos != null) {
             for (JournalUpdate trUpdate : pos) {
                JournalRecord posFiles = journal.getRecords().get(trUpdate.id);
@@ -232,13 +255,11 @@ public class JournalTransaction {
                   // but the commit arrived while compacting was working
                   // We need to cache the counter update, so compacting will take the correct files when it is done
                   compactor.addCommandUpdate(trUpdate.id, trUpdate.file, trUpdate.size);
-               }
-               else if (posFiles == null) {
+               } else if (posFiles == null) {
                   posFiles = new JournalRecord(trUpdate.file, trUpdate.size);
 
                   journal.getRecords().put(trUpdate.id, posFiles);
-               }
-               else {
+               } else {
                   posFiles.addUpdateFile(trUpdate.file, trUpdate.size);
                }
             }
@@ -248,8 +269,7 @@ public class JournalTransaction {
             for (JournalUpdate trDelete : neg) {
                if (compactor != null) {
                   compactor.addCommandDelete(trDelete.id, trDelete.file);
-               }
-               else {
+               } else {
                   JournalRecord posFiles = journal.getRecords().remove(trDelete.id);
 
                   if (posFiles != null) {
@@ -269,7 +289,8 @@ public class JournalTransaction {
    }
 
    public void waitCallbacks() throws InterruptedException {
-      if (callbackList != null) {
+      waitFirstCallback();
+      synchronized (callbackList) {
          for (TransactionCallback callback : callbackList.values()) {
             callback.waitCompletion();
          }
@@ -280,8 +301,15 @@ public class JournalTransaction {
     * Wait completion at the latest file only
     */
    public void waitCompletion() throws Exception {
-      if (currentCallback != null) {
-         currentCallback.waitCompletion();
+      waitFirstCallback();
+      currentCallback.waitCompletion();
+   }
+
+   private void waitFirstCallback() throws InterruptedException {
+      if (currentCallback == null) {
+         firstCallbackLatch = new CountDownLatch(1);
+         firstCallbackLatch.await();
+         firstCallbackLatch = null;
       }
    }
 
@@ -294,8 +322,7 @@ public class JournalTransaction {
 
       if (compacting && compactor != null) {
          compactor.addCommandRollback(this, file);
-      }
-      else {
+      } else {
          // Now add negs for the pos we added in each file in which there were
          // transactional operations
          // Note that we do this on rollback as we do on commit, since we need

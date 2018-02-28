@@ -45,11 +45,13 @@ public class XARecoveryConfig {
    private final Map<String, String> properties;
    private final ClientProtocolManagerFactory clientProtocolManager;
 
-   public static XARecoveryConfig newConfig(ActiveMQConnectionFactory factory, String userName, String password, Map<String, String> properties) {
+   public static XARecoveryConfig newConfig(ActiveMQConnectionFactory factory,
+                                            String userName,
+                                            String password,
+                                            Map<String, String> properties) {
       if (factory.getServerLocator().getDiscoveryGroupConfiguration() != null) {
          return new XARecoveryConfig(factory.getServerLocator().isHA(), factory.getServerLocator().getDiscoveryGroupConfiguration(), userName, password, properties, factory.getServerLocator().getProtocolManagerFactory());
-      }
-      else {
+      } else {
          return new XARecoveryConfig(factory.getServerLocator().isHA(), factory.getServerLocator().getStaticTransportConfigurations(), userName, password, properties, factory.getServerLocator().getProtocolManagerFactory());
       }
 
@@ -63,7 +65,11 @@ public class XARecoveryConfig {
                            final ClientProtocolManagerFactory clientProtocolManager) {
       TransportConfiguration[] newTransportConfiguration = new TransportConfiguration[transportConfiguration.length];
       for (int i = 0; i < transportConfiguration.length; i++) {
-         newTransportConfiguration[i] = transportConfiguration[i].newTransportConfig("");
+         if (clientProtocolManager != null) {
+            newTransportConfiguration[i] = clientProtocolManager.adaptTransportConfiguration(transportConfiguration[i].newTransportConfig(""));
+         } else {
+            newTransportConfiguration[i] = transportConfiguration[i].newTransportConfig("");
+         }
       }
 
       this.transportConfiguration = newTransportConfiguration;
@@ -74,7 +80,6 @@ public class XARecoveryConfig {
       this.properties = properties == null ? Collections.unmodifiableMap(new HashMap<String, String>()) : Collections.unmodifiableMap(properties);
       this.clientProtocolManager = clientProtocolManager;
    }
-
 
    public XARecoveryConfig(final boolean ha,
                            final TransportConfiguration[] transportConfiguration,
@@ -143,8 +148,7 @@ public class XARecoveryConfig {
    public ServerLocator createServerLocator() {
       if (getDiscoveryConfiguration() != null) {
          return ActiveMQClient.createServerLocator(isHA(), getDiscoveryConfiguration()).setProtocolManagerFactory(clientProtocolManager);
-      }
-      else {
+      } else {
          return ActiveMQClient.createServerLocator(isHA(), getTransportConfig()).setProtocolManagerFactory(clientProtocolManager);
       }
 
@@ -175,8 +179,7 @@ public class XARecoveryConfig {
       if (discoveryConfiguration == null) {
          if (other.discoveryConfiguration != null)
             return false;
-      }
-      else if (!discoveryConfiguration.equals(other.discoveryConfiguration))
+      } else if (!discoveryConfiguration.equals(other.discoveryConfiguration))
          return false;
       if (!Arrays.equals(transportConfiguration, other.transportConfiguration))
          return false;

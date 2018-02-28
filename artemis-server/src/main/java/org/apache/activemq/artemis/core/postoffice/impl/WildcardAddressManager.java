@@ -16,43 +16,42 @@
  */
 package org.apache.activemq.artemis.core.postoffice.impl;
 
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-
 import org.apache.activemq.artemis.api.core.SimpleString;
+import org.apache.activemq.artemis.core.config.WildcardConfiguration;
+import org.apache.activemq.artemis.core.persistence.StorageManager;
 import org.apache.activemq.artemis.core.postoffice.Address;
 import org.apache.activemq.artemis.core.postoffice.Binding;
 import org.apache.activemq.artemis.core.postoffice.Bindings;
 import org.apache.activemq.artemis.core.postoffice.BindingsFactory;
+import org.apache.activemq.artemis.core.server.cluster.impl.MessageLoadBalancingType;
+import org.apache.activemq.artemis.core.server.impl.AddressInfo;
 import org.apache.activemq.artemis.core.transaction.Transaction;
+
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * extends the simple manager to allow wildcard addresses to be used.
  */
 public class WildcardAddressManager extends SimpleAddressManager {
 
-   static final char SINGLE_WORD = '*';
-
-   static final char ANY_WORDS = '#';
-
-   static final char DELIM = '.';
-
-   static final SimpleString SINGLE_WORD_SIMPLESTRING = new SimpleString("*");
-
-   static final SimpleString ANY_WORDS_SIMPLESTRING = new SimpleString("#");
-
    /**
-    * These are all the addresses, we use this so we can link back from the actual address to its linked wilcard addresses
+    * These are all the addresses, we use this so we can link back from the actual address to its linked wildcard addresses
     * or vice versa
     */
    private final Map<SimpleString, Address> addresses = new ConcurrentHashMap<>();
 
    private final Map<SimpleString, Address> wildCardAddresses = new ConcurrentHashMap<>();
 
-   public WildcardAddressManager(final BindingsFactory bindingsFactory) {
-      super(bindingsFactory);
+   public WildcardAddressManager(final BindingsFactory bindingsFactory, final WildcardConfiguration wildcardConfiguration, final
+                                 StorageManager storageManager) {
+      super(bindingsFactory, wildcardConfiguration, storageManager);
+   }
+
+   public WildcardAddressManager(final BindingsFactory bindingsFactory, StorageManager storageManager) {
+      super(bindingsFactory, storageManager);
    }
 
    @Override
@@ -70,6 +69,7 @@ public class WildcardAddressManager extends SimpleAddressManager {
                   for (Binding theBinding : theBindings) {
                      super.addMappingInternal(address, theBinding);
                   }
+                  super.getBindingsForRoutingAddress(address).setMessageLoadBalancingType(b.getMessageLoadBalancingType());
                }
             }
          }
@@ -94,17 +94,36 @@ public class WildcardAddressManager extends SimpleAddressManager {
             for (Address destAdd : add.getLinkedAddresses()) {
                super.addMappingInternal(destAdd.getAddress(), binding);
             }
-         }
-         else {
+         } else {
             for (Address destAdd : add.getLinkedAddresses()) {
                Bindings bindings = super.getBindingsForRoutingAddress(destAdd.getAddress());
-               for (Binding b : bindings.getBindings()) {
-                  super.addMappingInternal(binding.getAddress(), b);
+               if (bindings != null) {
+                  for (Binding b : bindings.getBindings()) {
+                     super.addMappingInternal(binding.getAddress(), b);
+                  }
                }
             }
          }
       }
       return exists;
+   }
+
+   @Override
+   public void updateMessageLoadBalancingTypeForAddress(SimpleString address, MessageLoadBalancingType messageLoadBalancingType) throws Exception {
+      Address add = addAndUpdateAddressMap(address);
+      Bindings bindingsForRoutingAddress = super.getBindingsForRoutingAddress(address);
+      if (bindingsForRoutingAddress != null) {
+         bindingsForRoutingAddress.setMessageLoadBalancingType(messageLoadBalancingType);
+      }
+      if (add.containsWildCard()) {
+         for (Address destAdd : add.getLinkedAddresses()) {
+            getBindingsForRoutingAddress(destAdd.getAddress()).setMessageLoadBalancingType(messageLoadBalancingType);
+         }
+      } else {
+         for (Address destAdd : add.getLinkedAddresses()) {
+            super.getBindingsForRoutingAddress(destAdd.getAddress()).setMessageLoadBalancingType(messageLoadBalancingType);
+         }
+      }
    }
 
    /**
@@ -130,6 +149,17 @@ public class WildcardAddressManager extends SimpleAddressManager {
    }
 
    @Override
+   public AddressInfo removeAddressInfo(SimpleString address) throws Exception {
+      final AddressInfo removed = super.removeAddressInfo(address);
+      if (removed != null) {
+         //Remove from mappings so removeAndUpdateAddressMap processes and cleanup
+         mappings.remove(address);
+         removeAndUpdateAddressMap(new AddressImpl(removed.getName(), wildcardConfiguration));
+      }
+      return removed;
+   }
+
+   @Override
    public void clear() {
       super.clear();
       addresses.clear();
@@ -137,24 +167,22 @@ public class WildcardAddressManager extends SimpleAddressManager {
    }
 
    private Address getAddress(final SimpleString address) {
-      Address add = new AddressImpl(address);
+      Address add = new AddressImpl(address, wildcardConfiguration);
       Address actualAddress;
       if (add.containsWildCard()) {
          actualAddress = wildCardAddresses.get(address);
-      }
-      else {
+      } else {
          actualAddress = addresses.get(address);
       }
       return actualAddress != null ? actualAddress : add;
    }
 
    private synchronized Address addAndUpdateAddressMap(final SimpleString address) {
-      Address add = new AddressImpl(address);
+      Address add = new AddressImpl(address, wildcardConfiguration);
       Address actualAddress;
       if (add.containsWildCard()) {
          actualAddress = wildCardAddresses.get(address);
-      }
-      else {
+      } else {
          actualAddress = addresses.get(address);
       }
       if (actualAddress == null) {
@@ -168,13 +196,11 @@ public class WildcardAddressManager extends SimpleAddressManager {
                actualAddress.addLinkedAddress(destAdd);
             }
          }
-      }
-      else {
+      } else {
          for (Address destAdd : wildCardAddresses.values()) {
             if (actualAddress.matches(destAdd)) {
                destAdd.addLinkedAddress(actualAddress);
                actualAddress.addLinkedAddress(destAdd);
-
             }
          }
       }
@@ -184,8 +210,7 @@ public class WildcardAddressManager extends SimpleAddressManager {
    private void addAddress(final SimpleString address, final Address actualAddress) {
       if (actualAddress.containsWildCard()) {
          wildCardAddresses.put(address, actualAddress);
-      }
-      else {
+      } else {
          addresses.put(address, actualAddress);
       }
    }
@@ -209,8 +234,7 @@ public class WildcardAddressManager extends SimpleAddressManager {
    private void removeAddress(final Address add) {
       if (add.containsWildCard()) {
          wildCardAddresses.remove(add.getAddress());
-      }
-      else {
+      } else {
          addresses.remove(add.getAddress());
       }
    }

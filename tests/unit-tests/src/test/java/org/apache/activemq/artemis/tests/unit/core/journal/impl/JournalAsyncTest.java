@@ -20,12 +20,12 @@ import java.util.ArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.activemq.artemis.tests.unit.core.journal.impl.fakes.FakeSequentialFileFactory;
-import org.apache.activemq.artemis.tests.unit.core.journal.impl.fakes.SimpleEncoding;
-import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.apache.activemq.artemis.core.journal.PreparedTransactionInfo;
 import org.apache.activemq.artemis.core.journal.RecordInfo;
 import org.apache.activemq.artemis.core.journal.impl.JournalImpl;
+import org.apache.activemq.artemis.tests.unit.core.journal.impl.fakes.FakeSequentialFileFactory;
+import org.apache.activemq.artemis.tests.unit.core.journal.impl.fakes.SimpleEncoding;
+import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -81,16 +81,16 @@ public class JournalAsyncTest extends ActiveMQTestBase {
                   journalImpl.appendAddRecordTransactional(1L, i, (byte) 1, new SimpleEncoding(1, (byte) 0));
                }
 
+               journalImpl.debugWait();
+
                latch.countDown();
                factory.setHoldCallbacks(false, null);
                if (isCommit) {
                   journalImpl.appendCommitRecord(1L, true);
-               }
-               else {
+               } else {
                   journalImpl.appendRollbackRecord(1L, true);
                }
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                e.printStackTrace();
                this.e = e;
             }
@@ -117,8 +117,7 @@ public class JournalAsyncTest extends ActiveMQTestBase {
       }
    }
 
-   // If a callback error already arrived, we should just throw the exception
-   // right away
+   // If a callback error already arrived, we should just throw the exception right away
    @Test
    public void testPreviousError() throws Exception {
       final int JOURNAL_SIZE = 20000;
@@ -130,6 +129,8 @@ public class JournalAsyncTest extends ActiveMQTestBase {
 
       journalImpl.appendAddRecordTransactional(1L, 1, (byte) 1, new SimpleEncoding(1, (byte) 0));
 
+      journalImpl.debugWait();
+
       factory.flushAllCallbacks();
 
       factory.setGenerateErrors(false);
@@ -137,12 +138,12 @@ public class JournalAsyncTest extends ActiveMQTestBase {
 
       try {
          journalImpl.appendAddRecordTransactional(1L, 2, (byte) 1, new SimpleEncoding(1, (byte) 0));
-         Assert.fail("Exception expected"); // An exception already happened in one
-         // of the elements on this transaction.
-         // We can't accept any more elements on
-         // the transaction
-      }
-      catch (Exception ignored) {
+         journalImpl.appendCommitRecord(1L, true);
+         Assert.fail("Exception expected");
+         // An exception already happened in one of the elements on this transaction.
+         // We can't accept any more elements on the transaction
+      } catch (Exception ignored) {
+
       }
    }
 
@@ -157,8 +158,7 @@ public class JournalAsyncTest extends ActiveMQTestBase {
       try {
          journalImpl.appendAddRecord(1L, (byte) 0, new SimpleEncoding(1, (byte) 0), true);
          Assert.fail("Exception expected");
-      }
-      catch (Exception ignored) {
+      } catch (Exception ignored) {
 
       }
 
@@ -189,8 +189,7 @@ public class JournalAsyncTest extends ActiveMQTestBase {
       if (journalImpl != null) {
          try {
             journalImpl.stop();
-         }
-         catch (Throwable ignored) {
+         } catch (Throwable ignored) {
          }
       }
 

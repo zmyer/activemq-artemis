@@ -17,14 +17,19 @@
 package org.apache.activemq.artemis.spi.core.protocol;
 
 import java.util.List;
+import java.util.Map;
 
 import io.netty.channel.ChannelPipeline;
 import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
 import org.apache.activemq.artemis.api.core.BaseInterceptor;
+import org.apache.activemq.artemis.api.core.RoutingType;
+import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.core.remoting.impl.netty.NettyServerConnection;
 import org.apache.activemq.artemis.spi.core.remoting.Acceptor;
 import org.apache.activemq.artemis.spi.core.remoting.Connection;
 
+/**
+ * Info: ProtocolManager is loaded by {@link org.apache.activemq.artemis.core.remoting.server.impl.RemotingServiceImpl#loadProtocolManagerFactories(Iterable)} */
 public interface ProtocolManager<P extends BaseInterceptor> {
 
    ProtocolManagerFactory<P> getFactory();
@@ -39,7 +44,7 @@ public interface ProtocolManager<P extends BaseInterceptor> {
 
    ConnectionEntry createConnectionEntry(Acceptor acceptorUsed, Connection connection);
 
-   void removeHandler(final String name);
+   void removeHandler(String name);
 
    void handleBuffer(RemotingConnection connection, ActiveMQBuffer buffer);
 
@@ -48,16 +53,10 @@ public interface ProtocolManager<P extends BaseInterceptor> {
    boolean isProtocol(byte[] array);
 
    /**
-    * Gets the Message Converter towards ActiveMQ Artemis.
-    * Notice this being null means no need to convert
-    *
-    * @return
+    * If this protocols accepts connectoins without an initial handshake.
+    * If true this protocol will be the failback case no other connections are made.
+    * New designed protocols should always require a handshake. This is only useful for legacy protocols.
     */
-   MessageConverter getConverter();
-
-   /** If this protocols accepts connectoins without an initial handshake.
-    *  If true this protocol will be the failback case no other connections are made.
-    *  New designed protocols should always require a handshake. This is only useful for legacy protocols. */
    boolean acceptsNoHandshake();
 
    void handshake(NettyServerConnection connection, ActiveMQBuffer buffer);
@@ -69,4 +68,10 @@ public interface ProtocolManager<P extends BaseInterceptor> {
     * @return A list of subprotocol ids
     */
    List<String> websocketSubprotocolIdentifiers();
+
+   void setAnycastPrefix(String anycastPrefix);
+
+   void setMulticastPrefix(String multicastPrefix);
+
+   Map<SimpleString, RoutingType> getPrefixes();
 }

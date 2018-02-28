@@ -106,6 +106,12 @@ public enum ActiveMQExceptionType {
          return new ActiveMQSecurityException(msg);
       }
    },
+   ADDRESS_DOES_NOT_EXIST(106) {
+      @Override
+      public ActiveMQException createException(String msg) {
+         return new ActiveMQAddressDoesNotExistException(msg);
+      }
+   },
    ADDRESS_EXISTS(107) {
       @Override
       public ActiveMQException createException(String msg) {
@@ -213,7 +219,31 @@ public enum ActiveMQExceptionType {
       }
 
    },
-   NOT_IMPLEMTNED_EXCEPTION(213);
+   NOT_IMPLEMTNED_EXCEPTION(213),
+   MAX_CONSUMER_LIMIT_EXCEEDED(214) {
+      @Override
+      public ActiveMQException createException(String msg) {
+         return new ActiveMQQueueMaxConsumerLimitReached(msg);
+      }
+   },
+   UNEXPECTED_ROUTING_TYPE_FOR_ADDRESS(215) {
+      @Override
+      public ActiveMQException createException(String msg) {
+         return new ActiveMQUnexpectedRoutingTypeForAddress(msg);
+      }
+   },
+   INVALID_QUEUE_CONFIGURATION(216) {
+      @Override
+      public ActiveMQException createException(String msg) {
+         return new ActiveMQInvalidQueueConfiguration(msg);
+      }
+   },
+   DELETE_ADDRESS_ERROR(217) {
+      @Override
+      public ActiveMQException createException(String msg) {
+         return new ActiveMQDeleteAddressException(msg);
+      }
+   };
 
    private static final Map<Integer, ActiveMQExceptionType> TYPE_MAP;
 

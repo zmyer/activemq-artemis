@@ -17,10 +17,10 @@
 
 package org.apache.activemq.artemis.uri;
 
-import java.net.URI;
 import java.util.List;
 
 import org.apache.activemq.artemis.api.core.TransportConfiguration;
+import org.apache.activemq.artemis.core.config.ConfigurationUtils;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -28,12 +28,22 @@ public class AcceptorParserTest {
 
    @Test
    public void testAcceptor() throws Exception {
-      AcceptorTransportConfigurationParser parser = new AcceptorTransportConfigurationParser();
-      List<TransportConfiguration> configs = parser.newObject(new URI("tcp://localhost:8080?tcpSendBufferSize=1048576&tcpReceiveBufferSize=1048576&protocols=openwire&banana=x"), "test");
+      List<TransportConfiguration> configs = ConfigurationUtils.parseAcceptorURI("test", "tcp://localhost:8080?tcpSendBufferSize=1048576&tcpReceiveBufferSize=1048576&protocols=openwire&banana=x");
 
       for (TransportConfiguration config : configs) {
          System.out.println("config:" + config);
          Assert.assertTrue(config.getExtraParams().get("banana").equals("x"));
+      }
+   }
+
+   @Test
+   public void testAcceptorWithQueryParamEscapes() throws Exception {
+      List<TransportConfiguration> configs = ConfigurationUtils.parseAcceptorURI("test", "tcp://0.0.0.0:5672?tcpSendBufferSize=1048576;tcpReceiveBufferSize=1048576;virtualTopicConsumerWildcards=Consumer.*.%3E%3B2");
+
+      for (TransportConfiguration config : configs) {
+         System.out.println("config:" + config);
+         System.out.println(config.getExtraParams().get("virtualTopicConsumerWildcards"));
+         Assert.assertTrue(config.getExtraParams().get("virtualTopicConsumerWildcards").equals("Consumer.*.>;2"));
       }
    }
 }

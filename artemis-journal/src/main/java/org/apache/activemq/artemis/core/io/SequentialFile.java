@@ -22,8 +22,8 @@ import java.nio.ByteBuffer;
 
 import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
 import org.apache.activemq.artemis.api.core.ActiveMQException;
-import org.apache.activemq.artemis.core.journal.EncodingSupport;
 import org.apache.activemq.artemis.core.io.buffer.TimedBuffer;
+import org.apache.activemq.artemis.core.journal.EncodingSupport;
 
 public interface SequentialFile {
 
@@ -42,8 +42,6 @@ public interface SequentialFile {
    void open(int maxIO, boolean useExecutor) throws Exception;
 
    boolean fits(int size);
-
-   int getAlignment() throws Exception;
 
    int calculateBlockStart(int position) throws Exception;
 
@@ -98,6 +96,14 @@ public interface SequentialFile {
    long position();
 
    void close() throws Exception;
+
+   /** When closing a file from a finalize block, you cant wait on syncs or anything like that.
+    *  otherwise the VM may hung. Especially on the testsuite. */
+   default void close(boolean waitSync) throws Exception {
+      // by default most implementations are just using the regular close..
+      // if the close needs sync, please use this parameter or fianlizations may get stuck
+      close();
+   }
 
    void sync() throws IOException;
 

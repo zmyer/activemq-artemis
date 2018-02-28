@@ -29,21 +29,21 @@ import org.apache.activemq.artemis.core.postoffice.PostOffice;
  */
 public interface QueueFactory {
 
-   Queue createQueueWith(final QueueConfig config);
+   Queue createQueueWith(QueueConfig config) throws Exception;
 
    /**
     * @deprecated Replaced by {@link #createQueueWith}
     */
    @Deprecated
    Queue createQueue(long persistenceID,
-                     final SimpleString address,
+                     SimpleString address,
                      SimpleString name,
                      Filter filter,
                      PageSubscription pageSubscription,
                      SimpleString user,
                      boolean durable,
                      boolean temporary,
-                     boolean autoCreated);
+                     boolean autoCreated) throws Exception;
 
    /**
     * This is required for delete-all-reference to work correctly with paging
@@ -51,4 +51,8 @@ public interface QueueFactory {
     * @param postOffice
     */
    void setPostOffice(PostOffice postOffice);
+
+   default void queueRemoved(Queue queue) {
+
+   }
 }

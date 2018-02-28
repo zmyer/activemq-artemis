@@ -17,12 +17,13 @@
 package org.apache.activemq.artemis.core.protocol.core;
 
 import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
-import org.apache.activemq.artemis.spi.core.protocol.RemotingConnection;
 
 /**
  * A Packet represents a packet of data transmitted over a connection.
  */
 public interface Packet {
+
+   int INITIAL_PACKET_SIZE = 1500;
 
    /**
     * Sets the channel id that should be used once the packet has been successfully decoded it is
@@ -31,6 +32,14 @@ public interface Packet {
     * @param channelID the id of the channel to handle the packet
     */
    void setChannelID(long channelID);
+
+   /**
+    * This will return the expected packet size for the encoding
+    * @return
+    */
+   default int expectedEncodeSize() {
+      return INITIAL_PACKET_SIZE;
+   }
 
    /**
     * Returns the channel id of the channel that should handle this packet.
@@ -61,7 +70,7 @@ public interface Packet {
     * @param connection the connection
     * @return the buffer to encode to
     */
-   ActiveMQBuffer encode(RemotingConnection connection);
+   ActiveMQBuffer encode(CoreRemotingConnection connection);
 
    /**
     * decodes the buffer into this packet
@@ -83,4 +92,11 @@ public interface Packet {
     * @return true if confirmation is required
     */
    boolean isRequiresConfirmations();
+
+
+
+   /** The packe wasn't used because the stream is closed,
+    * this gives a chance to sub classes to cleanup anything that won't be used. */
+   default void release() {
+   }
 }

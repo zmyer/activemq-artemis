@@ -60,8 +60,7 @@ public class FakeConsumer implements Consumer {
          long start = System.currentTimeMillis();
          try {
             wait();
-         }
-         catch (InterruptedException e) {
+         } catch (InterruptedException e) {
          }
          timeout -= System.currentTimeMillis() - start;
       }
@@ -83,6 +82,11 @@ public class FakeConsumer implements Consumer {
       delayCountdown = numReferences;
    }
 
+   @Override
+   public long sequentialID() {
+      return 0;
+   }
+
    public synchronized List<MessageReference> getReferences() {
       return references;
    }
@@ -101,12 +105,11 @@ public class FakeConsumer implements Consumer {
          if (filter != null) {
             if (filter.match(reference.getMessage())) {
                references.addLast(reference);
-               reference.getQueue().referenceHandled();
+               reference.getQueue().referenceHandled(reference);
                notify();
 
                return HandleStatus.HANDLED;
-            }
-            else {
+            } else {
                return HandleStatus.NO_MATCH;
             }
          }
@@ -116,21 +119,19 @@ public class FakeConsumer implements Consumer {
                statusToReturn = newStatus;
 
                newStatus = null;
-            }
-            else {
+            } else {
                delayCountdown--;
             }
          }
 
          if (statusToReturn == HandleStatus.HANDLED) {
-            reference.getQueue().referenceHandled();
+            reference.getQueue().referenceHandled(reference);
             references.addLast(reference);
             notify();
          }
 
          return statusToReturn;
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          e.printStackTrace();
          throw new IllegalStateException(e.getMessage(), e);
       }

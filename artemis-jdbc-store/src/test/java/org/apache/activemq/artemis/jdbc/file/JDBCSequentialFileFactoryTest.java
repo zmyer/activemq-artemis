@@ -20,25 +20,29 @@ import java.nio.ByteBuffer;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
 import org.apache.activemq.artemis.api.core.ActiveMQBuffers;
 import org.apache.activemq.artemis.core.io.IOCallback;
+import org.apache.activemq.artemis.core.io.IOCriticalErrorListener;
 import org.apache.activemq.artemis.core.io.SequentialFile;
-import org.apache.activemq.artemis.jdbc.store.JDBCUtils;
+import org.apache.activemq.artemis.jdbc.store.drivers.JDBCUtils;
 import org.apache.activemq.artemis.jdbc.store.file.JDBCSequentialFile;
 import org.apache.activemq.artemis.jdbc.store.file.JDBCSequentialFileFactory;
+import org.apache.activemq.artemis.jdbc.store.sql.SQLProvider;
 import org.apache.activemq.artemis.utils.ActiveMQThreadFactory;
 import org.apache.activemq.artemis.utils.ThreadLeakCheckRule;
 import org.apache.derby.jdbc.EmbeddedDriver;
 import org.junit.After;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -53,24 +57,29 @@ public class JDBCSequentialFileFactoryTest {
    @Rule
    public ThreadLeakCheckRule leakCheckRule = new ThreadLeakCheckRule();
 
-   private static String connectionUrl = "jdbc:derby:target/data;create=true";
-
-   private static String tableName = "FILES";
-
    private static String className = EmbeddedDriver.class.getCanonicalName();
 
    private JDBCSequentialFileFactory factory;
 
+   private ExecutorService executor;
+
    @Before
    public void setup() throws Exception {
-      Executor executor = Executors.newSingleThreadExecutor(ActiveMQThreadFactory.defaultThreadFactory());
+      executor = Executors.newSingleThreadExecutor(ActiveMQThreadFactory.defaultThreadFactory());
 
-      factory = new JDBCSequentialFileFactory(connectionUrl, className, JDBCUtils.getSQLProvider(className, tableName), executor);
+      String connectionUrl = "jdbc:derby:target/data;create=true";
+      String tableName = "FILES";
+      factory = new JDBCSequentialFileFactory(connectionUrl, className, JDBCUtils.getSQLProvider(className, tableName, SQLProvider.DatabaseStoreType.PAGE), executor, new IOCriticalErrorListener() {
+         @Override
+         public void onIOException(Throwable code, String message, SequentialFile file) {
+         }
+      });
       factory.start();
    }
 
    @After
    public void tearDown() throws Exception {
+      executor.shutdown();
       factory.destroy();
    }
 
@@ -78,8 +87,7 @@ public class JDBCSequentialFileFactoryTest {
    public void shutdownDerby() {
       try {
          DriverManager.getConnection("jdbc:derby:;shutdown=true");
-      }
-      catch (Exception ignored) {
+      } catch (Exception ignored) {
       }
    }
 
@@ -91,6 +99,8 @@ public class JDBCSequentialFileFactoryTest {
    @Test
    public void testCreateFiles() throws Exception {
       int noFiles = 100;
+      List<SequentialFile> files = new LinkedList<>();
+
       Set<String> fileNames = new HashSet<>();
       for (int i = 0; i < noFiles; i++) {
          String fileName = UUID.randomUUID().toString() + ".txt";
@@ -98,10 +108,17 @@ public class JDBCSequentialFileFactoryTest {
          SequentialFile file = factory.createSequentialFile(fileName);
          // We create files on Open
          file.open();
+         files.add(file);
       }
 
       List<String> queryFileNames = factory.listFiles("txt");
       assertTrue(queryFileNames.containsAll(fileNames));
+
+      for (SequentialFile file: files) {
+         file.close();
+      }
+
+      Assert.assertEquals(0, factory.getNumberOfOpenFiles());
    }
 
    @Test
@@ -169,6 +186,36 @@ public class JDBCSequentialFileFactoryTest {
       assertEquals(bufferSize, file.size());
    }
 
+   /**
+    * Using a real file system users are not required to call file.open() in order to read the file size.  The file
+    * descriptor has enough information.  However, with JDBC we do require that some information is loaded in order to
+    * get the underlying BLOB.  This tests ensures that file.size() returns the correct value, without the user calling
+    * file.open() with JDBCSequentialFile.
+    *
+    * @throws Exception
+    */
+   @Test
+   public void testGetFileSizeWorksWhenNotOpen() throws Exception {
+      // Create test file with some data.
+      int testFileSize = 1024;
+      String fileName = "testFile.txt";
+      SequentialFile file = factory.createSequentialFile(fileName);
+      file.open();
+
+      // Write some data to the file
+      ActiveMQBuffer buffer = ActiveMQBuffers.wrappedBuffer(new byte[1024]);
+      file.write(buffer, true);
+      file.close();
+
+      try {
+         // Create a new pointer to the test file and ensure file.size() returns the correct value.
+         SequentialFile file2 = factory.createSequentialFile(fileName);
+         assertEquals(testFileSize, file2.size());
+      } catch (Throwable t) {
+         t.printStackTrace();
+      }
+   }
+
    private void checkData(JDBCSequentialFile file, ActiveMQBuffer expectedData) throws SQLException {
       expectedData.resetReaderIndex();
 
@@ -199,7 +246,7 @@ public class JDBCSequentialFileFactoryTest {
          fail(errorMessage);
       }
 
-      public void assertEmpty(int timeout) throws InterruptedException {
+      void assertEmpty(int timeout) throws InterruptedException {
          countDownLatch.await(timeout, TimeUnit.SECONDS);
          assertEquals(countDownLatch.getCount(), 0);
       }

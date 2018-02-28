@@ -1,4 +1,4 @@
-/**
+/*
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements. See the NOTICE file distributed with
  * this work for additional information regarding copyright ownership.
@@ -48,11 +48,12 @@ public class OpenCloseContextTest {
    @Test
    public void testRepeatOpenCloseContext() throws Exception {
       ByteBuffer buffer = LibaioContext.newAlignedBuffer(512, 512);
-      for (int i = 0; i < 512; i++) buffer.put((byte)'x');
+      for (int i = 0; i < 512; i++)
+         buffer.put((byte) 'x');
 
       for (int i = 0; i < 10; i++) {
          System.out.println("#test " + i);
-         final LibaioContext control = new LibaioContext<>(5, true);
+         final LibaioContext control = new LibaioContext<>(5, true, true);
          Thread t = new Thread() {
             @Override
             public void run() {
@@ -75,8 +76,7 @@ public class OpenCloseContextTest {
                insideMethod.countDown();
                try {
                   awaitInside.await();
-               }
-               catch (Throwable e) {
+               } catch (Throwable e) {
                   e.printStackTrace();
                }
                System.out.println("done");
@@ -98,21 +98,20 @@ public class OpenCloseContextTest {
          awaitInside.countDown();
          control.close();
 
-
          t.join();
       }
-
 
    }
 
    @Test
    public void testRepeatOpenCloseContext2() throws Exception {
       ByteBuffer buffer = LibaioContext.newAlignedBuffer(512, 512);
-      for (int i = 0; i < 512; i++) buffer.put((byte)'x');
+      for (int i = 0; i < 512; i++)
+         buffer.put((byte) 'x');
 
       for (int i = 0; i < 10; i++) {
          System.out.println("#test " + i);
-         final LibaioContext control = new LibaioContext<>(5, true);
+         final LibaioContext control = new LibaioContext<>(5, true, true);
          Thread t = new Thread() {
             @Override
             public void run() {
@@ -135,8 +134,7 @@ public class OpenCloseContextTest {
                insideMethod.countDown();
                try {
                   awaitInside.await(100, TimeUnit.MILLISECONDS);
-               }
-               catch (Throwable e) {
+               } catch (Throwable e) {
                   e.printStackTrace();
                }
                System.out.println("done");
@@ -162,17 +160,15 @@ public class OpenCloseContextTest {
          t.join();
       }
 
-
    }
 
    @Test
    public void testCloseAndStart() throws Exception {
-      final LibaioContext control2 = new LibaioContext<>(5, true);
+      final LibaioContext control2 = new LibaioContext<>(5, true, true);
 
-      final LibaioContext control = new LibaioContext<>(5, true);
+      final LibaioContext control = new LibaioContext<>(5, true, true);
       control.close();
       control.poll();
-
 
       control2.close();
       control2.poll();

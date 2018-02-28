@@ -126,6 +126,8 @@ Beyond the max-size-bytes on the address you can also set the global-max-size on
 
 When you have more messages than what is configured global-max-size any new produced message will make that destination to go through its paging policy. 
 
+global-max-size is calculated as half of the max memory available to the Java Virtual Machine, unless specified on the broker.xml configuration.
+
 ## Dropping messages
 
 Instead of paging messages when the max size is reached, an address can
@@ -159,9 +161,9 @@ settings
 In the default configuration, all addresses are configured to block
 producers after 10 MiB of data are in the address.
 
-## Caution with Addresses with Multiple Queues
+## Caution with Addresses with Multiple Multicast Queues
 
-When a message is routed to an address that has multiple queues bound to
+When a message is routed to an address that has multiple multicast queues bound to
 it, e.g. a JMS subscription in a Topic, there is only 1 copy of the
 message in memory. Each queue only deals with a reference to this.
 Because of this the memory is only freed up once all queues referencing
@@ -173,7 +175,7 @@ through an extra storage on the paging system.
 
 For example:
 
--   An address has 10 queues
+-   An address has 10 multicast queues
 
 -   One of the queues does not deliver its messages (maybe because of a
     slow consumer).

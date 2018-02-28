@@ -16,6 +16,8 @@
  */
 package org.apache.activemq.artemis.core.protocol.stomp;
 
+import static org.apache.activemq.artemis.api.core.Message.HDR_SCHEDULED_DELIVERY_TIME;
+
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -24,8 +26,6 @@ import java.util.Set;
 import org.apache.activemq.artemis.api.core.Message;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.core.client.impl.ClientMessageImpl;
-import org.apache.activemq.artemis.core.message.impl.MessageInternal;
-import org.apache.activemq.artemis.core.server.impl.ServerMessageImpl;
 import org.apache.activemq.artemis.reader.MessageUtil;
 
 public class StompUtils {
@@ -37,14 +37,13 @@ public class StompUtils {
 
    // Static --------------------------------------------------------
 
-   public static void copyStandardHeadersFromFrameToMessage(StompFrame frame, ServerMessageImpl msg) throws Exception {
+   public static void copyStandardHeadersFromFrameToMessage(StompFrame frame, Message msg) throws Exception {
       Map<String, String> headers = new HashMap<>(frame.getHeadersMap());
 
       String priority = headers.remove(Stomp.Headers.Send.PRIORITY);
       if (priority != null) {
          msg.setPriority(Byte.parseByte(priority));
-      }
-      else {
+      } else {
          msg.setPriority(Byte.parseByte(DEFAULT_MESSAGE_PRIORITY));
       }
       String persistent = headers.remove(Stomp.Headers.Send.PERSISTENT);
@@ -72,6 +71,23 @@ public class StompUtils {
          msg.setExpiration(Long.parseLong(expiration));
       }
 
+      // Extension headers
+      String scheduledDelay = headers.remove(Stomp.Headers.Send.AMQ_SCHEDULED_DELAY);
+      if (scheduledDelay != null) {
+         long delay = Long.parseLong(scheduledDelay);
+         if (delay > 0) {
+            msg.putLongProperty(HDR_SCHEDULED_DELIVERY_TIME, System.currentTimeMillis() + delay);
+         }
+      }
+
+      String scheduledTime = headers.remove(Stomp.Headers.Send.AMQ_SCHEDULED_TIME);
+      if (scheduledTime != null) {
+         long deliveryTime = Long.parseLong(scheduledTime);
+         if (deliveryTime > 0) {
+            msg.putLongProperty(HDR_SCHEDULED_DELIVERY_TIME, deliveryTime);
+         }
+      }
+
       // now the general headers
       for (Entry<String, String> entry : headers.entrySet()) {
          String name = entry.getKey();
@@ -80,7 +96,7 @@ public class StompUtils {
       }
    }
 
-   public static void copyStandardHeadersFromMessageToFrame(MessageInternal message,
+   public static void copyStandardHeadersFromMessageToFrame(Message message,
                                                             StompFrame command,
                                                             int deliveryCount) throws Exception {
       command.addHeader(Stomp.Headers.Message.MESSAGE_ID, String.valueOf(message.getMessageID()));
@@ -104,8 +120,8 @@ public class StompUtils {
       if (message.getStringProperty(Message.HDR_CONTENT_TYPE.toString()) != null) {
          command.addHeader(Stomp.Headers.CONTENT_TYPE, message.getStringProperty(Message.HDR_CONTENT_TYPE.toString()));
       }
-      if (message.getStringProperty(Message.HDR_VALIDATED_USER.toString()) != null) {
-         command.addHeader(Stomp.Headers.Message.VALIDATED_USER, message.getStringProperty(Message.HDR_VALIDATED_USER.toString()));
+      if (message.getValidatedUserID() != null) {
+         command.addHeader(Stomp.Headers.Message.VALIDATED_USER, message.getValidatedUserID());
       }
 
       // now let's add all the rest of the message headers

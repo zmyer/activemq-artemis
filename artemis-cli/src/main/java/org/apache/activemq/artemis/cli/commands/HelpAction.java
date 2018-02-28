@@ -43,6 +43,11 @@ public class HelpAction extends Help implements Action {
    }
 
    @Override
+   public void checkOptions(String[] options) throws InvalidOptionsError {
+      OptionsUtil.checkCommandOptions(this.getClass(), options);
+   }
+
+   @Override
    public Object execute(ActionContext context) throws Exception {
       super.run();
       return null;

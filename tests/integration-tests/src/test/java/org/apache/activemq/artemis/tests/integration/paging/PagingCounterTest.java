@@ -22,7 +22,6 @@ import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.api.core.client.ClientSession;
 import org.apache.activemq.artemis.api.core.client.ClientSessionFactory;
 import org.apache.activemq.artemis.api.core.client.ServerLocator;
-import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.apache.activemq.artemis.core.paging.cursor.PageSubscription;
 import org.apache.activemq.artemis.core.paging.cursor.PageSubscriptionCounter;
 import org.apache.activemq.artemis.core.paging.cursor.impl.PageSubscriptionCounterImpl;
@@ -30,9 +29,15 @@ import org.apache.activemq.artemis.core.persistence.StorageManager;
 import org.apache.activemq.artemis.core.persistence.impl.journal.OperationContextImpl;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.core.server.Queue;
+import org.apache.activemq.artemis.api.core.RoutingType;
+import org.apache.activemq.artemis.core.server.impl.AddressInfo;
 import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
 import org.apache.activemq.artemis.core.transaction.Transaction;
 import org.apache.activemq.artemis.core.transaction.impl.TransactionImpl;
+import org.apache.activemq.artemis.logs.AssertionLoggerHandler;
+import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
+import org.junit.After;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -52,13 +57,31 @@ public class PagingCounterTest extends ActiveMQTestBase {
 
    // Public --------------------------------------------------------
 
+   @Before
+   public void checkLoggerStart() throws Exception {
+      AssertionLoggerHandler.startCapture();
+   }
+
+   @After
+   public void checkLoggerEnd() throws Exception {
+      try {
+         // These are the message errors for the negative size address size
+         Assert.assertFalse(AssertionLoggerHandler.findText("222214"));
+         Assert.assertFalse(AssertionLoggerHandler.findText("222215"));
+      } finally {
+         AssertionLoggerHandler.stopCapture();
+      }
+   }
+
+
    @Test
    public void testCounter() throws Exception {
       ClientSessionFactory sf = createSessionFactory(sl);
       ClientSession session = sf.createSession();
 
       try {
-         Queue queue = server.createQueue(new SimpleString("A1"), new SimpleString("A1"), null, true, false);
+         server.addAddressInfo(new AddressInfo(new SimpleString("A1"), RoutingType.ANYCAST));
+         Queue queue = server.createQueue(new SimpleString("A1"), RoutingType.ANYCAST, new SimpleString("A1"), null, true, false);
 
          PageSubscriptionCounter counter = locateCounter(queue);
 
@@ -66,17 +89,18 @@ public class PagingCounterTest extends ActiveMQTestBase {
 
          Transaction tx = new TransactionImpl(server.getStorageManager());
 
-         counter.increment(tx, 1);
+         counter.increment(tx, 1, 1000);
 
          assertEquals(0, counter.getValue());
+         assertEquals(0, counter.getPersistentSize());
 
          tx.commit();
 
          storage.waitOnOperations();
 
          assertEquals(1, counter.getValue());
-      }
-      finally {
+         assertEquals(1000, counter.getPersistentSize());
+      } finally {
          sf.close();
          session.close();
       }
@@ -88,7 +112,8 @@ public class PagingCounterTest extends ActiveMQTestBase {
       ClientSession session = sf.createSession();
 
       try {
-         Queue queue = server.createQueue(new SimpleString("A1"), new SimpleString("A1"), null, true, false);
+         server.addAddressInfo(new AddressInfo(new SimpleString("A1"), RoutingType.ANYCAST));
+         Queue queue = server.createQueue(new SimpleString("A1"), RoutingType.ANYCAST, new SimpleString("A1"), null, true, false);
 
          PageSubscriptionCounter counter = locateCounter(queue);
 
@@ -98,7 +123,7 @@ public class PagingCounterTest extends ActiveMQTestBase {
 
          for (int i = 0; i < 2100; i++) {
 
-            counter.increment(tx, 1);
+            counter.increment(tx, 1, 1000);
 
             if (i % 200 == 0) {
                tx.commit();
@@ -106,6 +131,7 @@ public class PagingCounterTest extends ActiveMQTestBase {
                storage.waitOnOperations();
 
                assertEquals(i + 1, counter.getValue());
+               assertEquals((i + 1) * 1000, counter.getPersistentSize());
 
                tx = new TransactionImpl(server.getStorageManager());
             }
@@ -116,6 +142,7 @@ public class PagingCounterTest extends ActiveMQTestBase {
          storage.waitOnOperations();
 
          assertEquals(2100, counter.getValue());
+         assertEquals(2100 * 1000, counter.getPersistentSize());
 
          server.stop();
 
@@ -130,9 +157,9 @@ public class PagingCounterTest extends ActiveMQTestBase {
          counter = locateCounter(queue);
 
          assertEquals(2100, counter.getValue());
+         assertEquals(2100 * 1000, counter.getPersistentSize());
 
-      }
-      finally {
+      } finally {
          sf.close();
          session.close();
       }
@@ -144,7 +171,9 @@ public class PagingCounterTest extends ActiveMQTestBase {
       ClientSession session = sf.createSession();
 
       try {
-         Queue queue = server.createQueue(new SimpleString("A1"), new SimpleString("A1"), null, true, false);
+
+         server.addAddressInfo(new AddressInfo(new SimpleString("A1"), RoutingType.ANYCAST));
+         Queue queue = server.createQueue(new SimpleString("A1"), RoutingType.ANYCAST, new SimpleString("A1"), null, true, false);
 
          PageSubscriptionCounter counter = locateCounter(queue);
 
@@ -156,7 +185,7 @@ public class PagingCounterTest extends ActiveMQTestBase {
 
          for (int i = 0; i < 2100; i++) {
 
-            counter.increment(tx, 1);
+            counter.increment(tx, 1, 1000);
 
             if (i % 200 == 0) {
                tx.commit();
@@ -164,6 +193,7 @@ public class PagingCounterTest extends ActiveMQTestBase {
                storage.waitOnOperations();
 
                assertEquals(i + 1, counter.getValue());
+               assertEquals((i + 1) * 1000, counter.getPersistentSize());
 
                tx = new TransactionImpl(server.getStorageManager());
             }
@@ -174,6 +204,7 @@ public class PagingCounterTest extends ActiveMQTestBase {
          storage.waitOnOperations();
 
          assertEquals(2100, counter.getValue());
+         assertEquals(2100 * 1000, counter.getPersistentSize());
 
          server.stop();
 
@@ -188,9 +219,9 @@ public class PagingCounterTest extends ActiveMQTestBase {
          counter = locateCounter(queue);
 
          assertEquals(0, counter.getValue());
+         assertEquals(0, counter.getPersistentSize());
 
-      }
-      finally {
+      } finally {
          sf.close();
          session.close();
       }
@@ -198,7 +229,8 @@ public class PagingCounterTest extends ActiveMQTestBase {
 
    @Test
    public void testRestartCounter() throws Exception {
-      Queue queue = server.createQueue(new SimpleString("A1"), new SimpleString("A1"), null, true, false);
+      server.addAddressInfo(new AddressInfo(new SimpleString("A1"), RoutingType.ANYCAST));
+      Queue queue = server.createQueue(new SimpleString("A1"), RoutingType.ANYCAST, new SimpleString("A1"), null, true, false);
 
       PageSubscriptionCounter counter = locateCounter(queue);
 
@@ -206,15 +238,17 @@ public class PagingCounterTest extends ActiveMQTestBase {
 
       Transaction tx = new TransactionImpl(server.getStorageManager());
 
-      counter.increment(tx, 1);
+      counter.increment(tx, 1, 1000);
 
       assertEquals(0, counter.getValue());
+      assertEquals(0, counter.getPersistentSize());
 
       tx.commit();
 
       storage.waitOnOperations();
 
       assertEquals(1, counter.getValue());
+      assertEquals(1000, counter.getPersistentSize());
 
       sl.close();
 
@@ -231,6 +265,7 @@ public class PagingCounterTest extends ActiveMQTestBase {
       counter = locateCounter(queue);
 
       assertEquals(1, counter.getValue());
+      assertEquals(1000, counter.getPersistentSize());
 
    }
 
@@ -250,7 +285,7 @@ public class PagingCounterTest extends ActiveMQTestBase {
    public void testPrepareCounter() throws Exception {
       Xid xid = newXID();
 
-      Queue queue = server.createQueue(new SimpleString("A1"), new SimpleString("A1"), null, true, false);
+      Queue queue = server.createQueue(new SimpleString("A1"), RoutingType.ANYCAST, new SimpleString("A1"), null, true, false);
 
       PageSubscriptionCounter counter = locateCounter(queue);
 
@@ -259,7 +294,7 @@ public class PagingCounterTest extends ActiveMQTestBase {
       Transaction tx = new TransactionImpl(xid, server.getStorageManager(), 300);
 
       for (int i = 0; i < 2000; i++) {
-         counter.increment(tx, 1);
+         counter.increment(tx, 1, 1000);
       }
 
       assertEquals(0, counter.getValue());

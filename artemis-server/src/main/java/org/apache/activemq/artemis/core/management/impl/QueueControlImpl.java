@@ -22,12 +22,14 @@ import javax.json.JsonObjectBuilder;
 import javax.management.MBeanAttributeInfo;
 import javax.management.MBeanOperationInfo;
 import javax.management.openmbean.CompositeData;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 
 import org.apache.activemq.artemis.api.core.ActiveMQException;
 import org.apache.activemq.artemis.api.core.JsonUtil;
@@ -38,6 +40,7 @@ import org.apache.activemq.artemis.api.core.management.QueueControl;
 import org.apache.activemq.artemis.core.filter.Filter;
 import org.apache.activemq.artemis.core.filter.impl.FilterImpl;
 import org.apache.activemq.artemis.core.management.impl.openmbean.OpenTypeSupport;
+import org.apache.activemq.artemis.core.message.impl.CoreMessage;
 import org.apache.activemq.artemis.core.messagecounter.MessageCounter;
 import org.apache.activemq.artemis.core.messagecounter.impl.MessageCounterHelper;
 import org.apache.activemq.artemis.core.persistence.StorageManager;
@@ -51,15 +54,12 @@ import org.apache.activemq.artemis.core.server.Consumer;
 import org.apache.activemq.artemis.core.server.MessageReference;
 import org.apache.activemq.artemis.core.server.Queue;
 import org.apache.activemq.artemis.core.server.ServerConsumer;
-import org.apache.activemq.artemis.core.server.ServerMessage;
-import org.apache.activemq.artemis.core.server.impl.ServerMessageImpl;
 import org.apache.activemq.artemis.core.settings.HierarchicalRepository;
 import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
 import org.apache.activemq.artemis.spi.core.protocol.RemotingConnection;
 import org.apache.activemq.artemis.utils.Base64;
 import org.apache.activemq.artemis.utils.JsonLoader;
-import org.apache.activemq.artemis.utils.LinkedListIterator;
-import org.apache.activemq.artemis.utils.UUID;
+import org.apache.activemq.artemis.utils.collections.LinkedListIterator;
 
 public class QueueControlImpl extends AbstractControl implements QueueControl {
 
@@ -137,8 +137,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          return queue.getName().toString();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -159,8 +158,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
          Filter filter = queue.getFilter();
 
          return filter != null ? filter.getFilterString().toString() : null;
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -172,10 +170,36 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          return queue.isDurable();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
+   }
+
+   @Override
+   public String getUser() {
+      checkStarted();
+
+      clearIO();
+      try {
+         SimpleString user = queue.getUser();
+         return user == null ? null : user.toString();
+      } finally {
+         blockOnIO();
+      }
+   }
+
+
+   @Override
+   public String getRoutingType() {
+      checkStarted();
+
+      clearIO();
+      try {
+         return queue.getRoutingType().toString();
+      } finally {
+         blockOnIO();
+      }
+
    }
 
    @Override
@@ -185,8 +209,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          return queue.isTemporary();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -198,8 +221,43 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          return queue.getMessageCount();
+      } finally {
+         blockOnIO();
       }
-      finally {
+   }
+
+   @Override
+   public long getPersistentSize() {
+      checkStarted();
+
+      clearIO();
+      try {
+         return queue.getPersistentSize();
+      } finally {
+         blockOnIO();
+      }
+   }
+
+   @Override
+   public long getDurableMessageCount() {
+      checkStarted();
+
+      clearIO();
+      try {
+         return queue.getDurableMessageCount();
+      } finally {
+         blockOnIO();
+      }
+   }
+
+   @Override
+   public long getDurablePersistentSize() {
+      checkStarted();
+
+      clearIO();
+      try {
+         return queue.getDurablePersistentSize();
+      } finally {
          blockOnIO();
       }
    }
@@ -211,8 +269,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          return queue.getConsumerCount();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -224,8 +281,43 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          return queue.getDeliveringCount();
+      } finally {
+         blockOnIO();
       }
-      finally {
+   }
+
+   @Override
+   public long getDeliveringSize() {
+      checkStarted();
+
+      clearIO();
+      try {
+         return queue.getDeliveringSize();
+      } finally {
+         blockOnIO();
+      }
+   }
+
+   @Override
+   public int getDurableDeliveringCount() {
+      checkStarted();
+
+      clearIO();
+      try {
+         return queue.getDurableDeliveringCount();
+      } finally {
+         blockOnIO();
+      }
+   }
+
+   @Override
+   public long getDurableDeliveringSize() {
+      checkStarted();
+
+      clearIO();
+      try {
+         return queue.getDurableDeliveringSize();
+      } finally {
          blockOnIO();
       }
    }
@@ -237,8 +329,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          return queue.getMessagesAdded();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -250,8 +341,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          return queue.getMessagesAcknowledged();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -263,8 +353,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          return queue.getMessagesExpired();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -276,8 +365,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          return queue.getMessagesKilled();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -289,8 +377,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          return queue.getID();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -302,8 +389,43 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          return queue.getScheduledCount();
+      } finally {
+         blockOnIO();
       }
-      finally {
+   }
+
+   @Override
+   public long getScheduledSize() {
+      checkStarted();
+
+      clearIO();
+      try {
+         return queue.getScheduledSize();
+      } finally {
+         blockOnIO();
+      }
+   }
+
+   @Override
+   public long getDurableScheduledCount() {
+      checkStarted();
+
+      clearIO();
+      try {
+         return queue.getDurableScheduledCount();
+      } finally {
+         blockOnIO();
+      }
+   }
+
+   @Override
+   public long getDurableScheduledSize() {
+      checkStarted();
+
+      clearIO();
+      try {
+         return queue.getDurableScheduledSize();
+      } finally {
          blockOnIO();
       }
    }
@@ -320,8 +442,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
             return addressSettings.getDeadLetterAddress().toString();
          }
          return null;
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -336,12 +457,58 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
 
          if (addressSettings != null && addressSettings.getExpiryAddress() != null) {
             return addressSettings.getExpiryAddress().toString();
-         }
-         else {
+         } else {
             return null;
          }
+      } finally {
+         blockOnIO();
       }
-      finally {
+   }
+
+   @Override
+   public int getMaxConsumers() {
+      checkStarted();
+
+      clearIO();
+      try {
+         return queue.getMaxConsumers();
+      } finally {
+         blockOnIO();
+      }
+   }
+
+   @Override
+   public boolean isPurgeOnNoConsumers() {
+      checkStarted();
+
+      clearIO();
+      try {
+         return queue.isPurgeOnNoConsumers();
+      } finally {
+         blockOnIO();
+      }
+   }
+
+   @Override
+   public boolean isExclusive() {
+      checkStarted();
+
+      clearIO();
+      try {
+         return queue.isExclusive();
+      } finally {
+         blockOnIO();
+      }
+   }
+
+   @Override
+   public boolean isLastValue() {
+      checkStarted();
+
+      clearIO();
+      try {
+         return queue.isLastValue();
+      } finally {
          blockOnIO();
       }
    }
@@ -354,8 +521,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       try {
          List<MessageReference> refs = queue.getScheduledMessages();
          return convertMessagesToMaps(refs);
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -367,8 +533,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          return QueueControlImpl.toJSON(listScheduledMessages());
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -401,8 +566,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
             msgRet.put(entry.getKey(), convertMessagesToMaps(entry.getValue()));
          }
          return msgRet;
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
 
@@ -415,8 +579,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          return QueueControlImpl.toJSON(listDeliveringMessages());
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -430,21 +593,23 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
          Filter filter = FilterImpl.createFilter(filterStr);
          List<Map<String, Object>> messages = new ArrayList<>();
          queue.flushExecutor();
-         try (LinkedListIterator<MessageReference> iterator = queue.totalIterator()) {
-            while (iterator.hasNext()) {
-               MessageReference ref = iterator.next();
-               if (filter == null || filter.match(ref.getMessage())) {
-                  Message message = ref.getMessage();
-                  messages.add(message.toMap());
+         try (LinkedListIterator<MessageReference> iterator = queue.browserIterator()) {
+            try {
+               while (iterator.hasNext()) {
+                  MessageReference ref = iterator.next();
+                  if (filter == null || filter.match(ref.getMessage())) {
+                     Message message = ref.getMessage();
+                     messages.add(message.toMap());
+                  }
                }
+            } catch (NoSuchElementException ignored) {
+               // this could happen through paging browsing
             }
             return messages.toArray(new Map[messages.size()]);
          }
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          throw new IllegalStateException(e.getMessage());
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -456,8 +621,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          return QueueControlImpl.toJSON(listMessages(filter));
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -469,7 +633,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       try {
          List<Map<String, Object>> messages = new ArrayList<>();
          queue.flushExecutor();
-         try (LinkedListIterator<MessageReference> iterator = queue.totalIterator()) {
+         try (LinkedListIterator<MessageReference> iterator = queue.browserIterator()) {
             // returns just the first, as it's the first only
             if (iterator.hasNext()) {
                MessageReference ref = iterator.next();
@@ -478,8 +642,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
             }
             return messages.toArray(new Map[1]);
          }
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
 
@@ -514,6 +677,11 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
    }
 
    @Override
+   public long countMessages() throws Exception {
+      return countMessages(null);
+   }
+
+   @Override
    public long countMessages(final String filterStr) throws Exception {
       checkStarted();
 
@@ -522,21 +690,24 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
          Filter filter = FilterImpl.createFilter(filterStr);
          if (filter == null) {
             return getMessageCount();
-         }
-         else {
-            try (LinkedListIterator<MessageReference> iterator = queue.totalIterator()) {
+         } else {
+            try (LinkedListIterator<MessageReference> iterator = queue.browserIterator()) {
                int count = 0;
-               while (iterator.hasNext()) {
-                  MessageReference ref = iterator.next();
-                  if (filter.match(ref.getMessage())) {
-                     count++;
+
+               try {
+                  while (iterator.hasNext()) {
+                     MessageReference ref = iterator.next();
+                     if (filter.match(ref.getMessage())) {
+                        count++;
+                     }
                   }
+               } catch (NoSuchElementException ignored) {
+                  // this could happen through paging browsing
                }
                return count;
             }
          }
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -548,11 +719,9 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          return queue.deleteReference(messageID);
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          throw new IllegalStateException(e.getMessage());
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -571,10 +740,14 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
          Filter filter = FilterImpl.createFilter(filterStr);
 
          return queue.deleteMatchingReferences(flushLimit, filter);
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
+   }
+
+   @Override
+   public int removeAllMessages() throws Exception {
+      return removeMessages(FLUSH_LIMIT, null);
    }
 
    @Override
@@ -584,8 +757,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          return queue.expireReference(messageID);
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -598,11 +770,9 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       try {
          Filter filter = FilterImpl.createFilter(filterStr);
          return queue.expireReferences(filter);
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          throw new IllegalStateException(e.getMessage());
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -616,7 +786,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       try {
          Filter singleMessageFilter = new Filter() {
             @Override
-            public boolean match(ServerMessage message) {
+            public boolean match(Message message) {
                return message.getMessageID() == messageID;
             }
 
@@ -627,8 +797,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
          };
 
          return queue.retryMessages(singleMessageFilter) > 0;
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -640,8 +809,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
 
       try {
          return queue.retryMessages(null);
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -665,9 +833,8 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
             throw ActiveMQMessageBundle.BUNDLE.noQueueFound(otherQueueName);
          }
 
-         return queue.moveReference(messageID, binding.getAddress(), rejectDuplicates);
-      }
-      finally {
+         return queue.moveReference(messageID, binding.getAddress(), binding, rejectDuplicates);
+      } finally {
          blockOnIO();
       }
 
@@ -695,11 +862,10 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
             throw ActiveMQMessageBundle.BUNDLE.noQueueFound(otherQueueName);
          }
 
-         int retValue = queue.moveReferences(flushLimit, filter, binding.getAddress(), rejectDuplicates);
+         int retValue = queue.moveReferences(flushLimit, filter, binding.getAddress(), rejectDuplicates, binding);
 
          return retValue;
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
 
@@ -721,8 +887,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
          Filter filter = FilterImpl.createFilter(filterStr);
 
          return queue.sendMessagesToDeadLetterAddress(filter);
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -731,39 +896,51 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
    public String sendMessage(final Map<String, String> headers,
                              final int type,
                              final String body,
-                             final String userID,
-                             boolean durable, final String user,
+                             boolean durable,
+                             final String user,
                              final String password) throws Exception {
-      securityStore.check(queue.getAddress(), CheckType.SEND, new SecurityAuth() {
-         @Override
-         public String getUsername() {
-            return user;
-         }
+      try {
+         securityStore.check(queue.getAddress(), queue.getName(), CheckType.SEND, new SecurityAuth() {
+            @Override
+            public String getUsername() {
+               return user;
+            }
 
-         @Override
-         public String getPassword() {
-            return password;
-         }
+            @Override
+            public String getPassword() {
+               return password;
+            }
 
-         @Override
-         public RemotingConnection getRemotingConnection() {
-            return null;
+            @Override
+            public RemotingConnection getRemotingConnection() {
+               return null;
+            }
+         });
+         CoreMessage message = new CoreMessage(storageManager.generateID(), 50);
+         if (headers != null) {
+            for (String header : headers.keySet()) {
+               message.putStringProperty(new SimpleString(header), new SimpleString(headers.get(header)));
+            }
          }
-      });
-      ServerMessageImpl message = new ServerMessageImpl(storageManager.generateID(), 50);
-      for (String header : headers.keySet()) {
-         message.putStringProperty(new SimpleString(header), new SimpleString(headers.get(header)));
+         message.setType((byte) type);
+         message.setDurable(durable);
+         message.setTimestamp(System.currentTimeMillis());
+         if (body != null) {
+            if (type == Message.TEXT_TYPE) {
+               message.getBodyBuffer().writeNullableSimpleString(new SimpleString(body));
+            } else {
+               message.getBodyBuffer().writeBytes(Base64.decode(body));
+            }
+         }
+         message.setAddress(queue.getAddress());
+         ByteBuffer buffer = ByteBuffer.allocate(8);
+         buffer.putLong(queue.getID());
+         message.putBytesProperty(Message.HDR_ROUTE_TO_IDS, buffer.array());
+         postOffice.route(message, true);
+         return "" + message.getMessageID();
+      } catch (ActiveMQException e) {
+         throw new IllegalStateException(e.getMessage());
       }
-      message.setType((byte) type);
-      message.setDurable(durable);
-      message.setTimestamp(System.currentTimeMillis());
-      message.setUserID(new UUID(UUID.TYPE_TIME_BASED, UUID.stringToBytes(userID)));
-      if (body != null) {
-         message.getBodyBuffer().writeBytes(Base64.decode(body));
-      }
-      message.setAddress(queue.getAddress());
-      postOffice.route(message, null, true);
-      return ""  + message.getMessageID();
    }
 
    @Override
@@ -773,8 +950,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          return queue.sendMessageToDeadLetterAddress(messageID);
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -791,8 +967,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
          Filter filter = FilterImpl.createFilter(filterStr);
 
          return queue.changeReferencesPriority(filter, (byte) newPriority);
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -807,8 +982,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
             throw ActiveMQMessageBundle.BUNDLE.invalidNewPriority(newPriority);
          }
          return queue.changeReferencePriority(messageID, (byte) newPriority);
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -820,11 +994,9 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          return MessageCounterInfo.toJSon(counter);
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          throw new IllegalStateException(e);
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -836,8 +1008,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          counter.resetCounter();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -849,8 +1020,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          return MessageCounterHelper.listMessageCounterAsHTML(new MessageCounter[]{counter});
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -862,8 +1032,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          return MessageCounterHelper.listMessageCounterHistory(counter);
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -875,8 +1044,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          return MessageCounterHelper.listMessageCounterHistoryAsHTML(new MessageCounter[]{counter});
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -888,12 +1056,23 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          queue.pause();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
 
+
+   @Override
+   public void pause(boolean persist) {
+      checkStarted();
+
+      clearIO();
+      try {
+         queue.pause(persist);
+      } finally {
+         blockOnIO();
+      }
+   }
    @Override
    public void resume() {
       checkStarted();
@@ -901,8 +1080,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          queue.resume();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -914,14 +1092,58 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          return queue.isPaused();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
 
    @Override
-   public CompositeData[] browse(String filterStr) throws Exception {
+   public CompositeData[] browse(int page, int pageSize) throws Exception {
+      String filter = null;
+      checkStarted();
+
+      clearIO();
+      try {
+         long index = 0;
+         long start = (page - 1) * pageSize;
+         long end = Math.min(page * pageSize, queue.getMessageCount());
+
+         ArrayList<CompositeData> c = new ArrayList<>();
+         Filter thefilter = FilterImpl.createFilter(filter);
+         queue.flushExecutor();
+
+         try (LinkedListIterator<MessageReference> iterator = queue.browserIterator()) {
+            try {
+               while (iterator.hasNext() && index < end) {
+                  MessageReference ref = iterator.next();
+                  if (thefilter == null || thefilter.match(ref.getMessage())) {
+                     if (index >= start) {
+                        c.add(OpenTypeSupport.convert(ref));
+                     }
+                  }
+                  index++;
+               }
+            } catch (NoSuchElementException ignored) {
+               // this could happen through paging browsing
+            }
+
+            CompositeData[] rc = new CompositeData[c.size()];
+            c.toArray(rc);
+            return rc;
+         }
+      } catch (ActiveMQException e) {
+         throw new IllegalStateException(e.getMessage());
+      } finally {
+         blockOnIO();
+      }
+   }
+
+   @Override
+   public CompositeData[] browse() throws Exception {
+      return browse(null);
+   }
+   @Override
+   public CompositeData[] browse(String filter) throws Exception {
       checkStarted();
 
       clearIO();
@@ -929,25 +1151,28 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
          int pageSize = addressSettingsRepository.getMatch(queue.getName().toString()).getManagementBrowsePageSize();
          int currentPageSize = 0;
          ArrayList<CompositeData> c = new ArrayList<>();
-         Filter filter = FilterImpl.createFilter(filterStr);
+         Filter thefilter = FilterImpl.createFilter(filter);
          queue.flushExecutor();
-         try (LinkedListIterator<MessageReference> iterator = queue.totalIterator()) {
-            while (iterator.hasNext() && currentPageSize++ < pageSize) {
-               MessageReference ref = iterator.next();
-               if (filter == null || filter.match(ref.getMessage())) {
-                  c.add(OpenTypeSupport.convert(ref));
+         try (LinkedListIterator<MessageReference> iterator = queue.browserIterator()) {
+            try {
+               while (iterator.hasNext() && currentPageSize++ < pageSize) {
+                  MessageReference ref = iterator.next();
+                  if (thefilter == null || thefilter.match(ref.getMessage())) {
+                     c.add(OpenTypeSupport.convert(ref));
 
+                  }
                }
+            } catch (NoSuchElementException ignored) {
+               // this could happen through paging browsing
             }
+
             CompositeData[] rc = new CompositeData[c.size()];
             c.toArray(rc);
             return rc;
          }
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          throw new IllegalStateException(e.getMessage());
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -959,8 +1184,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          queue.flushExecutor();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -980,12 +1204,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
             if (consumer instanceof ServerConsumer) {
                ServerConsumer serverConsumer = (ServerConsumer) consumer;
 
-               JsonObjectBuilder obj = JsonLoader.createObjectBuilder()
-                  .add("consumerID", serverConsumer.getID())
-                  .add("connectionID", serverConsumer.getConnectionID().toString())
-                  .add("sessionID", serverConsumer.getSessionID())
-                  .add("browseOnly", serverConsumer.isBrowseOnly())
-                  .add("creationTime", serverConsumer.getCreationTime());
+               JsonObjectBuilder obj = JsonLoader.createObjectBuilder().add("consumerID", serverConsumer.getID()).add("connectionID", serverConsumer.getConnectionID().toString()).add("sessionID", serverConsumer.getSessionID()).add("browseOnly", serverConsumer.isBrowseOnly()).add("creationTime", serverConsumer.getCreationTime());
 
                jsonArray.add(obj);
             }
@@ -993,8 +1212,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
          }
 
          return jsonArray.build().toString();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -1016,8 +1234,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          queue.resetMessagesAdded();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
 
@@ -1030,8 +1247,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          queue.resetMessagesAcknowledged();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
 
@@ -1044,8 +1260,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          queue.resetMessagesExpired();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
 
@@ -1058,8 +1273,7 @@ public class QueueControlImpl extends AbstractControl implements QueueControl {
       clearIO();
       try {
          queue.resetMessagesKilled();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
 

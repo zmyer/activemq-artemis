@@ -46,6 +46,10 @@ public class PersistedRoles implements EncodingSupport {
 
    private SimpleString browseRoles;
 
+   private SimpleString createAddressRoles;
+
+   private SimpleString deleteAddressRoles;
+
    // Static --------------------------------------------------------
 
    // Constructors --------------------------------------------------
@@ -63,6 +67,8 @@ public class PersistedRoles implements EncodingSupport {
     * @param deleteNonDurableQueueRoles
     * @param manageRoles
     * @param browseRoles
+    * @param createAddressRoles
+    * @param deleteAddressRoles
     */
    public PersistedRoles(final String addressMatch,
                          final String sendRoles,
@@ -72,7 +78,9 @@ public class PersistedRoles implements EncodingSupport {
                          final String createNonDurableQueueRoles,
                          final String deleteNonDurableQueueRoles,
                          final String manageRoles,
-                         final String browseRoles) {
+                         final String browseRoles,
+                         final String createAddressRoles,
+                         final String deleteAddressRoles) {
       super();
       this.addressMatch = SimpleString.toSimpleString(addressMatch);
       this.sendRoles = SimpleString.toSimpleString(sendRoles);
@@ -83,6 +91,8 @@ public class PersistedRoles implements EncodingSupport {
       this.deleteNonDurableQueueRoles = SimpleString.toSimpleString(deleteNonDurableQueueRoles);
       this.manageRoles = SimpleString.toSimpleString(manageRoles);
       this.browseRoles = SimpleString.toSimpleString(browseRoles);
+      this.createAddressRoles = SimpleString.toSimpleString(createAddressRoles);
+      this.deleteAddressRoles = SimpleString.toSimpleString(deleteAddressRoles);
    }
 
    // Public --------------------------------------------------------
@@ -158,6 +168,20 @@ public class PersistedRoles implements EncodingSupport {
       return browseRoles.toString();
    }
 
+   /**
+    * @return the createAddressRoles
+    */
+   public String getCreateAddressRoles() {
+      return createAddressRoles.toString();
+   }
+
+   /**
+    * @return the deleteAddressRoles
+    */
+   public String getDeleteAddressRoles() {
+      return deleteAddressRoles.toString();
+   }
+
    @Override
    public void encode(final ActiveMQBuffer buffer) {
       buffer.writeSimpleString(addressMatch);
@@ -169,6 +193,8 @@ public class PersistedRoles implements EncodingSupport {
       buffer.writeNullableSimpleString(deleteNonDurableQueueRoles);
       buffer.writeNullableSimpleString(manageRoles);
       buffer.writeNullableSimpleString(browseRoles);
+      buffer.writeNullableSimpleString(createAddressRoles);
+      buffer.writeNullableSimpleString(deleteAddressRoles);
    }
 
    @Override
@@ -180,8 +206,9 @@ public class PersistedRoles implements EncodingSupport {
          SimpleString.sizeofNullableString(createNonDurableQueueRoles) +
          SimpleString.sizeofNullableString(deleteNonDurableQueueRoles) +
          SimpleString.sizeofNullableString(manageRoles) +
-         SimpleString.sizeofNullableString(browseRoles);
-
+         SimpleString.sizeofNullableString(browseRoles) +
+         SimpleString.sizeofNullableString(createAddressRoles) +
+         SimpleString.sizeofNullableString(deleteAddressRoles);
    }
 
    @Override
@@ -195,6 +222,8 @@ public class PersistedRoles implements EncodingSupport {
       deleteNonDurableQueueRoles = buffer.readNullableSimpleString();
       manageRoles = buffer.readNullableSimpleString();
       browseRoles = buffer.readNullableSimpleString();
+      createAddressRoles = buffer.readNullableSimpleString();
+      deleteAddressRoles = buffer.readNullableSimpleString();
    }
 
    /* (non-Javadoc)
@@ -212,6 +241,8 @@ public class PersistedRoles implements EncodingSupport {
       result = prime * result + ((deleteNonDurableQueueRoles == null) ? 0 : deleteNonDurableQueueRoles.hashCode());
       result = prime * result + ((manageRoles == null) ? 0 : manageRoles.hashCode());
       result = prime * result + ((browseRoles == null) ? 0 : browseRoles.hashCode());
+      result = prime * result + ((createAddressRoles == null) ? 0 : createAddressRoles.hashCode());
+      result = prime * result + ((deleteAddressRoles == null) ? 0 : deleteAddressRoles.hashCode());
       result = prime * result + ((sendRoles == null) ? 0 : sendRoles.hashCode());
       result = prime * result + (int) (storeId ^ (storeId >>> 32));
       return result;
@@ -232,56 +263,57 @@ public class PersistedRoles implements EncodingSupport {
       if (addressMatch == null) {
          if (other.addressMatch != null)
             return false;
-      }
-      else if (!addressMatch.equals(other.addressMatch))
+      } else if (!addressMatch.equals(other.addressMatch))
          return false;
       if (consumeRoles == null) {
          if (other.consumeRoles != null)
             return false;
-      }
-      else if (!consumeRoles.equals(other.consumeRoles))
+      } else if (!consumeRoles.equals(other.consumeRoles))
          return false;
       if (createDurableQueueRoles == null) {
          if (other.createDurableQueueRoles != null)
             return false;
-      }
-      else if (!createDurableQueueRoles.equals(other.createDurableQueueRoles))
+      } else if (!createDurableQueueRoles.equals(other.createDurableQueueRoles))
          return false;
       if (createNonDurableQueueRoles == null) {
          if (other.createNonDurableQueueRoles != null)
             return false;
-      }
-      else if (!createNonDurableQueueRoles.equals(other.createNonDurableQueueRoles))
+      } else if (!createNonDurableQueueRoles.equals(other.createNonDurableQueueRoles))
          return false;
       if (deleteDurableQueueRoles == null) {
          if (other.deleteDurableQueueRoles != null)
             return false;
-      }
-      else if (!deleteDurableQueueRoles.equals(other.deleteDurableQueueRoles))
+      } else if (!deleteDurableQueueRoles.equals(other.deleteDurableQueueRoles))
          return false;
       if (deleteNonDurableQueueRoles == null) {
          if (other.deleteNonDurableQueueRoles != null)
             return false;
-      }
-      else if (!deleteNonDurableQueueRoles.equals(other.deleteNonDurableQueueRoles))
+      } else if (!deleteNonDurableQueueRoles.equals(other.deleteNonDurableQueueRoles))
          return false;
       if (manageRoles == null) {
          if (other.manageRoles != null)
             return false;
-      }
-      else if (!manageRoles.equals(other.manageRoles))
+      } else if (!manageRoles.equals(other.manageRoles))
          return false;
       if (browseRoles == null) {
          if (other.browseRoles != null)
             return false;
-      }
-      else if (!browseRoles.equals(other.browseRoles))
+      } else if (!browseRoles.equals(other.browseRoles))
+         return false;
+      if (createAddressRoles == null) {
+         if (other.createAddressRoles != null)
+            return false;
+      } else if (!createAddressRoles.equals(other.createAddressRoles))
+         return false;
+      if (deleteAddressRoles == null) {
+         if (other.deleteAddressRoles != null)
+            return false;
+      } else if (!deleteAddressRoles.equals(other.deleteAddressRoles))
          return false;
       if (sendRoles == null) {
          if (other.sendRoles != null)
             return false;
-      }
-      else if (!sendRoles.equals(other.sendRoles))
+      } else if (!sendRoles.equals(other.sendRoles))
          return false;
       if (storeId != other.storeId)
          return false;
@@ -312,6 +344,10 @@ public class PersistedRoles implements EncodingSupport {
          manageRoles +
          ", browseRoles=" +
          browseRoles +
+         ", createAddressRoles=" +
+         createAddressRoles +
+         ", deleteAddressRoles=" +
+         deleteAddressRoles +
          "]";
    }
 

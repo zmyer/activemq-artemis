@@ -26,13 +26,15 @@ import java.sql.SQLException;
 
 import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
 import org.apache.activemq.artemis.api.core.ActiveMQBuffers;
+import org.apache.activemq.artemis.api.core.ActiveMQExceptionType;
 import org.apache.activemq.artemis.core.journal.EncodingSupport;
 import org.apache.activemq.artemis.core.journal.IOCompletion;
+import org.apache.activemq.artemis.core.persistence.Persister;
 import org.apache.activemq.artemis.core.journal.RecordInfo;
 import org.apache.activemq.artemis.journal.ActiveMQJournalLogger;
 import org.apache.activemq.artemis.utils.ActiveMQBufferInputStream;
 
-public class JDBCJournalRecord {
+class JDBCJournalRecord {
    /*
    Database Table Schema:
 
@@ -49,17 +51,17 @@ public class JDBCJournalRecord {
    */
 
    // Record types taken from Journal Impl
-   public static final byte ADD_RECORD = 11;
-   public static final byte UPDATE_RECORD = 12;
-   public static final byte ADD_RECORD_TX = 13;
-   public static final byte UPDATE_RECORD_TX = 14;
+   static final byte ADD_RECORD = 11;
+   static final byte UPDATE_RECORD = 12;
+   static final byte ADD_RECORD_TX = 13;
+   static final byte UPDATE_RECORD_TX = 14;
 
-   public static final byte DELETE_RECORD_TX = 15;
-   public static final byte DELETE_RECORD = 16;
+   static final byte DELETE_RECORD_TX = 15;
+   static final byte DELETE_RECORD = 16;
 
-   public static final byte PREPARE_RECORD = 17;
-   public static final byte COMMIT_RECORD = 18;
-   public static final byte ROLLBACK_RECORD = 19;
+   static final byte PREPARE_RECORD = 17;
+   static final byte COMMIT_RECORD = 18;
+   static final byte ROLLBACK_RECORD = 19;
 
    // Callback and sync operations
    private IOCompletion ioCompletion = null;
@@ -90,7 +92,7 @@ public class JDBCJournalRecord {
 
    private long seq;
 
-   public JDBCJournalRecord(long id, byte recordType, long seq) {
+   JDBCJournalRecord(long id, byte recordType, long seq) {
       this.id = id;
       this.recordType = recordType;
 
@@ -110,35 +112,12 @@ public class JDBCJournalRecord {
       this.seq = seq;
    }
 
-   public static String createTableSQL(String tableName) {
-      return "CREATE TABLE " + tableName + "(id BIGINT,recordType SMALLINT,compactCount SMALLINT,txId BIGINT,userRecordType SMALLINT,variableSize INTEGER,record BLOB,txDataSize INTEGER,txData BLOB,txCheckNoRecords INTEGER,seq BIGINT)";
-   }
-
-   public static String insertRecordsSQL(String tableName) {
-      return "INSERT INTO " + tableName + "(id,recordType,compactCount,txId,userRecordType,variableSize,record,txDataSize,txData,txCheckNoRecords,seq) "
-         + "VALUES (?,?,?,?,?,?,?,?,?,?,?)";
-   }
-
-   public static String selectRecordsSQL(String tableName) {
-      return "SELECT id,recordType,compactCount,txId,userRecordType,variableSize,record,txDataSize,txData,txCheckNoRecords,seq "
-         + "FROM " + tableName + " ORDER BY seq ASC";
-   }
-
-   public static String deleteRecordsSQL(String tableName) {
-      return "DELETE FROM " + tableName + " WHERE id = ?";
-   }
-
-   public static String deleteJournalTxRecordsSQL(String tableName) {
-      return "DELETE FROM " + tableName + " WHERE txId=?";
-   }
-
    public void complete(boolean success) {
       if (ioCompletion != null) {
          if (success) {
             ioCompletion.done();
-         }
-         else {
-            ioCompletion.onError(1, "DATABASE TRANSACTION FAILED");
+         } else {
+            ioCompletion.onError(ActiveMQExceptionType.IO_ERROR.getCode(), "JDBC Transaction failed.");
          }
       }
    }
@@ -149,7 +128,7 @@ public class JDBCJournalRecord {
       }
    }
 
-   protected void writeRecord(PreparedStatement statement) throws SQLException {
+   void writeRecord(PreparedStatement statement) throws Exception {
 
       byte[] recordBytes = new byte[variableSize];
       byte[] txDataBytes = new byte[txDataSize];
@@ -157,9 +136,9 @@ public class JDBCJournalRecord {
       try {
          record.read(recordBytes);
          txData.read(txDataBytes);
-      }
-      catch (IOException e) {
+      } catch (IOException e) {
          ActiveMQJournalLogger.LOGGER.error("Error occurred whilst reading Journal Record", e);
+         throw e;
       }
 
       statement.setLong(1, id);
@@ -176,12 +155,12 @@ public class JDBCJournalRecord {
       statement.addBatch();
    }
 
-   protected void writeDeleteRecord(PreparedStatement deleteStatement) throws SQLException {
+   void writeDeleteRecord(PreparedStatement deleteStatement) throws SQLException {
       deleteStatement.setLong(1, id);
       deleteStatement.addBatch();
    }
 
-   public static JDBCJournalRecord readRecord(ResultSet rs) throws SQLException {
+   static JDBCJournalRecord readRecord(ResultSet rs) throws SQLException {
       JDBCJournalRecord record = new JDBCJournalRecord(rs.getLong(1), (byte) rs.getShort(2), rs.getLong(11));
       record.setCompactCount((byte) rs.getShort(3));
       record.setTxId(rs.getLong(4));
@@ -194,16 +173,12 @@ public class JDBCJournalRecord {
       return record;
    }
 
-   public IOCompletion getIoCompletion() {
+   IOCompletion getIoCompletion() {
       return ioCompletion;
    }
 
-   public void setIoCompletion(IOCompletion ioCompletion) {
+   void setIoCompletion(IOCompletion ioCompletion) {
       this.ioCompletion = ioCompletion;
-   }
-
-   public boolean isStoreLineUp() {
-      return storeLineUp;
    }
 
    public void setStoreLineUp(boolean storeLineUp) {
@@ -226,27 +201,23 @@ public class JDBCJournalRecord {
       return recordType;
    }
 
-   public byte getCompactCount() {
+   byte getCompactCount() {
       return compactCount;
    }
 
-   public void setCompactCount(byte compactCount) {
+   private void setCompactCount(byte compactCount) {
       this.compactCount = compactCount;
    }
 
-   public long getTxId() {
+   long getTxId() {
       return txId;
    }
 
-   public void setTxId(long txId) {
+   void setTxId(long txId) {
       this.txId = txId;
    }
 
-   public int getVariableSize() {
-      return variableSize;
-   }
-
-   public void setVariableSize(int variableSize) {
+   private void setVariableSize(int variableSize) {
       this.variableSize = variableSize;
    }
 
@@ -269,11 +240,11 @@ public class JDBCJournalRecord {
       this.record = record;
    }
 
-   public void setRecord(EncodingSupport record) {
-      this.variableSize = record.getEncodeSize();
+   public void setRecord(Persister persister, Object record) {
+      this.variableSize = persister.getEncodeSize(record);
 
       ActiveMQBuffer encodedBuffer = ActiveMQBuffers.fixedBuffer(variableSize);
-      record.encode(encodedBuffer);
+      persister.encode(encodedBuffer, record);
       this.record = new ActiveMQBufferInputStream(encodedBuffer);
    }
 
@@ -281,31 +252,19 @@ public class JDBCJournalRecord {
       return record;
    }
 
-   public int getTxCheckNoRecords() {
+   int getTxCheckNoRecords() {
       return txCheckNoRecords;
    }
 
-   public void setTxCheckNoRecords(int txCheckNoRecords) {
+   private void setTxCheckNoRecords(int txCheckNoRecords) {
       this.txCheckNoRecords = txCheckNoRecords;
    }
 
-   public void setTxDataSize(int txDataSize) {
+   private void setTxDataSize(int txDataSize) {
       this.txDataSize = txDataSize;
    }
 
-   public int getTxDataSize() {
-      return txDataSize;
-   }
-
-   public InputStream getTxData() {
-      return txData;
-   }
-
-   public void setTxData(InputStream record) {
-      this.record = record;
-   }
-
-   public void setTxData(EncodingSupport txData) {
+   void setTxData(EncodingSupport txData) {
       this.txDataSize = txData.getEncodeSize();
 
       ActiveMQBuffer encodedBuffer = ActiveMQBuffers.fixedBuffer(txDataSize);
@@ -313,7 +272,7 @@ public class JDBCJournalRecord {
       this.txData = new ActiveMQBufferInputStream(encodedBuffer);
    }
 
-   public void setTxData(byte[] txData) {
+   void setTxData(byte[] txData) {
       if (txData != null) {
          this.txDataSize = txData.length;
          this.txData = new ByteArrayInputStream(txData);
@@ -324,19 +283,19 @@ public class JDBCJournalRecord {
       return isUpdate;
    }
 
-   public byte[] getRecordData() throws IOException {
+   private byte[] getRecordData() throws IOException {
       byte[] data = new byte[variableSize];
       record.read(data);
       return data;
    }
 
-   public byte[] getTxDataAsByteArray() throws IOException {
+   byte[] getTxDataAsByteArray() throws IOException {
       byte[] data = new byte[txDataSize];
       txData.read(data);
       return data;
    }
 
-   public RecordInfo toRecordInfo() throws IOException {
+   RecordInfo toRecordInfo() throws IOException {
       return new RecordInfo(getId(), getUserRecordType(), getRecordData(), isUpdate(), getCompactCount());
    }
 
@@ -344,7 +303,26 @@ public class JDBCJournalRecord {
       return isTransactional;
    }
 
-   public long getSeq() {
+   long getSeq() {
       return seq;
+   }
+
+   @Override
+   public String toString() {
+      return "JDBCJournalRecord{" +
+         "compactCount=" + compactCount +
+         ", id=" + id +
+         ", isTransactional=" + isTransactional +
+         ", isUpdate=" + isUpdate +
+         ", recordType=" + recordType +
+         ", seq=" + seq +
+         ", storeLineUp=" + storeLineUp +
+         ", sync=" + sync +
+         ", txCheckNoRecords=" + txCheckNoRecords +
+         ", txDataSize=" + txDataSize +
+         ", txId=" + txId +
+         ", userRecordType=" + userRecordType +
+         ", variableSize=" + variableSize +
+         '}';
    }
 }

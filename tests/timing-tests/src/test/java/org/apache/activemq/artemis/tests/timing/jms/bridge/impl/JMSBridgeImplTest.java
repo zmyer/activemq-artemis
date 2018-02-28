@@ -16,33 +16,6 @@
  */
 package org.apache.activemq.artemis.tests.timing.jms.bridge.impl;
 
-import org.apache.activemq.artemis.api.core.TransportConfiguration;
-import org.apache.activemq.artemis.api.core.management.ObjectNameBuilder;
-import org.apache.activemq.artemis.api.jms.ActiveMQJMSClient;
-import org.apache.activemq.artemis.api.jms.JMSFactoryType;
-import org.apache.activemq.artemis.api.jms.management.JMSQueueControl;
-import org.apache.activemq.artemis.core.config.Configuration;
-import org.apache.activemq.artemis.core.registry.JndiBindingRegistry;
-import org.apache.activemq.artemis.core.remoting.impl.invm.InVMAcceptorFactory;
-import org.apache.activemq.artemis.core.remoting.impl.invm.InVMConnectorFactory;
-import org.apache.activemq.artemis.core.server.ActiveMQServers;
-import org.apache.activemq.artemis.jms.bridge.ConnectionFactoryFactory;
-import org.apache.activemq.artemis.jms.bridge.DestinationFactory;
-import org.apache.activemq.artemis.jms.bridge.QualityOfServiceMode;
-import org.apache.activemq.artemis.jms.bridge.impl.JMSBridgeImpl;
-import org.apache.activemq.artemis.jms.client.ActiveMQJMSConnectionFactory;
-import org.apache.activemq.artemis.jms.server.JMSServerManager;
-import org.apache.activemq.artemis.jms.server.impl.JMSServerManagerImpl;
-import org.apache.activemq.artemis.tests.unit.UnitTestLogger;
-import org.apache.activemq.artemis.tests.unit.util.InVMNamingContext;
-import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
-import org.apache.activemq.artemis.utils.RandomUtil;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
-
 import javax.jms.Connection;
 import javax.jms.ConnectionFactory;
 import javax.jms.Destination;
@@ -70,6 +43,35 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+
+import org.apache.activemq.artemis.api.core.SimpleString;
+import org.apache.activemq.artemis.api.core.TransportConfiguration;
+import org.apache.activemq.artemis.api.core.management.ObjectNameBuilder;
+import org.apache.activemq.artemis.api.core.management.QueueControl;
+import org.apache.activemq.artemis.api.jms.ActiveMQJMSClient;
+import org.apache.activemq.artemis.api.jms.JMSFactoryType;
+import org.apache.activemq.artemis.core.config.Configuration;
+import org.apache.activemq.artemis.core.registry.JndiBindingRegistry;
+import org.apache.activemq.artemis.core.remoting.impl.invm.InVMAcceptorFactory;
+import org.apache.activemq.artemis.core.remoting.impl.invm.InVMConnectorFactory;
+import org.apache.activemq.artemis.core.server.ActiveMQServers;
+import org.apache.activemq.artemis.api.core.RoutingType;
+import org.apache.activemq.artemis.jms.bridge.ConnectionFactoryFactory;
+import org.apache.activemq.artemis.jms.bridge.DestinationFactory;
+import org.apache.activemq.artemis.jms.bridge.QualityOfServiceMode;
+import org.apache.activemq.artemis.jms.bridge.impl.JMSBridgeImpl;
+import org.apache.activemq.artemis.jms.client.ActiveMQJMSConnectionFactory;
+import org.apache.activemq.artemis.jms.server.JMSServerManager;
+import org.apache.activemq.artemis.jms.server.impl.JMSServerManagerImpl;
+import org.apache.activemq.artemis.tests.unit.UnitTestLogger;
+import org.apache.activemq.artemis.tests.unit.util.InVMNamingContext;
+import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
+import org.apache.activemq.artemis.utils.RandomUtil;
+import org.junit.Assert;
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.rules.ExpectedException;
 
 public class JMSBridgeImplTest extends ActiveMQTestBase {
    // Constants -----------------------------------------------------
@@ -175,8 +177,7 @@ public class JMSBridgeImplTest extends ActiveMQTestBase {
             try {
                tcclClassLoader.loadClass("com.class.only.visible.to.tccl.SomeClass");
                tcclClassFound.set(true);
-            }
-            catch (ClassNotFoundException e) {
+            } catch (ClassNotFoundException e) {
                e.printStackTrace();
             }
          }
@@ -241,8 +242,7 @@ public class JMSBridgeImplTest extends ActiveMQTestBase {
             if (firstTime) {
                firstTime = false;
                throw new JMSException("unable to create a conn");
-            }
-            else {
+            } else {
                return super.createConnection();
             }
          }
@@ -287,6 +287,45 @@ public class JMSBridgeImplTest extends ActiveMQTestBase {
    * we receive only 1 message. The message is sent when the maxBatchTime
    * expires even if the maxBatchSize is not reached
    */
+   @Test
+   public void testBridgeWithMaskPasswords() throws Exception {
+
+      ConnectionFactoryFactory sourceCFF = JMSBridgeImplTest.newConnectionFactoryFactory(JMSBridgeImplTest.createConnectionFactory());
+      ConnectionFactoryFactory targetCFF = JMSBridgeImplTest.newConnectionFactoryFactory(JMSBridgeImplTest.createConnectionFactory());
+      DestinationFactory sourceDF = JMSBridgeImplTest.newDestinationFactory(ActiveMQJMSClient.createQueue(JMSBridgeImplTest.SOURCE));
+      DestinationFactory targetDF = JMSBridgeImplTest.newDestinationFactory(ActiveMQJMSClient.createQueue(JMSBridgeImplTest.TARGET));
+      TransactionManager tm = JMSBridgeImplTest.newTransactionManager();
+
+      JMSBridgeImpl bridge = new JMSBridgeImpl();
+      Assert.assertNotNull(bridge);
+
+      bridge.setSourceConnectionFactoryFactory(sourceCFF);
+      bridge.setSourceDestinationFactory(sourceDF);
+      bridge.setTargetConnectionFactoryFactory(targetCFF);
+      bridge.setTargetDestinationFactory(targetDF);
+      bridge.setFailureRetryInterval(10);
+      bridge.setMaxRetries(1);
+      bridge.setMaxBatchSize(1);
+      bridge.setMaxBatchTime(-1);
+      bridge.setTransactionManager(tm);
+      bridge.setQualityOfServiceMode(QualityOfServiceMode.AT_MOST_ONCE);
+
+      bridge.setSourceUsername("sourceuser");
+      bridge.setSourcePassword("ENC(5493dd76567ee5ec269d11823973462f)");
+      bridge.setTargetUsername("targetuser");
+      bridge.setTargetPassword("ENC(56a0db3b71043054269d11823973462f)");
+
+      Assert.assertFalse(bridge.isStarted());
+      bridge.start();
+      Assert.assertTrue(bridge.isStarted());
+
+      assertEquals("sourcepassword", bridge.getSourcePassword());
+      assertEquals("targetpassword", bridge.getTargetPassword());
+
+      bridge.stop();
+      Assert.assertFalse(bridge.isStarted());
+   }
+
    @Test
    public void testSendMessagesWhenMaxBatchTimeExpires() throws Exception {
       int maxBatchSize = 2;
@@ -470,8 +509,8 @@ public class JMSBridgeImplTest extends ActiveMQTestBase {
       }
 
       sourceConn.close();
-
-      JMSQueueControl jmsQueueControl = MBeanServerInvocationHandler.newProxyInstance(ManagementFactory.getPlatformMBeanServer(), ObjectNameBuilder.DEFAULT.getJMSQueueObjectName(JMSBridgeImplTest.SOURCE), JMSQueueControl.class, false);
+      SimpleString add = new SimpleString(JMSBridgeImplTest.SOURCE);
+      QueueControl jmsQueueControl = MBeanServerInvocationHandler.newProxyInstance(ManagementFactory.getPlatformMBeanServer(), ObjectNameBuilder.DEFAULT.getQueueObjectName(add, add, RoutingType.ANYCAST), QueueControl.class, false);
       assertNotEquals(jmsQueueControl.getDeliveringCount(), numMessages);
 
       bridge.stop();
@@ -541,8 +580,7 @@ public class JMSBridgeImplTest extends ActiveMQTestBase {
                firstTime = false;
                sourceConn.set(super.createConnection());
                return sourceConn.get();
-            }
-            else {
+            } else {
                throw new JMSException("exception while retrying to connect");
             }
          }
@@ -637,12 +675,11 @@ public class JMSBridgeImplTest extends ActiveMQTestBase {
          bridge.stop();
          Assert.assertFalse(bridge.isStarted());
          assertTrue(tcclClassFound.get());
-      }
-      finally {
-         if (mockTccl != null) unsetMockTCCL(mockTccl);
+      } finally {
+         if (mockTccl != null)
+            unsetMockTCCL(mockTccl);
       }
    }
-
 
    // Package protected ---------------------------------------------
 
@@ -742,6 +779,7 @@ public class JMSBridgeImplTest extends ActiveMQTestBase {
 
    // Inner classes -------------------------------------------------
    private static class MockContextClassLoader extends ClassLoader {
+
       private final ClassLoader original;
       private final String knownClass = "com.class.only.visible.to.tccl.SomeClass";
 

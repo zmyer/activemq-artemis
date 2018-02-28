@@ -16,18 +16,18 @@
  */
 package org.apache.activemq.artemis.rest.test;
 
-import org.apache.activemq.artemis.rest.queue.push.xml.PushRegistration;
-import org.junit.Test;
-
 import javax.xml.bind.JAXBContext;
 import java.io.StringReader;
+
+import org.apache.activemq.artemis.rest.queue.push.xml.PushRegistration;
+import org.junit.Test;
 
 public class XmlTest {
 
    @Test
    public void testPush() throws Exception {
       String xml = "<push-registration id=\"111\">\n" +
-         "   <destination>jms.queue.bar</destination>\n" +
+         "   <destination>bar</destination>\n" +
          "   <durable>true</durable>\n" +
          "   <session-count>10</session-count>\n" +
          "   <link rel=\"template\" href=\"http://somewhere.com/resources/{id}/messages\" method=\"PUT\"/>\n" +

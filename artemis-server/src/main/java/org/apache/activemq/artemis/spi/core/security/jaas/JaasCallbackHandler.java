@@ -16,13 +16,20 @@
  */
 package org.apache.activemq.artemis.spi.core.security.jaas;
 
+import org.apache.activemq.artemis.spi.core.protocol.RemotingConnection;
+
+import javax.security.auth.Subject;
 import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.CallbackHandler;
 import javax.security.auth.callback.NameCallback;
 import javax.security.auth.callback.PasswordCallback;
 import javax.security.auth.callback.UnsupportedCallbackException;
-import javax.security.cert.X509Certificate;
+import javax.security.auth.kerberos.KerberosPrincipal;
 import java.io.IOException;
+import java.security.Principal;
+
+import static org.apache.activemq.artemis.core.remoting.CertificateUtil.getCertsFromConnection;
+import static org.apache.activemq.artemis.core.remoting.CertificateUtil.getPeerPrincipalFromConnection;
 
 /**
  * A JAAS username password CallbackHandler.
@@ -31,12 +38,12 @@ public class JaasCallbackHandler implements CallbackHandler {
 
    private final String username;
    private final String password;
-   final X509Certificate[] certificates;
+   final RemotingConnection remotingConnection;
 
-   public JaasCallbackHandler(String username, String password, X509Certificate[] certs) {
+   public JaasCallbackHandler(String username, String password, RemotingConnection remotingConnection) {
       this.username = username;
       this.password = password;
-      this.certificates = certs;
+      this.remotingConnection = remotingConnection;
    }
 
    @Override
@@ -46,26 +53,33 @@ public class JaasCallbackHandler implements CallbackHandler {
             PasswordCallback passwordCallback = (PasswordCallback) callback;
             if (password == null) {
                passwordCallback.setPassword(null);
-            }
-            else {
+            } else {
                passwordCallback.setPassword(password.toCharArray());
             }
-         }
-         else if (callback instanceof NameCallback) {
+         } else if (callback instanceof NameCallback) {
             NameCallback nameCallback = (NameCallback) callback;
             if (username == null) {
                nameCallback.setName(null);
-            }
-            else {
+            } else {
                nameCallback.setName(username);
             }
-         }
-         else if (callback instanceof CertificateCallback) {
+         } else if (callback instanceof CertificateCallback) {
             CertificateCallback certCallback = (CertificateCallback) callback;
 
-            certCallback.setCertificates(certificates);
-         }
-         else {
+            certCallback.setCertificates(getCertsFromConnection(remotingConnection));
+         } else if (callback instanceof Krb5Callback) {
+            Krb5Callback krb5Callback = (Krb5Callback) callback;
+
+            Subject peerSubject = remotingConnection.getSubject();
+            if (peerSubject != null) {
+               for (Principal principal : peerSubject.getPrivateCredentials(KerberosPrincipal.class)) {
+                  krb5Callback.setPeerPrincipal(principal);
+                  return;
+               }
+            }
+
+            krb5Callback.setPeerPrincipal(getPeerPrincipalFromConnection(remotingConnection));
+         } else {
             throw new UnsupportedCallbackException(callback);
          }
       }

@@ -53,17 +53,16 @@ public class MessageUtil {
 
    public static final SimpleString CONNECTION_ID_PROPERTY_NAME = new SimpleString("__AMQ_CID");
 
-//   public static ActiveMQBuffer getBodyBuffer(Message message) {
-//      return message.getBodyBuffer();
-//   }
+   //   public static ActiveMQBuffer getBodyBuffer(Message message) {
+   //      return message.getBodyBuffer();
+   //   }
 
    public static byte[] getJMSCorrelationIDAsBytes(Message message) {
       Object obj = message.getObjectProperty(CORRELATIONID_HEADER_NAME);
 
       if (obj instanceof byte[]) {
          return (byte[]) obj;
-      }
-      else {
+      } else {
          return null;
       }
    }
@@ -77,8 +76,7 @@ public class MessageUtil {
 
       if (ss != null) {
          return ss.toString();
-      }
-      else {
+      } else {
          return null;
       }
    }
@@ -94,8 +92,7 @@ public class MessageUtil {
    public static void setJMSCorrelationID(Message message, final String correlationID) {
       if (correlationID == null) {
          message.removeProperty(CORRELATIONID_HEADER_NAME);
-      }
-      else {
+      } else {
          message.putStringProperty(CORRELATIONID_HEADER_NAME, new SimpleString(correlationID));
       }
    }
@@ -103,8 +100,7 @@ public class MessageUtil {
    public static String getJMSCorrelationID(Message message) {
       try {
          return message.getStringProperty(CORRELATIONID_HEADER_NAME);
-      }
-      catch (ActiveMQPropertyConversionException e) {
+      } catch (ActiveMQPropertyConversionException e) {
          return null;
       }
    }
@@ -113,24 +109,36 @@ public class MessageUtil {
       return message.getSimpleStringProperty(REPLYTO_HEADER_NAME);
    }
 
-   public static void setJMSReplyTo(Message message, final SimpleString dest) {
-
+   public static void setJMSReplyTo(Message message, final String dest) {
       if (dest == null) {
          message.removeProperty(REPLYTO_HEADER_NAME);
+      } else {
+         message.putStringProperty(REPLYTO_HEADER_NAME, dest);
       }
-      else {
+   }
 
+   public static void setJMSReplyTo(Message message, final SimpleString dest) {
+      if (dest == null) {
+         message.removeProperty(REPLYTO_HEADER_NAME);
+      } else {
          message.putStringProperty(REPLYTO_HEADER_NAME, dest);
       }
    }
 
    public static void clearProperties(Message message) {
+      /**
+       * JavaDoc for this method states:
+       *    Clears a message's properties.
+       *    The message's header fields and body are not cleared.
+       *
+       * Since the {@code Message.HDR_ROUTING_TYPE} is used for the JMSDestination header it isn't cleared
+       */
 
       List<SimpleString> toRemove = new ArrayList<>();
 
       for (SimpleString propName : message.getPropertyNames()) {
-         if (!propName.startsWith(JMS) || propName.startsWith(JMSX) ||
-            propName.startsWith(JMS_)) {
+         if ((!propName.startsWith(JMS) || propName.startsWith(JMSX) ||
+            propName.startsWith(JMS_)) && !propName.equals(Message.HDR_ROUTING_TYPE)) {
             toRemove.add(propName);
          }
       }
@@ -145,7 +153,8 @@ public class MessageUtil {
 
       for (SimpleString propName : message.getPropertyNames()) {
          if ((!propName.startsWith(JMS) || propName.startsWith(JMSX) ||
-            propName.startsWith(JMS_)) && !propName.startsWith(CONNECTION_ID_PROPERTY_NAME)) {
+            propName.startsWith(JMS_)) && !propName.startsWith(CONNECTION_ID_PROPERTY_NAME) && !propName.equals(Message.HDR_ROUTING_TYPE) &&
+            !propName.startsWith(Message.HDR_ROUTE_TO_IDS)) {
             set.add(propName.toString());
          }
       }

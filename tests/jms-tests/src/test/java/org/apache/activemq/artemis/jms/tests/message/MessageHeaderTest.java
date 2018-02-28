@@ -16,12 +16,6 @@
  */
 package org.apache.activemq.artemis.jms.tests.message;
 
-import java.io.File;
-import java.io.Serializable;
-import java.util.Enumeration;
-import java.util.HashSet;
-import java.util.Set;
-
 import javax.jms.BytesMessage;
 import javax.jms.DeliveryMode;
 import javax.jms.Destination;
@@ -36,6 +30,12 @@ import javax.jms.TextMessage;
 import javax.transaction.xa.XAException;
 import javax.transaction.xa.XAResource;
 import javax.transaction.xa.Xid;
+import java.io.File;
+import java.io.Serializable;
+import java.util.EnumSet;
+import java.util.Enumeration;
+import java.util.HashSet;
+import java.util.Set;
 
 import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
 import org.apache.activemq.artemis.api.core.ActiveMQException;
@@ -50,6 +50,7 @@ import org.apache.activemq.artemis.api.core.client.SendAcknowledgementHandler;
 import org.apache.activemq.artemis.api.core.client.SessionFailureListener;
 import org.apache.activemq.artemis.core.client.impl.ClientMessageImpl;
 import org.apache.activemq.artemis.core.remoting.FailureListener;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.jms.client.ActiveMQBytesMessage;
 import org.apache.activemq.artemis.jms.client.ActiveMQMapMessage;
 import org.apache.activemq.artemis.jms.client.ActiveMQMessage;
@@ -189,8 +190,7 @@ public class MessageHeaderTest extends MessageHeaderTestBase {
       try {
          m1.setObjectProperty("myIllegal", new Object());
          ProxyAssertSupport.fail();
-      }
-      catch (javax.jms.MessageFormatException e) {
+      } catch (javax.jms.MessageFormatException e) {
       }
 
       queueProducer.send(m1);
@@ -212,57 +212,49 @@ public class MessageHeaderTest extends MessageHeaderTestBase {
       try {
          m2.setBooleanProperty("myBool", myBool);
          ProxyAssertSupport.fail();
-      }
-      catch (MessageNotWriteableException e) {
+      } catch (MessageNotWriteableException e) {
       }
 
       try {
          m2.setByteProperty("myByte", myByte);
          ProxyAssertSupport.fail();
-      }
-      catch (MessageNotWriteableException e) {
+      } catch (MessageNotWriteableException e) {
       }
 
       try {
          m2.setShortProperty("myShort", myShort);
          ProxyAssertSupport.fail();
-      }
-      catch (MessageNotWriteableException e) {
+      } catch (MessageNotWriteableException e) {
       }
 
       try {
          m2.setIntProperty("myInt", myInt);
          ProxyAssertSupport.fail();
-      }
-      catch (MessageNotWriteableException e) {
+      } catch (MessageNotWriteableException e) {
       }
 
       try {
          m2.setLongProperty("myLong", myLong);
          ProxyAssertSupport.fail();
-      }
-      catch (MessageNotWriteableException e) {
+      } catch (MessageNotWriteableException e) {
       }
 
       try {
          m2.setFloatProperty("myFloat", myFloat);
          ProxyAssertSupport.fail();
-      }
-      catch (MessageNotWriteableException e) {
+      } catch (MessageNotWriteableException e) {
       }
 
       try {
          m2.setDoubleProperty("myDouble", myDouble);
          ProxyAssertSupport.fail();
-      }
-      catch (MessageNotWriteableException e) {
+      } catch (MessageNotWriteableException e) {
       }
 
       try {
          m2.setStringProperty("myString", myString);
          ProxyAssertSupport.fail();
-      }
-      catch (MessageNotWriteableException e) {
+      } catch (MessageNotWriteableException e) {
       }
 
       ProxyAssertSupport.assertTrue(m2.propertyExists("myBool"));
@@ -284,7 +276,7 @@ public class MessageHeaderTest extends MessageHeaderTestBase {
          propNames.add(propName);
       }
 
-      ProxyAssertSupport.assertEquals(9, propNames.size());
+      ProxyAssertSupport.assertTrue(propNames.size() >= 9);
 
       ProxyAssertSupport.assertTrue(propNames.contains("myBool"));
       ProxyAssertSupport.assertTrue(propNames.contains("myByte"));
@@ -304,43 +296,37 @@ public class MessageHeaderTest extends MessageHeaderTestBase {
       try {
          m2.getByteProperty("myBool");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       try {
          m2.getShortProperty("myBool");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       try {
          m2.getIntProperty("myBool");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       try {
          m2.getLongProperty("myBool");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       try {
          m2.getFloatProperty("myBool");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       try {
          m2.getDoubleProperty("myBool");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       // byte property can be read as short, int, long or String
@@ -353,22 +339,19 @@ public class MessageHeaderTest extends MessageHeaderTestBase {
       try {
          m2.getBooleanProperty("myByte");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       try {
          m2.getFloatProperty("myByte");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       try {
          m2.getDoubleProperty("myByte");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       // short property can be read as int, long or String
@@ -380,29 +363,25 @@ public class MessageHeaderTest extends MessageHeaderTestBase {
       try {
          m2.getByteProperty("myShort");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       try {
          m2.getBooleanProperty("myShort");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       try {
          m2.getFloatProperty("myShort");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       try {
          m2.getDoubleProperty("myShort");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       // int property can be read as long or String
@@ -413,36 +392,31 @@ public class MessageHeaderTest extends MessageHeaderTestBase {
       try {
          m2.getShortProperty("myInt");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       try {
          m2.getByteProperty("myInt");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       try {
          m2.getBooleanProperty("myInt");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       try {
          m2.getFloatProperty("myInt");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       try {
          m2.getDoubleProperty("myInt");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       // long property can be read as String
@@ -452,43 +426,37 @@ public class MessageHeaderTest extends MessageHeaderTestBase {
       try {
          m2.getIntProperty("myLong");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       try {
          m2.getShortProperty("myLong");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       try {
          m2.getByteProperty("myLong");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       try {
          m2.getBooleanProperty("myLong");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       try {
          m2.getFloatProperty("myLong");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       try {
          m2.getDoubleProperty("myLong");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       // float property can be read as double or String
@@ -499,36 +467,31 @@ public class MessageHeaderTest extends MessageHeaderTestBase {
       try {
          m2.getIntProperty("myFloat");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       try {
          m2.getShortProperty("myFloat");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       try {
          m2.getLongProperty("myFloat");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       try {
          m2.getByteProperty("myFloat");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       try {
          m2.getBooleanProperty("myFloat");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       // double property can be read as String
@@ -538,43 +501,37 @@ public class MessageHeaderTest extends MessageHeaderTestBase {
       try {
          m2.getFloatProperty("myDouble");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       try {
          m2.getIntProperty("myDouble");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       try {
          m2.getShortProperty("myDouble");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       try {
          m2.getByteProperty("myDouble");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       try {
          m2.getBooleanProperty("myDouble");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       try {
          m2.getFloatProperty("myDouble");
          ProxyAssertSupport.fail();
-      }
-      catch (MessageFormatException e) {
+      } catch (MessageFormatException e) {
       }
 
       m2.clearProperties();
@@ -609,38 +566,32 @@ public class MessageHeaderTest extends MessageHeaderTestBase {
       try {
          m3.getByteProperty("myIllegal");
          ProxyAssertSupport.fail();
-      }
-      catch (NumberFormatException e) {
+      } catch (NumberFormatException e) {
       }
       try {
          m3.getShortProperty("myIllegal");
          ProxyAssertSupport.fail();
-      }
-      catch (NumberFormatException e) {
+      } catch (NumberFormatException e) {
       }
       try {
          m3.getIntProperty("myIllegal");
          ProxyAssertSupport.fail();
-      }
-      catch (NumberFormatException e) {
+      } catch (NumberFormatException e) {
       }
       try {
          m3.getLongProperty("myIllegal");
          ProxyAssertSupport.fail();
-      }
-      catch (NumberFormatException e) {
+      } catch (NumberFormatException e) {
       }
       try {
          m3.getFloatProperty("myIllegal");
          ProxyAssertSupport.fail();
-      }
-      catch (NumberFormatException e) {
+      } catch (NumberFormatException e) {
       }
       try {
          m3.getDoubleProperty("myIllegal");
          ProxyAssertSupport.fail();
-      }
-      catch (NumberFormatException e) {
+      } catch (NumberFormatException e) {
       }
    }
 
@@ -872,23 +823,29 @@ public class MessageHeaderTest extends MessageHeaderTestBase {
                               final boolean durable) throws ActiveMQException {
       }
 
-      public void createQueue(final SimpleString address,
-                              final SimpleString queueName,
-                              final boolean durable,
-                              final boolean temporary) throws ActiveMQException {
-      }
-
-      public void createQueue(final String address,
-                              final String queueName,
-                              final boolean durable,
-                              final boolean temporary) throws ActiveMQException {
-      }
-
       @Override
       public void createQueue(final String address,
                               final String queueName,
                               final String filterString,
                               final boolean durable) throws ActiveMQException {
+      }
+
+      @Override
+      public void createQueue(SimpleString address,
+                              SimpleString queueName,
+                              SimpleString filter,
+                              boolean durable,
+                              boolean autoCreated) throws ActiveMQException {
+
+      }
+
+      @Override
+      public void createQueue(String address,
+                              String queueName,
+                              String filter,
+                              boolean durable,
+                              boolean autoCreated) throws ActiveMQException {
+
       }
 
       @Override
@@ -910,6 +867,269 @@ public class MessageHeaderTest extends MessageHeaderTestBase {
       public void createTemporaryQueue(final String address,
                                        final String queueName,
                                        final String filter) throws ActiveMQException {
+      }
+
+      /**
+       * Creates a <em>non-temporary</em> queue.
+       *
+       * @param address     the queue will be bound to this address
+       * @param routingType the delivery mode for this queue, MULTICAST or ANYCAST
+       * @param queueName   the name of the queue
+       * @param durable     whether the queue is durable or not
+       * @throws ActiveMQException in an exception occurs while creating the queue
+       */
+      @Override
+      public void createQueue(SimpleString address, RoutingType routingType, SimpleString queueName, boolean durable) throws ActiveMQException {
+
+      }
+
+      /**
+       * Creates a transient queue. A queue that will exist as long as there are consumers. When the last consumer is closed the queue will be deleted
+       * <p>
+       * Notice: you will get an exception if the address or the filter doesn't match to an already existent queue
+       *
+       * @param address     the queue will be bound to this address
+       * @param routingType the delivery mode for this queue, MULTICAST or ANYCAST
+       * @param queueName   the name of the queue
+       * @param durable     if the queue is durable
+       * @throws ActiveMQException in an exception occurs while creating the queue
+       */
+      @Override
+      public void createSharedQueue(SimpleString address, RoutingType routingType, SimpleString queueName, boolean durable) throws ActiveMQException {
+
+      }
+
+      /**
+       * Creates a transient queue. A queue that will exist as long as there are consumers. When the last consumer is closed the queue will be deleted
+       * <p>
+       * Notice: you will get an exception if the address or the filter doesn't match to an already existent queue
+       *
+       * @param address     the queue will be bound to this address
+       * @param routingType the delivery mode for this queue, MULTICAST or ANYCAST
+       * @param queueName   the name of the queue
+       * @param filter      whether the queue is durable or not
+       * @param durable     if the queue is durable
+       * @throws ActiveMQException in an exception occurs while creating the queue
+       */
+      @Override
+      public void createSharedQueue(SimpleString address, RoutingType routingType, SimpleString queueName, SimpleString filter,
+                                    boolean durable) throws ActiveMQException {
+
+      }
+
+      @Override
+      public void createSharedQueue(SimpleString address, RoutingType routingType, SimpleString queueName, SimpleString filter,
+                                    boolean durable, Integer maxConsumers, Boolean purgeOnNoConsumers, Boolean exclusive, Boolean lastValue) throws ActiveMQException {
+
+      }
+
+      /**
+       * Creates a <em>non-temporary</em> queue.
+       *
+       * @param address     the queue will be bound to this address
+       * @param routingType the delivery mode for this queue, MULTICAST or ANYCAST
+       * @param queueName   the name of the queue
+       * @param durable     whether the queue is durable or not
+       * @throws ActiveMQException in an exception occurs while creating the queue
+       */
+      @Override
+      public void createQueue(String address, RoutingType routingType, String queueName, boolean durable) throws ActiveMQException {
+
+      }
+
+      /**
+       * Creates a <em>non-temporary</em> queue <em>non-durable</em> queue.
+       *
+       * @param address     the queue will be bound to this address
+       * @param routingType the delivery mode for this queue, MULTICAST or ANYCAST
+       * @param queueName   the name of the queue
+       * @throws ActiveMQException in an exception occurs while creating the queue
+       */
+      @Override
+      public void createQueue(String address, RoutingType routingType, String queueName) throws ActiveMQException {
+
+      }
+
+      /**
+       * Creates a <em>non-temporary</em> queue <em>non-durable</em> queue.
+       *
+       * @param address     the queue will be bound to this address
+       * @param routingType the delivery mode for this queue, MULTICAST or ANYCAST
+       * @param queueName   the name of the queue
+       * @throws ActiveMQException in an exception occurs while creating the queue
+       */
+      @Override
+      public void createQueue(SimpleString address, RoutingType routingType, SimpleString queueName) throws ActiveMQException {
+
+      }
+
+      /**
+       * Creates a <em>non-temporary</em> queue.
+       *
+       * @param address     the queue will be bound to this address
+       * @param routingType the delivery mode for this queue, MULTICAST or ANYCAST
+       * @param queueName   the name of the queue
+       * @param filter      only messages which match this filter will be put in the queue
+       * @param durable     whether the queue is durable or not
+       * @throws ActiveMQException in an exception occurs while creating the queue
+       */
+      @Override
+      public void createQueue(SimpleString address, RoutingType routingType, SimpleString queueName, SimpleString filter,
+                              boolean durable) throws ActiveMQException {
+
+      }
+
+      /**
+       * Creates a <em>non-temporary</em>queue.
+       *
+       * @param address     the queue will be bound to this address
+       * @param routingType the delivery mode for this queue, MULTICAST or ANYCAST
+       * @param queueName   the name of the queue
+       * @param filter      only messages which match this filter will be put in the queue
+       * @param durable     whether the queue is durable or not
+       * @throws ActiveMQException in an exception occurs while creating the queue
+       */
+      @Override
+      public void createQueue(String address, RoutingType routingType, String queueName, String filter, boolean durable) throws ActiveMQException {
+
+      }
+
+      /**
+       * Creates a <em>non-temporary</em> queue.
+       *
+       * @param address     the queue will be bound to this address
+       * @param routingType the delivery mode for this queue, MULTICAST or ANYCAST
+       * @param queueName   the name of the queue
+       * @param filter      only messages which match this filter will be put in the queue
+       * @param durable     whether the queue is durable or not
+       * @param autoCreated whether to mark this queue as autoCreated or not
+       * @throws ActiveMQException in an exception occurs while creating the queue
+       */
+      @Override
+      public void createQueue(SimpleString address, RoutingType routingType, SimpleString queueName, SimpleString filter,
+                              boolean durable,
+                              boolean autoCreated) throws ActiveMQException {
+
+      }
+
+      @Override
+      public void createQueue(SimpleString address,
+                              RoutingType routingType,
+                              SimpleString queueName,
+                              SimpleString filter,
+                              boolean durable,
+                              boolean autoCreated,
+                              int maxConsumers,
+                              boolean purgeOnNoConsumers) throws ActiveMQException {
+
+      }
+
+      @Override
+      public void createQueue(SimpleString address, RoutingType routingType, SimpleString queueName, SimpleString filter, boolean durable,
+                              boolean autoCreated, int maxConsumers, boolean purgeOnNoConsumers, Boolean exclusive, Boolean lastValue)
+         throws ActiveMQException {
+
+      }
+
+      /**
+       * Creates a <em>non-temporary</em>queue.
+       *
+       * @param address     the queue will be bound to this address
+       * @param routingType the delivery mode for this queue, MULTICAST or ANYCAST
+       * @param queueName   the name of the queue
+       * @param filter      only messages which match this filter will be put in the queue
+       * @param durable     whether the queue is durable or not
+       * @param autoCreated whether to mark this queue as autoCreated or not
+       * @throws ActiveMQException in an exception occurs while creating the queue
+       */
+      @Override
+      public void createQueue(String address, RoutingType routingType, String queueName, String filter,
+                              boolean durable,
+                              boolean autoCreated) throws ActiveMQException {
+
+      }
+
+      @Override
+      public void createQueue(String address,
+                              RoutingType routingType,
+                              String queueName,
+                              String filter,
+                              boolean durable,
+                              boolean autoCreated,
+                              int maxConsumers,
+                              boolean purgeOnNoConsumers) throws ActiveMQException {
+
+      }
+
+      @Override
+      public void createQueue(String address, RoutingType routingType, String queueName, String filter, boolean durable,
+                              boolean autoCreated,
+                              int maxConsumers, boolean purgeOnNoConsumers, Boolean exclusive, Boolean lastValue) throws ActiveMQException {
+
+      }
+
+      /**
+       * Creates a <em>temporary</em> queue.
+       *
+       * @param address     the queue will be bound to this address
+       * @param routingType the delivery mode for this queue, MULTICAST or ANYCAST
+       * @param queueName   the name of the queue
+       * @throws ActiveMQException in an exception occurs while creating the queue
+       */
+      @Override
+      public void createTemporaryQueue(SimpleString address, RoutingType routingType, SimpleString queueName) throws ActiveMQException {
+
+      }
+
+      /**
+       * Creates a <em>temporary</em> queue.
+       *
+       * @param address     the queue will be bound to this address
+       * @param routingType the delivery mode for this queue, MULTICAST or ANYCAST
+       * @param queueName   the name of the queue
+       * @throws ActiveMQException in an exception occurs while creating the queue
+       */
+      @Override
+      public void createTemporaryQueue(String address, RoutingType routingType, String queueName) throws ActiveMQException {
+
+      }
+
+      @Override
+      public void createTemporaryQueue(SimpleString address, RoutingType routingType, SimpleString queueName, SimpleString filter,
+                                       int maxConsumers, boolean purgeOnNoConsumers, Boolean exclusive, Boolean lastValue)
+         throws ActiveMQException {
+
+      }
+
+      /**
+       * Creates a <em>temporary</em> queue with a filter.
+       *
+       * @param address     the queue will be bound to this address
+       * @param routingType the delivery mode for this queue, MULTICAST or ANYCAST
+       * @param queueName   the name of the queue
+       * @param filter      only messages which match this filter will be put in the queue
+       * @throws ActiveMQException in an exception occurs while creating the queue
+       */
+      @Override
+      public void createTemporaryQueue(SimpleString address,
+                                       RoutingType routingType,
+                                       SimpleString queueName,
+                                       SimpleString filter) throws ActiveMQException {
+
+      }
+
+      /**
+       * Creates a <em>temporary</em> queue with a filter.
+       *
+       * @param address     the queue will be bound to this address
+       * @param routingType the delivery mode for this queue, MULTICAST or ANYCAST
+       * @param queueName   the name of the queue
+       * @param filter      only messages which match this filter will be put in the queue
+       * @throws ActiveMQException in an exception occurs while creating the queue
+       */
+      @Override
+      public void createTemporaryQueue(String address, RoutingType routingType, String queueName, String filter) throws ActiveMQException {
+
       }
 
       @Override
@@ -1084,6 +1304,10 @@ public class MessageHeaderTest extends MessageHeaderTestBase {
       }
 
       @Override
+      public void commit(boolean block) throws ActiveMQException {
+      }
+
+      @Override
       public boolean isRollbackOnly() {
 
          return false;
@@ -1173,6 +1397,39 @@ public class MessageHeaderTest extends MessageHeaderTestBase {
       @Override
       public int getVersion() {
          return 0;
+      }
+
+      @Override
+      public void createAddress(SimpleString address, EnumSet<RoutingType> routingTypes, boolean autoCreated) throws ActiveMQException {
+      }
+
+      /**
+       * Create Address with a single initial routing type
+       *
+       * @param address
+       * @param routingTypes
+       * @param autoCreated  @throws ActiveMQException
+       */
+      @Override
+      public void createAddress(SimpleString address,
+                                Set<RoutingType> routingTypes,
+                                boolean autoCreated) throws ActiveMQException {
+
+      }
+
+      /**
+       * Create Address with a single initial routing type
+       *
+       * @param address
+       * @param routingType
+       * @param autoCreated
+       * @throws ActiveMQException
+       */
+      @Override
+      public void createAddress(SimpleString address,
+                                RoutingType routingType,
+                                boolean autoCreated) throws ActiveMQException {
+
       }
 
       @Override

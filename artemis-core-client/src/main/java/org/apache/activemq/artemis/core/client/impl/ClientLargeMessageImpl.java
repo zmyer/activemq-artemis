@@ -59,10 +59,9 @@ public final class ClientLargeMessageImpl extends ClientMessageImpl implements C
 
    @Override
    public int getEncodeSize() {
-      if (bodyBuffer != null) {
+      if (writableBuffer != null) {
          return super.getEncodeSize();
-      }
-      else {
+      } else {
          return DataConstants.SIZE_INT + DataConstants.SIZE_INT + getHeadersAndPropertiesEncodeSize();
       }
    }
@@ -90,12 +89,11 @@ public final class ClientLargeMessageImpl extends ClientMessageImpl implements C
 
       try {
          checkBuffer();
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          throw new RuntimeException(e.getMessage(), e);
       }
 
-      return bodyBuffer;
+      return writableBuffer;
    }
 
    @Override
@@ -110,21 +108,19 @@ public final class ClientLargeMessageImpl extends ClientMessageImpl implements C
 
    @Override
    public void saveToOutputStream(final OutputStream out) throws ActiveMQException {
-      if (bodyBuffer != null) {
+      if (writableBuffer != null) {
          // The body was rebuilt on the client, so we need to behave as a regular message on this case
          super.saveToOutputStream(out);
-      }
-      else {
+      } else {
          largeMessageController.saveBuffer(out);
       }
    }
 
    @Override
    public ClientLargeMessageImpl setOutputStream(final OutputStream out) throws ActiveMQException {
-      if (bodyBuffer != null) {
+      if (writableBuffer != null) {
          super.setOutputStream(out);
-      }
-      else {
+      } else {
          largeMessageController.setOutputStream(out);
       }
 
@@ -133,36 +129,34 @@ public final class ClientLargeMessageImpl extends ClientMessageImpl implements C
 
    @Override
    public boolean waitOutputStreamCompletion(final long timeMilliseconds) throws ActiveMQException {
-      if (bodyBuffer != null) {
+      if (writableBuffer != null) {
          return super.waitOutputStreamCompletion(timeMilliseconds);
-      }
-      else {
+      } else {
          return largeMessageController.waitCompletion(timeMilliseconds);
       }
    }
 
    @Override
    public void discardBody() {
-      if (bodyBuffer != null) {
+      if (writableBuffer != null) {
          super.discardBody();
-      }
-      else {
+      } else {
          largeMessageController.discardUnusedPackets();
       }
    }
 
    private void checkBuffer() throws ActiveMQException {
-      if (bodyBuffer == null) {
+      if (writableBuffer == null) {
 
          long bodySize = this.largeMessageSize + BODY_OFFSET;
          if (bodySize > Integer.MAX_VALUE) {
             bodySize = Integer.MAX_VALUE;
          }
-         createBody((int) bodySize);
+         initBuffer((int) bodySize);
 
-         bodyBuffer = new ResetLimitWrappedActiveMQBuffer(BODY_OFFSET, buffer, this);
+         writableBuffer = new ResetLimitWrappedActiveMQBuffer(BODY_OFFSET, buffer.duplicate(), this);
 
-         largeMessageController.saveBuffer(new ActiveMQOutputStream(bodyBuffer));
+         largeMessageController.saveBuffer(new ActiveMQOutputStream(writableBuffer));
       }
    }
 
@@ -184,7 +178,7 @@ public final class ClientLargeMessageImpl extends ClientMessageImpl implements C
 
    public void retrieveExistingData(ClientMessageInternal clMessage) {
       this.messageID = clMessage.getMessageID();
-      this.address = clMessage.getAddress();
+      this.address = clMessage.getAddressSimpleString();
       this.setUserID(clMessage.getUserID());
       this.setFlowControlSize(clMessage.getFlowControlSize());
       this.setDeliveryCount(clMessage.getDeliveryCount());

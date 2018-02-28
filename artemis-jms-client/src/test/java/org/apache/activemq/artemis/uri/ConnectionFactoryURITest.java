@@ -90,18 +90,15 @@ public class ConnectionFactoryURITest {
 
       TransportConfiguration configuration = new TransportConfiguration(NettyConnector.class.getName(), params);
 
-
       ActiveMQConnectionFactory factory = ActiveMQJMSClient.createConnectionFactoryWithHA(JMSFactoryType.CF, configuration);
 
       URI uri = factory.toURI();
 
       ActiveMQConnectionFactory newFactory = ActiveMQJMSClient.createConnectionFactory(uri.toString(), "somefactory");
 
-
-      TransportConfiguration[] initialConnectors = ((ServerLocatorImpl)newFactory.getServerLocator()).getInitialConnectors();
+      TransportConfiguration[] initialConnectors = ((ServerLocatorImpl) newFactory.getServerLocator()).getInitialConnectors();
 
       Assert.assertEquals(1, initialConnectors.length);
-
 
       Assert.assertEquals(BROKEN_PROPERTY, initialConnectors[0].getParams().get(TransportConstants.LOCAL_ADDRESS_PROP_NAME).toString());
    }
@@ -117,8 +114,7 @@ public class ConnectionFactoryURITest {
       ByteArrayOutputStream baos = new ByteArrayOutputStream();
       try (ObjectOutputStream outStream = new ObjectOutputStream(baos)) {
          outStream.writeObject(factory);
-      }
-      finally {
+      } finally {
          baos.close();
       }
       try (ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
@@ -404,6 +400,18 @@ public class ConnectionFactoryURITest {
       checkEquals(bean, connectionFactoryWithHA, factory);
    }
 
+   @Test
+   public void testCacheDestinations() throws Exception {
+      ActiveMQConnectionFactory factory = parser.newObject(new URI("tcp://localhost:3030"), null);
+
+      Assert.assertFalse(factory.isCacheDestinations());
+
+      factory = parser.newObject(new URI("tcp://localhost:3030?cacheDestinations=true"), null);
+
+      Assert.assertTrue(factory.isCacheDestinations());
+
+   }
+
    private void populate(StringBuilder sb,
                          BeanUtilsBean bean,
                          ActiveMQConnectionFactory factory) throws IllegalAccessException, InvocationTargetException {
@@ -418,18 +426,15 @@ public class ConnectionFactoryURITest {
                String value = RandomUtil.randomString();
                bean.setProperty(factory, descriptor.getName(), value);
                sb.append("&").append(descriptor.getName()).append("=").append(value);
-            }
-            else if (descriptor.getPropertyType() == int.class) {
+            } else if (descriptor.getPropertyType() == int.class) {
                int value = RandomUtil.randomPositiveInt();
                bean.setProperty(factory, descriptor.getName(), value);
                sb.append("&").append(descriptor.getName()).append("=").append(value);
-            }
-            else if (descriptor.getPropertyType() == long.class) {
+            } else if (descriptor.getPropertyType() == long.class) {
                long value = RandomUtil.randomPositiveLong();
                bean.setProperty(factory, descriptor.getName(), value);
                sb.append("&").append(descriptor.getName()).append("=").append(value);
-            }
-            else if (descriptor.getPropertyType() == double.class) {
+            } else if (descriptor.getPropertyType() == double.class) {
                double value = RandomUtil.randomDouble();
                bean.setProperty(factory, descriptor.getName(), value);
                sb.append("&").append(descriptor.getName()).append("=").append(value);

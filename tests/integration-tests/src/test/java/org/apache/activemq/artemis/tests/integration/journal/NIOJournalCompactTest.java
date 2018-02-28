@@ -29,35 +29,40 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.LockSupport;
 
 import org.apache.activemq.artemis.api.core.Pair;
-import org.apache.activemq.artemis.core.io.IOCallback;
 import org.apache.activemq.artemis.core.config.Configuration;
-import org.apache.activemq.artemis.core.journal.PreparedTransactionInfo;
-import org.apache.activemq.artemis.core.journal.RecordInfo;
+import org.apache.activemq.artemis.core.io.IOCallback;
 import org.apache.activemq.artemis.core.io.SequentialFile;
 import org.apache.activemq.artemis.core.io.SequentialFileFactory;
+import org.apache.activemq.artemis.core.io.nio.NIOSequentialFileFactory;
+import org.apache.activemq.artemis.core.journal.PreparedTransactionInfo;
+import org.apache.activemq.artemis.core.journal.RecordInfo;
 import org.apache.activemq.artemis.core.journal.impl.AbstractJournalUpdateTask;
 import org.apache.activemq.artemis.core.journal.impl.JournalCompactor;
 import org.apache.activemq.artemis.core.journal.impl.JournalFile;
 import org.apache.activemq.artemis.core.journal.impl.JournalFileImpl;
 import org.apache.activemq.artemis.core.journal.impl.JournalImpl;
-import org.apache.activemq.artemis.core.io.nio.NIOSequentialFileFactory;
+import org.apache.activemq.artemis.core.message.impl.CoreMessage;
 import org.apache.activemq.artemis.core.persistence.impl.journal.JournalStorageManager;
 import org.apache.activemq.artemis.core.persistence.impl.journal.OperationContextImpl;
-import org.apache.activemq.artemis.core.server.impl.ServerMessageImpl;
 import org.apache.activemq.artemis.tests.unit.core.journal.impl.JournalImplTestBase;
 import org.apache.activemq.artemis.tests.unit.core.journal.impl.fakes.SimpleEncoding;
 import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.apache.activemq.artemis.utils.ActiveMQThreadFactory;
 import org.apache.activemq.artemis.utils.IDGenerator;
-import org.apache.activemq.artemis.utils.OrderedExecutorFactory;
+import org.apache.activemq.artemis.utils.actors.OrderedExecutorFactory;
 import org.apache.activemq.artemis.utils.SimpleIDGenerator;
+import org.apache.activemq.artemis.utils.critical.EmptyCriticalAnalyzer;
+import org.jboss.logging.Logger;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Test;
 
 public class NIOJournalCompactTest extends JournalImplTestBase {
+
+   private static final Logger logger = Logger.getLogger(NIOJournalCompactTest.class);
 
    private static final int NUMBER_OF_RECORDS = 1000;
 
@@ -479,7 +484,7 @@ public class NIOJournalCompactTest extends JournalImplTestBase {
          performNonTransactionalDelete = false;
       }
 
-      setup(2, 60 * 1024, false);
+      setup(2, 60 * 4096, false);
 
       ArrayList<Long> liveIDs = new ArrayList<>();
 
@@ -495,8 +500,7 @@ public class NIOJournalCompactTest extends JournalImplTestBase {
                                                     final Pair<String, String> pair) throws Exception {
             if (createControlFile) {
                return super.createControlFile(files, newFiles, pair);
-            }
-            else {
+            } else {
                throw new IllegalStateException("Simulating a crash during compact creation");
             }
          }
@@ -522,8 +526,7 @@ public class NIOJournalCompactTest extends JournalImplTestBase {
             System.out.println("Waiting on Compact");
             try {
                ActiveMQTestBase.waitForLatch(latchWait);
-            }
-            catch (InterruptedException e) {
+            } catch (InterruptedException e) {
                e.printStackTrace();
             }
             System.out.println("Done");
@@ -575,8 +578,7 @@ public class NIOJournalCompactTest extends JournalImplTestBase {
          for (int i = 0; i < NIOJournalCompactTest.NUMBER_OF_RECORDS; i++) {
             if (!(i % 10 == 0)) {
                delete(i);
-            }
-            else {
+            } else {
                liveIDs.add((long) i);
             }
          }
@@ -589,8 +591,7 @@ public class NIOJournalCompactTest extends JournalImplTestBase {
          public void run() {
             try {
                journal.testCompact();
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                e.printStackTrace();
             }
          }
@@ -626,8 +627,7 @@ public class NIOJournalCompactTest extends JournalImplTestBase {
          for (Long liveID : liveIDs) {
             if (count++ % 2 == 0) {
                update(liveID);
-            }
-            else {
+            } else {
                // A Total new transaction (that was created after the compact started) to update a record that is being
                // compacted
                updateTx(transactionID, liveID);
@@ -642,8 +642,7 @@ public class NIOJournalCompactTest extends JournalImplTestBase {
             if (count++ % 2 == 0) {
                System.out.println("Deleting no trans " + liveID);
                delete(liveID);
-            }
-            else {
+            } else {
                System.out.println("Deleting TX " + liveID);
                // A Total new transaction (that was created after the compact started) to delete a record that is being
                // compacted
@@ -672,8 +671,7 @@ public class NIOJournalCompactTest extends JournalImplTestBase {
                if (deleteTransactRecords) {
                   delete(tx.getB());
                }
-            }
-            else {
+            } else {
                rollback(tx.getA());
             }
          }
@@ -706,8 +704,7 @@ public class NIOJournalCompactTest extends JournalImplTestBase {
                if (deleteTransactRecords) {
                   delete(tx.getB());
                }
-            }
-            else {
+            } else {
                rollback(tx.getA());
             }
          }
@@ -720,6 +717,8 @@ public class NIOJournalCompactTest extends JournalImplTestBase {
       if (createControlFile && deleteControlFile && renameFilesAfterCompacting) {
          journal.testCompact();
       }
+
+      journal.flush();
 
       stopJournal();
       createJournal();
@@ -738,7 +737,6 @@ public class NIOJournalCompactTest extends JournalImplTestBase {
 
    @Test
    public void testCompactAddAndUpdateFollowedByADelete() throws Exception {
-
       setup(2, 60 * 1024, false);
 
       SimpleIDGenerator idGen = new SimpleIDGenerator(1000);
@@ -787,7 +785,97 @@ public class NIOJournalCompactTest extends JournalImplTestBase {
       createJournal();
       startJournal();
       loadAndCheck();
+   }
 
+   @Test
+   public void testLoopStressAppends() throws Exception {
+      for (int i = 0; i < 10; i++) {
+         logger.info("repetition " + i);
+         testStressAppends();
+         tearDown();
+         setUp();
+      }
+   }
+
+   @Test
+   public void testStressAppends() throws Exception {
+      setup(2, 60 * 1024, true);
+
+      final int NUMBER_OF_RECORDS = 200;
+
+      SimpleIDGenerator idGen = new SimpleIDGenerator(1000);
+
+      createJournal();
+      journal.setAutoReclaim(false);
+
+      startJournal();
+      load();
+
+      AtomicBoolean running = new AtomicBoolean(true);
+      Thread t = new Thread() {
+         @Override
+         public void run() {
+            while (running.get()) {
+               journal.testCompact();
+            }
+         }
+      };
+      t.start();
+
+
+      for (int i = 0; i < NUMBER_OF_RECORDS; i++) {
+         long tx = idGen.generateID();
+         addTx(tx, idGen.generateID());
+         LockSupport.parkNanos(1000);
+         commit(tx);
+      }
+
+
+      running.set(false);
+
+      t.join(50000);
+      if (t.isAlive()) {
+         t.interrupt();
+         Assert.fail("supposed to join thread");
+      }
+
+      stopJournal();
+      createJournal();
+      startJournal();
+      loadAndCheck();
+   }
+
+   @Test
+   public void testSimpleCommitCompactInBetween() throws Exception {
+      setup(2, 60 * 1024, false);
+
+      final int NUMBER_OF_RECORDS = 1;
+
+      SimpleIDGenerator idGen = new SimpleIDGenerator(1000);
+
+      createJournal();
+      journal.setAutoReclaim(false);
+
+      startJournal();
+      load();
+
+
+      for (int i = 0; i < NUMBER_OF_RECORDS; i++) {
+         long tx = idGen.generateID();
+         addTx(tx, idGen.generateID());
+         journal.testCompact();
+         journal.testCompact();
+         journal.testCompact();
+         journal.testCompact();
+         logger.info("going to commit");
+         commit(tx);
+      }
+
+
+      stopJournal();
+      createJournal();
+      startJournal();
+      loadAndCheck();
    }
 
    @Test
@@ -924,8 +1012,6 @@ public class NIOJournalCompactTest extends JournalImplTestBase {
       update(newRecord);
 
       journal.testCompact();
-
-      System.out.println("Debug after compact\n" + journal.debug());
 
       stopJournal();
       createJournal();
@@ -1618,8 +1704,9 @@ public class NIOJournalCompactTest extends JournalImplTestBase {
 
    }
 
+
    @Test
-   public void testStressDeletesNoSync() throws Exception {
+   public void testStressDeletesNoSync() throws Throwable {
       Configuration config = createBasicConfig().setJournalFileSize(100 * 1024).setJournalSyncNonTransactional(false).setJournalSyncTransactional(false).setJournalCompactMinFiles(0).setJournalCompactPercentage(0);
 
       final AtomicInteger errors = new AtomicInteger(0);
@@ -1630,124 +1717,153 @@ public class NIOJournalCompactTest extends JournalImplTestBase {
 
       final ExecutorService executor = Executors.newCachedThreadPool(ActiveMQThreadFactory.defaultThreadFactory());
 
+      final ExecutorService ioexecutor = Executors.newCachedThreadPool(ActiveMQThreadFactory.defaultThreadFactory());
+
       OrderedExecutorFactory factory = new OrderedExecutorFactory(executor);
+
+      OrderedExecutorFactory iofactory = new OrderedExecutorFactory(ioexecutor);
 
       final ExecutorService deleteExecutor = Executors.newCachedThreadPool(ActiveMQThreadFactory.defaultThreadFactory());
 
-      final JournalStorageManager storage = new JournalStorageManager(config, factory);
+      final JournalStorageManager storage = new JournalStorageManager(config, EmptyCriticalAnalyzer.getInstance(), factory, iofactory);
 
       storage.start();
-      storage.loadInternalOnly();
 
-      ((JournalImpl) storage.getMessageJournal()).setAutoReclaim(false);
-      final LinkedList<Long> survivingMsgs = new LinkedList<>();
+      try {
+         storage.loadInternalOnly();
 
-      Runnable producerRunnable = new Runnable() {
-         @Override
-         public void run() {
-            try {
-               while (running.get()) {
-                  final long[] values = new long[100];
-                  long tx = seqGenerator.incrementAndGet();
+         ((JournalImpl) storage.getMessageJournal()).setAutoReclaim(false);
+         final LinkedList<Long> survivingMsgs = new LinkedList<>();
 
-                  OperationContextImpl ctx = new OperationContextImpl(executor);
-                  storage.setContext(ctx);
+         Runnable producerRunnable = new Runnable() {
+            @Override
+            public void run() {
+               try {
+                  while (running.get()) {
+                     final long[] values = new long[100];
+                     long tx = seqGenerator.incrementAndGet();
 
-                  for (int i = 0; i < 100; i++) {
-                     long id = seqGenerator.incrementAndGet();
-                     values[i] = id;
+                     OperationContextImpl ctx = new OperationContextImpl(executor);
+                     storage.setContext(ctx);
 
-                     ServerMessageImpl message = new ServerMessageImpl(id, 100);
+                     for (int i = 0; i < 100; i++) {
+                        long id = seqGenerator.incrementAndGet();
+                        values[i] = id;
 
-                     message.getBodyBuffer().writeBytes(new byte[1024]);
+                        CoreMessage message = new CoreMessage(id, 100);
 
-                     storage.storeMessageTransactional(tx, message);
-                  }
-                  ServerMessageImpl message = new ServerMessageImpl(seqGenerator.incrementAndGet(), 100);
+                        message.getBodyBuffer().writeBytes(new byte[1024]);
 
-                  survivingMsgs.add(message.getMessageID());
-
-                  // This one will stay here forever
-                  storage.storeMessage(message);
-
-                  storage.commit(tx);
-
-                  ctx.executeOnCompletion(new IOCallback() {
-                     @Override
-                     public void onError(int errorCode, String errorMessage) {
+                        storage.storeMessageTransactional(tx, message);
                      }
+                     CoreMessage message = new CoreMessage(seqGenerator.incrementAndGet(), 100);
 
-                     @Override
-                     public void done() {
-                        deleteExecutor.execute(new Runnable() {
-                           @Override
-                           public void run() {
-                              try {
-                                 for (long messageID : values) {
-                                    storage.deleteMessage(messageID);
+                     survivingMsgs.add(message.getMessageID());
+
+                     logger.info("Going to store " + message);
+                     // This one will stay here forever
+                     storage.storeMessage(message);
+                     logger.info("message storeed " + message);
+
+                     logger.info("Going to commit " + tx);
+                     storage.commit(tx);
+                     logger.info("Committed " + tx);
+
+                     ctx.executeOnCompletion(new IOCallback() {
+                        @Override
+                        public void onError(int errorCode, String errorMessage) {
+                        }
+
+                        @Override
+                        public void done() {
+                           deleteExecutor.execute(new Runnable() {
+                              @Override
+                              public void run() {
+                                 try {
+                                    for (long messageID : values) {
+                                       storage.deleteMessage(messageID);
+                                    }
+                                 } catch (Throwable e) {
+                                    e.printStackTrace();
+                                    errors.incrementAndGet();
                                  }
-                              }
-                              catch (Exception e) {
-                                 e.printStackTrace();
-                                 errors.incrementAndGet();
-                              }
 
-                           }
-                        });
-                     }
-                  });
+                              }
+                           });
+                        }
+                     });
 
+                  }
+               } catch (Throwable e) {
+                  e.printStackTrace();
+                  errors.incrementAndGet();
                }
             }
-            catch (Throwable e) {
-               e.printStackTrace();
-               errors.incrementAndGet();
-            }
-         }
-      };
+         };
 
-      Runnable compressRunnable = new Runnable() {
-         @Override
-         public void run() {
-            try {
-               while (running.get()) {
-                  Thread.sleep(500);
-                  System.out.println("Compacting");
-                  ((JournalImpl) storage.getMessageJournal()).testCompact();
-                  ((JournalImpl) storage.getMessageJournal()).checkReclaimStatus();
+         Runnable compressRunnable = new Runnable() {
+            @Override
+            public void run() {
+               try {
+                  while (running.get()) {
+                     Thread.sleep(500);
+                     System.out.println("Compacting");
+                     ((JournalImpl) storage.getMessageJournal()).testCompact();
+                     ((JournalImpl) storage.getMessageJournal()).checkReclaimStatus();
+                  }
+               } catch (Throwable e) {
+                  e.printStackTrace();
+                  errors.incrementAndGet();
                }
-            }
-            catch (Throwable e) {
-               e.printStackTrace();
-               errors.incrementAndGet();
-            }
 
+            }
+         };
+
+         Thread producerThread = new Thread(producerRunnable);
+         producerThread.start();
+
+         Thread compactorThread = new Thread(compressRunnable);
+         compactorThread.start();
+
+         Thread.sleep(1000);
+
+         running.set(false);
+
+         producerThread.join();
+
+         compactorThread.join();
+
+         deleteExecutor.shutdown();
+
+         assertTrue("delete executor failted to terminate", deleteExecutor.awaitTermination(30, TimeUnit.SECONDS));
+
+         storage.stop();
+
+         executor.shutdown();
+
+         assertTrue("executor failed to terminate", executor.awaitTermination(30, TimeUnit.SECONDS));
+
+         ioexecutor.shutdown();
+
+         assertTrue("ioexecutor failed to terminate", ioexecutor.awaitTermination(30, TimeUnit.SECONDS));
+
+         Assert.assertEquals(0, errors.get());
+
+      } catch (Throwable e) {
+         e.printStackTrace();
+         throw e;
+      } finally {
+         try {
+            storage.stop();
+         } catch (Exception e) {
+            e.printStackTrace();
          }
-      };
 
-      Thread producerThread = new Thread(producerRunnable);
-      producerThread.start();
+         executor.shutdownNow();
+         deleteExecutor.shutdownNow();
+         ioexecutor.shutdownNow();
+      }
 
-      Thread compactorThread = new Thread(compressRunnable);
-      compactorThread.start();
-
-      Thread.sleep(1000);
-
-      running.set(false);
-
-      producerThread.join();
-
-      compactorThread.join();
-
-      storage.stop();
-
-      executor.shutdown();
-
-      assertTrue("executor terminated", executor.awaitTermination(10, TimeUnit.SECONDS));
-
-      deleteExecutor.shutdown();
-
-      assertTrue("delete executor terminated", deleteExecutor.awaitTermination(30, TimeUnit.SECONDS));
    }
 
    @Override

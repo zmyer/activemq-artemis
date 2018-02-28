@@ -37,7 +37,7 @@ public class QueueExample {
          // Step 1. Create an initial context to perform the JNDI lookup.
          initialContext = new InitialContext();
 
-         // Step 2. Perfom a lookup on the queue
+         // Step 2. Perform a lookup on the queue
          Queue queue = (Queue) initialContext.lookup("queue/exampleQueue");
 
          // Step 3. Perform a lookup on the Connection Factory
@@ -70,8 +70,7 @@ public class QueueExample {
          TextMessage messageReceived = (TextMessage) messageConsumer.receive(5000);
 
          System.out.println("Received message: " + messageReceived.getText());
-      }
-      finally {
+      } finally {
          // Step 12. Be sure to close our JMS resources!
          if (initialContext != null) {
             initialContext.close();

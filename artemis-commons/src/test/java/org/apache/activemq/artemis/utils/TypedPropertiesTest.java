@@ -18,9 +18,12 @@ package org.apache.activemq.artemis.utils;
 
 import java.util.Iterator;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
 import org.apache.activemq.artemis.api.core.ActiveMQBuffers;
 import org.apache.activemq.artemis.api.core.SimpleString;
+import org.apache.activemq.artemis.utils.collections.TypedProperties;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
@@ -41,8 +44,7 @@ public class TypedPropertiesTest {
             byte[] expectedBytes = (byte[]) expectedValue;
             byte[] actualBytes = (byte[]) actualValue;
             Assert.assertArrayEquals(expectedBytes, actualBytes);
-         }
-         else {
+         } else {
             Assert.assertEquals(expectedValue, actualValue);
          }
       }
@@ -188,12 +190,12 @@ public class TypedPropertiesTest {
       props.putSimpleStringProperty(keyToRemove, RandomUtil.randomSimpleString());
 
       ActiveMQBuffer buffer = ActiveMQBuffers.dynamicBuffer(1024);
-      props.encode(buffer);
+      props.encode(buffer.byteBuf());
 
       Assert.assertEquals(props.getEncodeSize(), buffer.writerIndex());
 
       TypedProperties decodedProps = new TypedProperties();
-      decodedProps.decode(buffer);
+      decodedProps.decode(buffer.byteBuf());
 
       TypedPropertiesTest.assertEqualsTypeProperties(props, decodedProps);
 
@@ -201,7 +203,7 @@ public class TypedPropertiesTest {
 
       // After removing a property, you should still be able to encode the Property
       props.removeProperty(keyToRemove);
-      props.encode(buffer);
+      props.encode(buffer.byteBuf());
 
       Assert.assertEquals(props.getEncodeSize(), buffer.writerIndex());
    }
@@ -211,12 +213,12 @@ public class TypedPropertiesTest {
       TypedProperties emptyProps = new TypedProperties();
 
       ActiveMQBuffer buffer = ActiveMQBuffers.dynamicBuffer(1024);
-      emptyProps.encode(buffer);
+      emptyProps.encode(buffer.byteBuf());
 
       Assert.assertEquals(props.getEncodeSize(), buffer.writerIndex());
 
       TypedProperties decodedProps = new TypedProperties();
-      decodedProps.decode(buffer);
+      decodedProps.decode(buffer.byteBuf());
 
       TypedPropertiesTest.assertEqualsTypeProperties(emptyProps, decodedProps);
    }
@@ -225,5 +227,32 @@ public class TypedPropertiesTest {
    public void setUp() throws Exception {
       props = new TypedProperties();
       key = RandomUtil.randomSimpleString();
+   }
+
+   @Test
+   public void testByteBufStringValuePool() {
+      final int capacity = 8;
+      final int chars = Integer.toString(capacity).length();
+      final TypedProperties.StringValue.ByteBufStringValuePool pool = new TypedProperties.StringValue.ByteBufStringValuePool(capacity, chars);
+      final int bytes = new SimpleString(Integer.toString(capacity)).sizeof();
+      final ByteBuf bb = Unpooled.buffer(bytes, bytes);
+      for (int i = 0; i < capacity; i++) {
+         final SimpleString s = new SimpleString(Integer.toString(i));
+         bb.resetWriterIndex();
+         SimpleString.writeSimpleString(bb, s);
+         bb.resetReaderIndex();
+         final TypedProperties.StringValue expectedPooled = pool.getOrCreate(bb);
+         bb.resetReaderIndex();
+         Assert.assertSame(expectedPooled, pool.getOrCreate(bb));
+      }
+   }
+
+   @Test
+   public void testByteBufStringValuePoolTooLong() {
+      final SimpleString tooLong = new SimpleString("aa");
+      final ByteBuf bb = Unpooled.buffer(tooLong.sizeof(), tooLong.sizeof());
+      SimpleString.writeSimpleString(bb, tooLong);
+      final TypedProperties.StringValue.ByteBufStringValuePool pool = new TypedProperties.StringValue.ByteBufStringValuePool(1, tooLong.length() - 1);
+      Assert.assertNotSame(pool.getOrCreate(bb), pool.getOrCreate(bb.resetReaderIndex()));
    }
 }

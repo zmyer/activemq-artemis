@@ -26,7 +26,6 @@ import java.util.Map;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInitializer;
-import io.netty.channel.ChannelOption;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.nio.NioEventLoopGroup;
@@ -43,29 +42,28 @@ import org.apache.activemq.artemis.api.core.ActiveMQExceptionType;
 import org.apache.activemq.artemis.api.core.ActiveMQNotConnectedException;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.api.core.TransportConfiguration;
+import org.apache.activemq.artemis.api.core.client.ActiveMQClient;
 import org.apache.activemq.artemis.api.core.client.ClientConsumer;
 import org.apache.activemq.artemis.api.core.client.ClientMessage;
 import org.apache.activemq.artemis.api.core.client.ClientProducer;
 import org.apache.activemq.artemis.api.core.client.ClientSession;
 import org.apache.activemq.artemis.api.core.client.ClientSessionFactory;
-import org.apache.activemq.artemis.api.core.client.ActiveMQClient;
 import org.apache.activemq.artemis.api.core.client.ServerLocator;
-import org.apache.activemq.artemis.core.remoting.impl.ssl.SSLSupport;
-import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.apache.activemq.artemis.core.config.Configuration;
 import org.apache.activemq.artemis.core.remoting.impl.netty.NettyAcceptor;
-import org.apache.activemq.artemis.core.remoting.impl.netty.PartialPooledByteBufAllocator;
 import org.apache.activemq.artemis.core.remoting.impl.netty.TransportConstants;
+import org.apache.activemq.artemis.core.remoting.impl.ssl.SSLSupport;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.core.server.ActiveMQServers;
 import org.apache.activemq.artemis.jms.client.ActiveMQTextMessage;
+import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
-import static io.netty.handler.codec.http.HttpHeaders.Names.UPGRADE;
+import static io.netty.handler.codec.http.HttpHeaderNames.UPGRADE;
 import static io.netty.handler.codec.http.HttpResponseStatus.SWITCHING_PROTOCOLS;
 import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
 import static org.apache.activemq.artemis.core.remoting.impl.netty.NettyConnector.MAGIC_NUMBER;
@@ -79,6 +77,7 @@ import static org.apache.activemq.artemis.tests.util.RandomUtil.randomString;
  */
 @RunWith(value = Parameterized.class)
 public class NettyConnectorWithHTTPUpgradeTest extends ActiveMQTestBase {
+
    private Boolean useSSL = false;
 
    @Parameterized.Parameters(name = "useSSL={0}")
@@ -92,7 +91,7 @@ public class NettyConnectorWithHTTPUpgradeTest extends ActiveMQTestBase {
 
    private static final SimpleString QUEUE = new SimpleString("NettyConnectorWithHTTPUpgradeTest");
 
-   private static final int HTTP_PORT = 8080;
+   private static final int HTTP_PORT = 8789;
 
    private Configuration conf;
    private ActiveMQServer server;
@@ -194,8 +193,7 @@ public class NettyConnectorWithHTTPUpgradeTest extends ActiveMQTestBase {
 
          // we shouldn't ever get here
          fail();
-      }
-      catch (Exception x) {
+      } catch (Exception x) {
          e = x;
       }
 
@@ -213,11 +211,9 @@ public class NettyConnectorWithHTTPUpgradeTest extends ActiveMQTestBase {
       final SSLContext context;
       if (useSSL) {
          context = SSLSupport.createContext("JKS", SERVER_SIDE_KEYSTORE, PASSWORD, null, null, null);
-      }
-      else {
+      } else {
          context = null;
       }
-      b.childOption(ChannelOption.ALLOCATOR, PartialPooledByteBufAllocator.INSTANCE);
       b.group(bossGroup, workerGroup).channel(NioServerSocketChannel.class).childHandler(new ChannelInitializer<SocketChannel>() {
          @Override
          protected void initChannel(SocketChannel ch) throws Exception {

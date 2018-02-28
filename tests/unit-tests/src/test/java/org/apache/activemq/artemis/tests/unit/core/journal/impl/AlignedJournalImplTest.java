@@ -16,13 +16,6 @@
  */
 package org.apache.activemq.artemis.tests.unit.core.journal.impl;
 
-import org.apache.activemq.artemis.tests.unit.core.journal.impl.fakes.FakeSequentialFileFactory;
-import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
-import org.junit.Before;
-import org.junit.After;
-
-import org.junit.Test;
-
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
@@ -32,18 +25,23 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.junit.Assert;
-
+import org.apache.activemq.artemis.core.io.SequentialFile;
+import org.apache.activemq.artemis.core.io.SequentialFileFactory;
 import org.apache.activemq.artemis.core.journal.EncodingSupport;
 import org.apache.activemq.artemis.core.journal.LoaderCallback;
 import org.apache.activemq.artemis.core.journal.PreparedTransactionInfo;
 import org.apache.activemq.artemis.core.journal.RecordInfo;
-import org.apache.activemq.artemis.core.io.SequentialFile;
-import org.apache.activemq.artemis.core.io.SequentialFileFactory;
 import org.apache.activemq.artemis.core.journal.TransactionFailureCallback;
 import org.apache.activemq.artemis.core.journal.impl.JournalImpl;
+import org.apache.activemq.artemis.junit.Wait;
 import org.apache.activemq.artemis.tests.unit.UnitTestLogger;
+import org.apache.activemq.artemis.tests.unit.core.journal.impl.fakes.FakeSequentialFileFactory;
 import org.apache.activemq.artemis.tests.unit.core.journal.impl.fakes.SimpleEncoding;
+import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
+import org.junit.After;
+import org.junit.Assert;
+import org.junit.Before;
+import org.junit.Test;
 
 public class AlignedJournalImplTest extends ActiveMQTestBase {
 
@@ -131,8 +129,7 @@ public class AlignedJournalImplTest extends ActiveMQTestBase {
             Assert.assertEquals("Position " + i, (byte) 2, buffer.get(i));
          }
 
-      }
-      catch (Exception ignored) {
+      } catch (Exception ignored) {
       }
    }
 
@@ -143,8 +140,7 @@ public class AlignedJournalImplTest extends ActiveMQTestBase {
       try {
          journalImpl = new JournalImpl(2000, 2, 2, 0, 0, factory, "tt", "tt", 1000);
          Assert.fail("Expected IllegalArgumentException");
-      }
-      catch (IllegalArgumentException ignored) {
+      } catch (IllegalArgumentException ignored) {
          // expected
       }
 
@@ -236,8 +232,7 @@ public class AlignedJournalImplTest extends ActiveMQTestBase {
             for (int j = 0; j < 5; j++) {
                Assert.assertEquals((byte) i, recordItem.data[j]);
             }
-         }
-         else {
+         } else {
             Assert.assertEquals((i - 10) * 100L, recordItem.id);
             Assert.assertEquals(i - 10, recordItem.getUserRecordType());
             Assert.assertTrue(recordItem.isUpdate);
@@ -377,12 +372,11 @@ public class AlignedJournalImplTest extends ActiveMQTestBase {
       Assert.assertEquals(0, transactions.size());
 
       try {
-         journalImpl.appendCommitRecord(1L, false);
+         journalImpl.appendCommitRecord(1L, true);
          // This was supposed to throw an exception, as the transaction was
          // forgotten (interrupted by a reload).
          Assert.fail("Supposed to throw exception");
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          UnitTestLogger.LOGGER.warn(e);
       }
 
@@ -426,12 +420,11 @@ public class AlignedJournalImplTest extends ActiveMQTestBase {
       Assert.assertEquals((Long) 78L, incompleteTransactions.get(1));
 
       try {
-         journalImpl.appendCommitRecord(77L, false);
+         journalImpl.appendCommitRecord(77L, true);
          // This was supposed to throw an exception, as the transaction was
          // forgotten (interrupted by a reload).
          Assert.fail("Supposed to throw exception");
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          UnitTestLogger.LOGGER.debug("Expected exception " + e, e);
       }
 
@@ -442,9 +435,6 @@ public class AlignedJournalImplTest extends ActiveMQTestBase {
 
       Assert.assertEquals(0, records.size());
       Assert.assertEquals(0, transactions.size());
-
-      Assert.assertEquals(2, factory.listFiles("tt").size());
-
    }
 
    @Test
@@ -540,6 +530,8 @@ public class AlignedJournalImplTest extends ActiveMQTestBase {
 
       journalImpl.appendCommitRecord(1L, false);
 
+      journalImpl.debugWait();
+
       System.out.println("Files = " + factory.listFiles("tt"));
 
       SequentialFile file = factory.createSequentialFile("tt-1.tt");
@@ -605,6 +597,8 @@ public class AlignedJournalImplTest extends ActiveMQTestBase {
       journalImpl.appendCommitRecord(1L, false);
 
       journalImpl.appendCommitRecord(2L, false);
+
+      journalImpl.debugWait();
 
       SequentialFile file = factory.createSequentialFile("tt-1.tt");
 
@@ -704,6 +698,8 @@ public class AlignedJournalImplTest extends ActiveMQTestBase {
       }
 
       journalImpl.appendCommitRecord(1L, false);
+
+      journalImpl.debugWait();
 
       SequentialFile file = factory.createSequentialFile("tt-1.tt");
 
@@ -944,11 +940,9 @@ public class AlignedJournalImplTest extends ActiveMQTestBase {
 
       journalImpl.forceMoveNextFile();
 
-      // Reclaiming should still be able to reclaim a file if a transaction was
-      // ignored
+      // Reclaiming should still be able to reclaim a file if a transaction was ignored
       journalImpl.checkReclaimStatus();
-
-      Assert.assertEquals(2, factory.listFiles("tt").size());
+      journalImpl.flush();
 
    }
 
@@ -1005,10 +999,11 @@ public class AlignedJournalImplTest extends ActiveMQTestBase {
    @Test
    public void testReclaimAfterRollabck() throws Exception {
       final int JOURNAL_SIZE = 2000;
+      final int COUNT = 10;
 
       setupAndLoadJournal(JOURNAL_SIZE, 1);
 
-      for (int i = 0; i < 10; i++) {
+      for (int i = 0; i < COUNT; i++) {
          journalImpl.appendAddRecordTransactional(1L, i, (byte) 0, new SimpleEncoding(1, (byte) 0));
          journalImpl.forceMoveNextFile();
       }
@@ -1016,6 +1011,9 @@ public class AlignedJournalImplTest extends ActiveMQTestBase {
       journalImpl.appendRollbackRecord(1L, false);
 
       journalImpl.forceMoveNextFile();
+
+      // wait for the previous call to forceMoveNextFile() to complete
+      assertTrue(Wait.waitFor(() -> factory.listFiles("tt").size() == COUNT + 3, 2000, 50));
 
       journalImpl.checkReclaimStatus();
 
@@ -1117,7 +1115,16 @@ public class AlignedJournalImplTest extends ActiveMQTestBase {
    }
 
    @Test
-   public void testReclaimingAfterConcurrentAddsAndDeletes() throws Exception {
+   public void testReclaimingAfterConcurrentAddsAndDeletesTx() throws Exception {
+      testReclaimingAfterConcurrentAddsAndDeletes(true);
+   }
+
+   @Test
+   public void testReclaimingAfterConcurrentAddsAndDeletesNonTx() throws Exception {
+      testReclaimingAfterConcurrentAddsAndDeletes(false);
+   }
+
+   public void testReclaimingAfterConcurrentAddsAndDeletes(final boolean transactional) throws Exception {
       final int JOURNAL_SIZE = 10 * 1024;
 
       setupAndLoadJournal(JOURNAL_SIZE, 1);
@@ -1139,13 +1146,18 @@ public class AlignedJournalImplTest extends ActiveMQTestBase {
                latchReady.countDown();
                ActiveMQTestBase.waitForLatch(latchStart);
                for (int i = 0; i < NUMBER_OF_ELEMENTS; i++) {
-                  journalImpl.appendAddRecordTransactional(i, i, (byte) 1, new SimpleEncoding(50, (byte) 1));
-                  journalImpl.appendCommitRecord(i, false);
+
+                  if (transactional) {
+                     journalImpl.appendAddRecordTransactional(i, i, (byte) 1, new SimpleEncoding(50, (byte) 1));
+                     journalImpl.appendCommitRecord(i, false);
+                  } else {
+                     journalImpl.appendAddRecord(i, (byte) 1, new SimpleEncoding(50, (byte) 1), false);
+                  }
+
                   queueDelete.offer(i);
                }
                finishedOK.incrementAndGet();
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                e.printStackTrace();
             }
          }
@@ -1162,11 +1174,17 @@ public class AlignedJournalImplTest extends ActiveMQTestBase {
                   if (toDelete == null) {
                      break;
                   }
-                  journalImpl.appendDeleteRecord(toDelete, false);
+
+                  if (transactional) {
+                     journalImpl.appendDeleteRecordTransactional(toDelete, toDelete, new SimpleEncoding(50, (byte) 1));
+                     journalImpl.appendCommitRecord(i, false);
+                  } else {
+                     journalImpl.appendDeleteRecord(toDelete, false);
+                  }
+
                }
                finishedOK.incrementAndGet();
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                e.printStackTrace();
             }
          }

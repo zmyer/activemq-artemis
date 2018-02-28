@@ -16,6 +16,11 @@
  */
 package org.apache.activemq.artemis.tests.integration.cluster.bridge;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 import org.apache.activemq.artemis.api.core.ActiveMQException;
 import org.apache.activemq.artemis.api.core.ActiveMQExceptionType;
 import org.apache.activemq.artemis.api.core.ActiveMQNotConnectedException;
@@ -44,11 +49,6 @@ import org.apache.activemq.artemis.spi.core.protocol.RemotingConnection;
 import org.apache.activemq.artemis.tests.integration.IntegrationTestLogger;
 import org.junit.Before;
 import org.junit.Test;
-
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 
 public class BridgeReconnectTest extends BridgeTestBase {
 
@@ -155,7 +155,7 @@ public class BridgeReconnectTest extends BridgeTestBase {
       startServers();
 
       waitForServerStart(server0);
-      server0.stop(true);
+      server0.fail(true);
 
       waitForServerStart(server2);
 
@@ -206,7 +206,7 @@ public class BridgeReconnectTest extends BridgeTestBase {
 
       BridgeReconnectTest.log.info("** failing connection");
       // Now we will simulate a failure of the bridge connection between server0 and server1
-      server0.stop(true);
+      server0.fail(true);
 
       waitForServerStart(server2);
 
@@ -285,7 +285,7 @@ public class BridgeReconnectTest extends BridgeTestBase {
 
       startServers();
       // Now we will simulate a failure of the bridge connection between server0 and server1
-      server0.stop(true);
+      server0.fail(true);
 
       locator = addServerLocator(ActiveMQClient.createServerLocatorWithHA(server2tc)).setReconnectAttempts(100);
       ClientSessionFactory csf0 = addSessionFactory(locator.createSessionFactory(server2tc));
@@ -374,7 +374,7 @@ public class BridgeReconnectTest extends BridgeTestBase {
       forwardingConnection.fail(new ActiveMQNotConnectedException());
 
       final ManagementService managementService = server0.getManagementService();
-      QueueControl coreQueueControl = (QueueControl) managementService.getResource(ResourceNames.CORE_QUEUE + queueName);
+      QueueControl coreQueueControl = (QueueControl) managementService.getResource(ResourceNames.QUEUE + queueName);
       assertEquals(0, coreQueueControl.getDeliveringCount());
 
       final int numMessages = NUM_MESSAGES;
@@ -710,7 +710,8 @@ public class BridgeReconnectTest extends BridgeTestBase {
          }
 
          Thread.sleep(10);
-      } while (System.currentTimeMillis() - start < 50000);
+      }
+      while (System.currentTimeMillis() - start < 50000);
 
       throw new IllegalStateException("Failed to get forwarding connection");
    }

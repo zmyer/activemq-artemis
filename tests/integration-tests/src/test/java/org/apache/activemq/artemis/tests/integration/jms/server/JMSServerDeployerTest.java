@@ -16,6 +16,10 @@
  */
 package org.apache.activemq.artemis.tests.integration.jms.server;
 
+import javax.jms.Queue;
+import javax.jms.Topic;
+import javax.naming.Context;
+
 import org.apache.activemq.artemis.api.core.DiscoveryGroupConfiguration;
 import org.apache.activemq.artemis.api.core.TransportConfiguration;
 import org.apache.activemq.artemis.api.core.UDPBroadcastEndpointFactory;
@@ -31,10 +35,6 @@ import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
-
-import javax.jms.Queue;
-import javax.jms.Topic;
-import javax.naming.Context;
 
 public class JMSServerDeployerTest extends ActiveMQTestBase {
    // Constants -----------------------------------------------------
@@ -79,6 +79,8 @@ public class JMSServerDeployerTest extends ActiveMQTestBase {
       doTestDeployTopicsWithUnusualNames("topic\\with\\backslashes\\in\\name", "/mytopic4");
 
       doTestDeployTopicsWithUnusualNames("topic with # chars and * chars in name", "/mytopic5");
+
+      doTestDeployTopicsWithUnusualNames("jms.topic.myTopic", "/mytopic6", "myTopic");
    }
 
    private void doTestDeployQueuesWithUnusualNames(final String queueName, final String jndiName) throws Exception {
@@ -95,6 +97,14 @@ public class JMSServerDeployerTest extends ActiveMQTestBase {
       Topic topic = (Topic) context.lookup(jndiName);
       Assert.assertNotNull(topic);
       Assert.assertEquals(topicName, topic.getTopicName());
+   }
+
+   private void doTestDeployTopicsWithUnusualNames(final String topicName, final String jndiName, final String jmsTopicName) throws Exception {
+      jmsServer.createTopic(topicName, false, jmsTopicName, jndiName);
+
+      Topic topic = (Topic) context.lookup(jndiName);
+      Assert.assertNotNull(topic);
+      Assert.assertEquals(jmsTopicName, topic.getTopicName());
    }
 
    // Package protected ---------------------------------------------

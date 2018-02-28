@@ -36,9 +36,13 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.apache.activemq.artemis.api.config.ActiveMQDefaultConfiguration;
+import org.apache.activemq.artemis.core.config.storage.DatabaseStorageConfiguration;
+import org.apache.activemq.artemis.utils.critical.CriticalAnalyzerPolicy;
 import org.apache.activemq.artemis.api.core.BroadcastGroupConfiguration;
 import org.apache.activemq.artemis.api.core.DiscoveryGroupConfiguration;
 import org.apache.activemq.artemis.api.core.SimpleString;
@@ -46,28 +50,42 @@ import org.apache.activemq.artemis.api.core.TransportConfiguration;
 import org.apache.activemq.artemis.core.config.BridgeConfiguration;
 import org.apache.activemq.artemis.core.config.ClusterConnectionConfiguration;
 import org.apache.activemq.artemis.core.config.Configuration;
+import org.apache.activemq.artemis.core.config.ConfigurationUtils;
 import org.apache.activemq.artemis.core.config.ConnectorServiceConfiguration;
+import org.apache.activemq.artemis.core.config.CoreAddressConfiguration;
 import org.apache.activemq.artemis.core.config.CoreQueueConfiguration;
 import org.apache.activemq.artemis.core.config.DivertConfiguration;
 import org.apache.activemq.artemis.core.config.HAPolicyConfiguration;
 import org.apache.activemq.artemis.core.config.StoreConfiguration;
+import org.apache.activemq.artemis.core.config.WildcardConfiguration;
 import org.apache.activemq.artemis.core.config.ha.ReplicaPolicyConfiguration;
 import org.apache.activemq.artemis.core.config.ha.ReplicatedPolicyConfiguration;
 import org.apache.activemq.artemis.core.security.Role;
 import org.apache.activemq.artemis.core.server.ActiveMQServerLogger;
 import org.apache.activemq.artemis.core.server.JournalType;
+import org.apache.activemq.artemis.core.server.NetworkHealthCheck;
 import org.apache.activemq.artemis.core.server.SecuritySettingPlugin;
 import org.apache.activemq.artemis.core.server.group.impl.GroupingHandlerConfiguration;
+import org.apache.activemq.artemis.core.server.plugin.ActiveMQServerPlugin;
 import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
 import org.apache.activemq.artemis.core.settings.impl.ResourceLimitSettings;
-import org.apache.activemq.artemis.uri.AcceptorTransportConfigurationParser;
-import org.apache.activemq.artemis.uri.ConnectorTransportConfigurationParser;
+import org.apache.activemq.artemis.utils.Env;
 import org.apache.activemq.artemis.utils.ObjectInputStreamWithClassLoader;
+import org.apache.activemq.artemis.utils.uri.BeanSupport;
+import org.jboss.logging.Logger;
 
 public class ConfigurationImpl implements Configuration, Serializable {
    // Constants ------------------------------------------------------------------------------
 
+   private static final Logger logger = Logger.getLogger(ConfigurationImpl.class);
+
    public static final JournalType DEFAULT_JOURNAL_TYPE = JournalType.ASYNCIO;
+
+   private static final int DEFAULT_JMS_MESSAGE_SIZE = 1864;
+
+   private static final int RANGE_SIZE_MIN = 0;
+
+   private static final int RANGE_SZIE_MAX = 4;
 
    private static final long serialVersionUID = 4077088945050267843L;
 
@@ -76,6 +94,8 @@ public class ConfigurationImpl implements Configuration, Serializable {
    private String name = "localhost";
 
    private boolean persistenceEnabled = ActiveMQDefaultConfiguration.isDefaultPersistenceEnabled();
+
+   private boolean journalDatasync = ActiveMQDefaultConfiguration.isDefaultJournalDatasync();
 
    protected long fileDeploymentScanPeriod = ActiveMQDefaultConfiguration.getDefaultFileDeployerScanPeriod();
 
@@ -127,6 +147,8 @@ public class ConfigurationImpl implements Configuration, Serializable {
 
    private List<CoreQueueConfiguration> queueConfigurations = new ArrayList<>();
 
+   private List<CoreAddressConfiguration> addressConfigurations = new ArrayList<>();
+
    protected transient List<BroadcastGroupConfiguration> broadcastGroupConfigurations = new ArrayList<>();
 
    protected transient Map<String, DiscoveryGroupConfiguration> discoveryGroupConfigurations = new LinkedHashMap<>();
@@ -159,6 +181,8 @@ public class ConfigurationImpl implements Configuration, Serializable {
 
    protected int journalCompactPercentage = ActiveMQDefaultConfiguration.getDefaultJournalCompactPercentage();
 
+   protected int journalFileOpenTimeout = ActiveMQDefaultConfiguration.getDefaultJournalFileOpenTimeout();
+
    protected int journalFileSize = ActiveMQDefaultConfiguration.getDefaultJournalFileSize();
 
    protected int journalPoolFiles = ActiveMQDefaultConfiguration.getDefaultJournalPoolFiles();
@@ -181,11 +205,7 @@ public class ConfigurationImpl implements Configuration, Serializable {
 
    protected boolean logJournalWriteRate = ActiveMQDefaultConfiguration.isDefaultJournalLogWriteRate();
 
-   protected int journalPerfBlastPages = ActiveMQDefaultConfiguration.getDefaultJournalPerfBlastPages();
-
-   protected boolean runSyncSpeedTest = ActiveMQDefaultConfiguration.isDefaultRunSyncSpeedTest();
-
-   private boolean wildcardRoutingEnabled = ActiveMQDefaultConfiguration.isDefaultWildcardRoutingEnabled();
+   private WildcardConfiguration wildcardConfiguration = new WildcardConfiguration();
 
    private boolean messageCounterEnabled = ActiveMQDefaultConfiguration.isDefaultMessageCounterEnabled();
 
@@ -224,9 +244,13 @@ public class ConfigurationImpl implements Configuration, Serializable {
 
    private List<SecuritySettingPlugin> securitySettingPlugins = new ArrayList<>();
 
+   private final List<ActiveMQServerPlugin> brokerPlugins = new CopyOnWriteArrayList<>();
+
+   private Map<String, Set<String>> securityRoleNameMappings = new HashMap<>();
+
    protected List<ConnectorServiceConfiguration> connectorServiceConfigurations = new ArrayList<>();
 
-   private boolean maskPassword = ActiveMQDefaultConfiguration.isDefaultMaskPassword();
+   private Boolean maskPassword = ActiveMQDefaultConfiguration.isDefaultMaskPassword();
 
    private transient String passwordCodec;
 
@@ -246,11 +270,39 @@ public class ConfigurationImpl implements Configuration, Serializable {
 
    private long configurationFileRefreshPeriod = ActiveMQDefaultConfiguration.getDefaultConfigurationFileRefreshPeriod();
 
-   private long globalMaxSize = ActiveMQDefaultConfiguration.getDefaultMaxGlobalSize();
+   private Long globalMaxSize;
+
+   private boolean amqpUseCoreSubscriptionNaming = ActiveMQDefaultConfiguration.getDefaultAmqpUseCoreSubscriptionNaming();
 
    private int maxDiskUsage = ActiveMQDefaultConfiguration.getDefaultMaxDiskUsage();
 
    private int diskScanPeriod = ActiveMQDefaultConfiguration.getDefaultDiskScanPeriod();
+
+   private String systemPropertyPrefix = ActiveMQDefaultConfiguration.getDefaultSystemPropertyPrefix();
+
+   private String networkCheckList = ActiveMQDefaultConfiguration.getDefaultNetworkCheckList();
+
+   private String networkURLList = ActiveMQDefaultConfiguration.getDefaultNetworkCheckURLList();
+
+   private long networkCheckPeriod = ActiveMQDefaultConfiguration.getDefaultNetworkCheckPeriod();
+
+   private int networkCheckTimeout = ActiveMQDefaultConfiguration.getDefaultNetworkCheckTimeout();
+
+   private String networkCheckNIC = ActiveMQDefaultConfiguration.getDefaultNetworkCheckNic();
+
+   private String networkCheckPingCommand = NetworkHealthCheck.IPV4_DEFAULT_COMMAND;
+
+   private String networkCheckPing6Command = NetworkHealthCheck.IPV6_DEFAULT_COMMAND;
+
+   private String internalNamingPrefix = ActiveMQDefaultConfiguration.getInternalNamingPrefix();
+
+   private boolean criticalAnalyzer = ActiveMQDefaultConfiguration.getCriticalAnalyzer();
+
+   private CriticalAnalyzerPolicy criticalAnalyzerPolicy = ActiveMQDefaultConfiguration.getCriticalAnalyzerPolicy();
+
+   private long criticalAnalyzerTimeout = ActiveMQDefaultConfiguration.getCriticalAnalyzerTimeout();
+
+   private long criticalAnalyzerCheckPeriod = 0; // non set
 
    /**
     * Parent folder for all data folders.
@@ -258,6 +310,44 @@ public class ConfigurationImpl implements Configuration, Serializable {
    private File artemisInstance;
 
    // Public -------------------------------------------------------------------------
+
+   @Override
+   public Configuration setSystemPropertyPrefix(String systemPropertyPrefix) {
+      this.systemPropertyPrefix = systemPropertyPrefix;
+      return this;
+   }
+
+   @Override
+   public String getSystemPropertyPrefix() {
+      return systemPropertyPrefix;
+   }
+
+   @Override
+   public Configuration parseSystemProperties() throws Exception {
+      parseSystemProperties(System.getProperties());
+      return this;
+   }
+
+   @Override
+   public Configuration parseSystemProperties(Properties properties) throws Exception {
+      Map<String, Object> beanProperties = new HashMap<>();
+
+      synchronized (properties) {
+         for (Map.Entry<Object, Object> entry : properties.entrySet()) {
+            if (entry.getKey().toString().startsWith(systemPropertyPrefix)) {
+               String key = entry.getKey().toString().substring(systemPropertyPrefix.length());
+               logger.debug("Setting up config, " + key + "=" + entry.getValue());
+               beanProperties.put(key, entry.getValue());
+            }
+         }
+      }
+
+      if (!beanProperties.isEmpty()) {
+         BeanSupport.setData(this, beanProperties);
+      }
+
+      return this;
+   }
 
    @Override
    public boolean isClustered() {
@@ -288,12 +378,29 @@ public class ConfigurationImpl implements Configuration, Serializable {
 
    @Override
    public long getGlobalMaxSize() {
+      if (globalMaxSize == null) {
+         this.globalMaxSize = ActiveMQDefaultConfiguration.getDefaultMaxGlobalSize();
+         if (!Env.isTestEnv()) {
+            ActiveMQServerLogger.LOGGER.usingDefaultPaging(globalMaxSize);
+         }
+      }
       return globalMaxSize;
    }
 
    @Override
    public ConfigurationImpl setPersistenceEnabled(final boolean enable) {
       persistenceEnabled = enable;
+      return this;
+   }
+
+   @Override
+   public boolean isJournalDatasync() {
+      return journalDatasync;
+   }
+
+   @Override
+   public ConfigurationImpl setJournalDatasync(boolean enable) {
+      journalDatasync = enable;
       return this;
    }
 
@@ -367,6 +474,18 @@ public class ConfigurationImpl implements Configuration, Serializable {
    }
 
    @Override
+   public boolean isAmqpUseCoreSubscriptionNaming() {
+      return amqpUseCoreSubscriptionNaming;
+   }
+
+   @Override
+   public Configuration setAmqpUseCoreSubscriptionNaming(boolean amqpUseCoreSubscriptionNaming) {
+      this.amqpUseCoreSubscriptionNaming = amqpUseCoreSubscriptionNaming;
+      return this;
+   }
+
+
+   @Override
    public boolean isAsyncConnectionExecutionEnabled() {
       return asyncConnectionExecutionEnabled;
    }
@@ -418,10 +537,7 @@ public class ConfigurationImpl implements Configuration, Serializable {
 
    @Override
    public ConfigurationImpl addAcceptorConfiguration(final String name, final String uri) throws Exception {
-
-      AcceptorTransportConfigurationParser parser = new AcceptorTransportConfigurationParser();
-
-      List<TransportConfiguration> configurations = parser.newObject(parser.expandURI(uri), name);
+      List<TransportConfiguration> configurations = ConfigurationUtils.parseAcceptorURI(name, uri);
 
       for (TransportConfiguration config : configurations) {
          addAcceptorConfiguration(config);
@@ -456,9 +572,7 @@ public class ConfigurationImpl implements Configuration, Serializable {
    @Override
    public ConfigurationImpl addConnectorConfiguration(final String name, final String uri) throws Exception {
 
-      ConnectorTransportConfigurationParser parser = new ConnectorTransportConfigurationParser();
-
-      List<TransportConfiguration> configurations = parser.newObject(parser.expandURI(uri), name);
+      List<TransportConfiguration> configurations = ConfigurationUtils.parseConnectorURI(name, uri);
 
       for (TransportConfiguration config : configurations) {
          addConnectorConfiguration(name, config);
@@ -578,6 +692,23 @@ public class ConfigurationImpl implements Configuration, Serializable {
    @Override
    public ConfigurationImpl addQueueConfiguration(final CoreQueueConfiguration config) {
       queueConfigurations.add(config);
+      return this;
+   }
+
+   @Override
+   public List<CoreAddressConfiguration> getAddressConfigurations() {
+      return addressConfigurations;
+   }
+
+   @Override
+   public Configuration setAddressConfigurations(List<CoreAddressConfiguration> configs) {
+      this.addressConfigurations = configs;
+      return this;
+   }
+
+   @Override
+   public Configuration addAddressConfiguration(CoreAddressConfiguration config) {
+      this.addressConfigurations.add(config);
       return this;
    }
 
@@ -732,6 +863,9 @@ public class ConfigurationImpl implements Configuration, Serializable {
    @Override
    public Configuration setJournalPoolFiles(int poolSize) {
       this.journalPoolFiles = poolSize;
+      if (!Env.isTestEnv() && poolSize < 0) {
+         ActiveMQServerLogger.LOGGER.useFixedValueOnJournalPoolFiles();
+      }
       return this;
    }
 
@@ -758,28 +892,6 @@ public class ConfigurationImpl implements Configuration, Serializable {
    }
 
    @Override
-   public int getJournalPerfBlastPages() {
-      return journalPerfBlastPages;
-   }
-
-   @Override
-   public ConfigurationImpl setJournalPerfBlastPages(final int journalPerfBlastPages) {
-      this.journalPerfBlastPages = journalPerfBlastPages;
-      return this;
-   }
-
-   @Override
-   public boolean isRunSyncSpeedTest() {
-      return runSyncSpeedTest;
-   }
-
-   @Override
-   public ConfigurationImpl setRunSyncSpeedTest(final boolean run) {
-      runSyncSpeedTest = run;
-      return this;
-   }
-
-   @Override
    public boolean isCreateBindingsDir() {
       return createBindingsDir;
    }
@@ -802,13 +914,27 @@ public class ConfigurationImpl implements Configuration, Serializable {
    }
 
    @Override
+   @Deprecated
    public boolean isWildcardRoutingEnabled() {
-      return wildcardRoutingEnabled;
+      return wildcardConfiguration.isRoutingEnabled();
    }
 
    @Override
+   @Deprecated
    public ConfigurationImpl setWildcardRoutingEnabled(final boolean enabled) {
-      wildcardRoutingEnabled = enabled;
+      ActiveMQServerLogger.LOGGER.deprecatedWildcardRoutingEnabled();
+      wildcardConfiguration.setRoutingEnabled(enabled);
+      return this;
+   }
+
+   @Override
+   public WildcardConfiguration getWildcardConfiguration() {
+      return wildcardConfiguration;
+   }
+
+   @Override
+   public Configuration setWildCardConfiguration(WildcardConfiguration wildcardConfiguration) {
+      this.wildcardConfiguration = wildcardConfiguration;
       return this;
    }
 
@@ -1041,6 +1167,17 @@ public class ConfigurationImpl implements Configuration, Serializable {
    }
 
    @Override
+   public int getJournalFileOpenTimeout() {
+      return journalFileOpenTimeout;
+   }
+
+   @Override
+   public Configuration setJournalFileOpenTimeout(int journalFileOpenTimeout) {
+      this.journalFileOpenTimeout = journalFileOpenTimeout;
+      return this;
+   }
+
+   @Override
    public ConfigurationImpl setJournalCompactPercentage(final int percentage) {
       journalCompactPercentage = percentage;
       return this;
@@ -1209,6 +1346,21 @@ public class ConfigurationImpl implements Configuration, Serializable {
    }
 
    @Override
+   public Configuration addSecurityRoleNameMapping(String internalRole, Set<String> externalRoles) {
+      if (securityRoleNameMappings.containsKey(internalRole)) {
+         securityRoleNameMappings.get(internalRole).addAll(externalRoles);
+      } else {
+         securityRoleNameMappings.put(internalRole, externalRoles);
+      }
+      return this;
+   }
+
+   @Override
+   public Map<String, Set<String>> getSecurityRoleNameMappings() {
+      return securityRoleNameMappings;
+   }
+
+   @Override
    public List<ConnectorServiceConfiguration> getConnectorServiceConfigurations() {
       return this.connectorServiceConfigurations;
    }
@@ -1216,6 +1368,26 @@ public class ConfigurationImpl implements Configuration, Serializable {
    @Override
    public List<SecuritySettingPlugin> getSecuritySettingPlugins() {
       return this.securitySettingPlugins;
+   }
+
+   @Override
+   public void registerBrokerPlugins(final List<ActiveMQServerPlugin> plugins) {
+      brokerPlugins.addAll(plugins);
+   }
+
+   @Override
+   public void registerBrokerPlugin(final ActiveMQServerPlugin plugin) {
+      brokerPlugins.add(plugin);
+   }
+
+   @Override
+   public void unRegisterBrokerPlugin(final ActiveMQServerPlugin plugin) {
+      brokerPlugins.remove(plugin);
+   }
+
+   @Override
+   public List<ActiveMQServerPlugin> getBrokerPlugins() {
+      return brokerPlugins;
    }
 
    @Override
@@ -1243,8 +1415,7 @@ public class ConfigurationImpl implements Configuration, Serializable {
    public boolean isCheckForLiveServer() {
       if (haPolicyConfiguration instanceof ReplicaPolicyConfiguration) {
          return ((ReplicatedPolicyConfiguration) haPolicyConfiguration).isCheckForLiveServer();
-      }
-      else {
+      } else {
          return false;
       }
    }
@@ -1261,10 +1432,21 @@ public class ConfigurationImpl implements Configuration, Serializable {
    public String toString() {
       StringBuilder sb = new StringBuilder("Broker Configuration (");
       sb.append("clustered=").append(isClustered()).append(",");
-      sb.append("journalDirectory=").append(journalDirectory).append(",");
-      sb.append("bindingsDirectory=").append(bindingsDirectory).append(",");
-      sb.append("largeMessagesDirectory=").append(largeMessagesDirectory).append(",");
-      sb.append("pagingDirectory=").append(pagingDirectory);
+      if (isJDBC()) {
+         DatabaseStorageConfiguration dsc = (DatabaseStorageConfiguration) getStoreConfiguration();
+         sb.append("jdbcDriverClassName=").append(dsc.getJdbcDriverClassName()).append(",");
+         sb.append("jdbcConnectionUrl=").append(dsc.getJdbcConnectionUrl()).append(",");
+         sb.append("messageTableName=").append(dsc.getMessageTableName()).append(",");
+         sb.append("bindingsTableName=").append(dsc.getBindingsTableName()).append(",");
+         sb.append("largeMessageTableName=").append(dsc.getLargeMessageTableName()).append(",");
+         sb.append("pageStoreTableName=").append(dsc.getPageStoreTableName()).append(",");
+
+      } else {
+         sb.append("journalDirectory=").append(journalDirectory).append(",");
+         sb.append("bindingsDirectory=").append(bindingsDirectory).append(",");
+         sb.append("largeMessagesDirectory=").append(largeMessagesDirectory).append(",");
+         sb.append("pagingDirectory=").append(pagingDirectory);
+      }
       sb.append(")");
       return sb.toString();
    }
@@ -1294,12 +1476,12 @@ public class ConfigurationImpl implements Configuration, Serializable {
    }
 
    @Override
-   public boolean isMaskPassword() {
+   public Boolean isMaskPassword() {
       return maskPassword;
    }
 
    @Override
-   public ConfigurationImpl setMaskPassword(boolean maskPassword) {
+   public ConfigurationImpl setMaskPassword(Boolean maskPassword) {
       this.maskPassword = maskPassword;
       return this;
    }
@@ -1346,8 +1528,7 @@ public class ConfigurationImpl implements Configuration, Serializable {
          TransportConfiguration connector = getConnectorConfigurations().get(connectorName);
 
          if (connector == null) {
-            ActiveMQServerLogger.LOGGER.warn("bridgeNoConnector(connectorName)");
-
+            ActiveMQServerLogger.LOGGER.connectionConfigurationIsNull(connectorName == null ? "null" : connectorName);
             return null;
          }
 
@@ -1447,7 +1628,6 @@ public class ConfigurationImpl implements Configuration, Serializable {
       result = prime * result + journalMaxIO_AIO;
       result = prime * result + journalMaxIO_NIO;
       result = prime * result + journalMinFiles;
-      result = prime * result + journalPerfBlastPages;
       result = prime * result + (journalSyncNonTransactional ? 1231 : 1237);
       result = prime * result + (journalSyncTransactional ? 1231 : 1237);
       result = prime * result + ((journalType == null) ? 0 : journalType.hashCode());
@@ -1471,7 +1651,6 @@ public class ConfigurationImpl implements Configuration, Serializable {
       result = prime * result + (persistIDCache ? 1231 : 1237);
       result = prime * result + (persistenceEnabled ? 1231 : 1237);
       result = prime * result + ((queueConfigurations == null) ? 0 : queueConfigurations.hashCode());
-      result = prime * result + (runSyncSpeedTest ? 1231 : 1237);
       result = prime * result + scheduledThreadPoolMaxSize;
       result = prime * result + (securityEnabled ? 1231 : 1237);
       result = prime * result + (populateValidatedUser ? 1231 : 1237);
@@ -1481,7 +1660,7 @@ public class ConfigurationImpl implements Configuration, Serializable {
       result = prime * result + threadPoolMaxSize;
       result = prime * result + (int) (transactionTimeout ^ (transactionTimeout >>> 32));
       result = prime * result + (int) (transactionTimeoutScanPeriod ^ (transactionTimeoutScanPeriod >>> 32));
-      result = prime * result + (wildcardRoutingEnabled ? 1231 : 1237);
+      result = prime * result + ((wildcardConfiguration == null) ? 0 : wildcardConfiguration.hashCode());
       result = prime * result + (resolveProtocols ? 1231 : 1237);
       result = prime * result + (int) (journalLockAcquisitionTimeout ^ (journalLockAcquisitionTimeout >>> 32));
       result = prime * result + (int) (connectionTtlCheckInterval ^ (connectionTtlCheckInterval >>> 32));
@@ -1500,83 +1679,73 @@ public class ConfigurationImpl implements Configuration, Serializable {
       if (acceptorConfigs == null) {
          if (other.acceptorConfigs != null)
             return false;
-      }
-      else if (!acceptorConfigs.equals(other.acceptorConfigs))
+      } else if (!acceptorConfigs.equals(other.acceptorConfigs))
          return false;
       if (addressesSettings == null) {
          if (other.addressesSettings != null)
             return false;
-      }
-      else if (!addressesSettings.equals(other.addressesSettings))
+      } else if (!addressesSettings.equals(other.addressesSettings))
          return false;
       if (asyncConnectionExecutionEnabled != other.asyncConnectionExecutionEnabled)
          return false;
-
       if (bindingsDirectory == null) {
          if (other.bindingsDirectory != null)
             return false;
-      }
-      else if (!bindingsDirectory.equals(other.bindingsDirectory))
+      } else if (!bindingsDirectory.equals(other.bindingsDirectory))
          return false;
       if (bridgeConfigurations == null) {
          if (other.bridgeConfigurations != null)
             return false;
-      }
-      else if (!bridgeConfigurations.equals(other.bridgeConfigurations))
+      } else if (!bridgeConfigurations.equals(other.bridgeConfigurations))
          return false;
       if (broadcastGroupConfigurations == null) {
          if (other.broadcastGroupConfigurations != null)
             return false;
-      }
-      else if (!broadcastGroupConfigurations.equals(other.broadcastGroupConfigurations))
+      } else if (!broadcastGroupConfigurations.equals(other.broadcastGroupConfigurations))
          return false;
+
       if (clusterConfigurations == null) {
          if (other.clusterConfigurations != null)
             return false;
-      }
-      else if (!clusterConfigurations.equals(other.clusterConfigurations))
+      } else if (!clusterConfigurations.equals(other.clusterConfigurations))
          return false;
+
       if (clusterPassword == null) {
          if (other.clusterPassword != null)
             return false;
-      }
-      else if (!clusterPassword.equals(other.clusterPassword))
+      } else if (!clusterPassword.equals(other.clusterPassword))
          return false;
       if (clusterUser == null) {
          if (other.clusterUser != null)
             return false;
-      }
-      else if (!clusterUser.equals(other.clusterUser))
+      } else if (!clusterUser.equals(other.clusterUser))
          return false;
       if (connectionTTLOverride != other.connectionTTLOverride)
          return false;
       if (connectorConfigs == null) {
          if (other.connectorConfigs != null)
             return false;
-      }
-      else if (!connectorConfigs.equals(other.connectorConfigs))
+      } else if (!connectorConfigs.equals(other.connectorConfigs))
          return false;
       if (connectorServiceConfigurations == null) {
          if (other.connectorServiceConfigurations != null)
             return false;
-      }
-      else if (!connectorServiceConfigurations.equals(other.connectorServiceConfigurations))
+      } else if (!connectorServiceConfigurations.equals(other.connectorServiceConfigurations))
          return false;
       if (createBindingsDir != other.createBindingsDir)
          return false;
       if (createJournalDir != other.createJournalDir)
          return false;
+
       if (discoveryGroupConfigurations == null) {
          if (other.discoveryGroupConfigurations != null)
             return false;
-      }
-      else if (!discoveryGroupConfigurations.equals(other.discoveryGroupConfigurations))
+      } else if (!discoveryGroupConfigurations.equals(other.discoveryGroupConfigurations))
          return false;
       if (divertConfigurations == null) {
          if (other.divertConfigurations != null)
             return false;
-      }
-      else if (!divertConfigurations.equals(other.divertConfigurations))
+      } else if (!divertConfigurations.equals(other.divertConfigurations))
          return false;
       if (failoverOnServerShutdown != other.failoverOnServerShutdown)
          return false;
@@ -1585,22 +1754,19 @@ public class ConfigurationImpl implements Configuration, Serializable {
       if (groupingHandlerConfiguration == null) {
          if (other.groupingHandlerConfiguration != null)
             return false;
-      }
-      else if (!groupingHandlerConfiguration.equals(other.groupingHandlerConfiguration))
+      } else if (!groupingHandlerConfiguration.equals(other.groupingHandlerConfiguration))
          return false;
       if (idCacheSize != other.idCacheSize)
          return false;
       if (incomingInterceptorClassNames == null) {
          if (other.incomingInterceptorClassNames != null)
             return false;
-      }
-      else if (!incomingInterceptorClassNames.equals(other.incomingInterceptorClassNames))
+      } else if (!incomingInterceptorClassNames.equals(other.incomingInterceptorClassNames))
          return false;
       if (jmxDomain == null) {
          if (other.jmxDomain != null)
             return false;
-      }
-      else if (!jmxDomain.equals(other.jmxDomain))
+      } else if (!jmxDomain.equals(other.jmxDomain))
          return false;
       if (jmxManagementEnabled != other.jmxManagementEnabled)
          return false;
@@ -1619,8 +1785,7 @@ public class ConfigurationImpl implements Configuration, Serializable {
       if (journalDirectory == null) {
          if (other.journalDirectory != null)
             return false;
-      }
-      else if (!journalDirectory.equals(other.journalDirectory))
+      } else if (!journalDirectory.equals(other.journalDirectory))
          return false;
       if (journalFileSize != other.journalFileSize)
          return false;
@@ -1629,8 +1794,6 @@ public class ConfigurationImpl implements Configuration, Serializable {
       if (journalMaxIO_NIO != other.journalMaxIO_NIO)
          return false;
       if (journalMinFiles != other.journalMinFiles)
-         return false;
-      if (journalPerfBlastPages != other.journalPerfBlastPages)
          return false;
       if (journalSyncNonTransactional != other.journalSyncNonTransactional)
          return false;
@@ -1641,25 +1804,29 @@ public class ConfigurationImpl implements Configuration, Serializable {
       if (largeMessagesDirectory == null) {
          if (other.largeMessagesDirectory != null)
             return false;
-      }
-      else if (!largeMessagesDirectory.equals(other.largeMessagesDirectory))
+      } else if (!largeMessagesDirectory.equals(other.largeMessagesDirectory))
          return false;
       if (logJournalWriteRate != other.logJournalWriteRate)
          return false;
       if (managementAddress == null) {
          if (other.managementAddress != null)
             return false;
-      }
-      else if (!managementAddress.equals(other.managementAddress))
+      } else if (!managementAddress.equals(other.managementAddress))
          return false;
       if (managementNotificationAddress == null) {
          if (other.managementNotificationAddress != null)
             return false;
+      } else if (!managementNotificationAddress.equals(other.managementNotificationAddress))
+         return false;
+
+      if (this.maskPassword == null) {
+         if (other.maskPassword != null)
+            return false;
+      } else {
+         if (!this.maskPassword.equals(other.maskPassword))
+            return false;
       }
-      else if (!managementNotificationAddress.equals(other.managementNotificationAddress))
-         return false;
-      if (maskPassword != other.maskPassword)
-         return false;
+
       if (maxConcurrentPageIO != other.maxConcurrentPageIO)
          return false;
       if (memoryMeasureInterval != other.memoryMeasureInterval)
@@ -1679,21 +1846,17 @@ public class ConfigurationImpl implements Configuration, Serializable {
       if (name == null) {
          if (other.name != null)
             return false;
-      }
-      else if (!name.equals(other.name))
+      } else if (!name.equals(other.name))
          return false;
-
       if (outgoingInterceptorClassNames == null) {
          if (other.outgoingInterceptorClassNames != null)
             return false;
-      }
-      else if (!outgoingInterceptorClassNames.equals(other.outgoingInterceptorClassNames))
+      } else if (!outgoingInterceptorClassNames.equals(other.outgoingInterceptorClassNames))
          return false;
       if (pagingDirectory == null) {
          if (other.pagingDirectory != null)
             return false;
-      }
-      else if (!pagingDirectory.equals(other.pagingDirectory))
+      } else if (!pagingDirectory.equals(other.pagingDirectory))
          return false;
       if (persistDeliveryCountBeforeDelivery != other.persistDeliveryCountBeforeDelivery)
          return false;
@@ -1704,10 +1867,7 @@ public class ConfigurationImpl implements Configuration, Serializable {
       if (queueConfigurations == null) {
          if (other.queueConfigurations != null)
             return false;
-      }
-      else if (!queueConfigurations.equals(other.queueConfigurations))
-         return false;
-      if (runSyncSpeedTest != other.runSyncSpeedTest)
+      } else if (!queueConfigurations.equals(other.queueConfigurations))
          return false;
       if (scheduledThreadPoolMaxSize != other.scheduledThreadPoolMaxSize)
          return false;
@@ -1720,8 +1880,7 @@ public class ConfigurationImpl implements Configuration, Serializable {
       if (securitySettings == null) {
          if (other.securitySettings != null)
             return false;
-      }
-      else if (!securitySettings.equals(other.securitySettings))
+      } else if (!securitySettings.equals(other.securitySettings))
          return false;
       if (serverDumpInterval != other.serverDumpInterval)
          return false;
@@ -1731,7 +1890,10 @@ public class ConfigurationImpl implements Configuration, Serializable {
          return false;
       if (transactionTimeoutScanPeriod != other.transactionTimeoutScanPeriod)
          return false;
-      if (wildcardRoutingEnabled != other.wildcardRoutingEnabled)
+      if (wildcardConfiguration == null) {
+         if (other.wildcardConfiguration != null)
+            return false;
+      } else if (!wildcardConfiguration.equals(other.wildcardConfiguration))
          return false;
       if (resolveProtocols != other.resolveProtocols)
          return false;
@@ -1739,6 +1901,23 @@ public class ConfigurationImpl implements Configuration, Serializable {
          return false;
       if (connectionTtlCheckInterval != other.connectionTtlCheckInterval)
          return false;
+      if (journalDatasync != other.journalDatasync) {
+         return false;
+      }
+
+      if (globalMaxSize != null && !globalMaxSize.equals(other.globalMaxSize)) {
+         return false;
+      }
+      if (maxDiskUsage != other.maxDiskUsage) {
+         return false;
+      }
+      if (diskScanPeriod != other.diskScanPeriod) {
+         return false;
+      }
+      if (connectionTtlCheckInterval != other.connectionTtlCheckInterval) {
+         return false;
+      }
+
       return true;
    }
 
@@ -1818,9 +1997,170 @@ public class ConfigurationImpl implements Configuration, Serializable {
    }
 
    @Override
+   public String getInternalNamingPrefix() {
+      return internalNamingPrefix;
+   }
+
+   @Override
+   public ConfigurationImpl setInternalNamingPrefix(String internalNamingPrefix) {
+      this.internalNamingPrefix = internalNamingPrefix;
+      return this;
+   }
+
+   @Override
    public ConfigurationImpl setDiskScanPeriod(int diskScanPeriod) {
       this.diskScanPeriod = diskScanPeriod;
       return this;
+   }
+
+   @Override
+   public ConfigurationImpl setNetworkCheckList(String list) {
+      this.networkCheckList = list;
+      return this;
+   }
+
+   @Override
+   public String getNetworkCheckList() {
+      return networkCheckList;
+   }
+
+   @Override
+   public ConfigurationImpl setNetworkCheckURLList(String urls) {
+      this.networkURLList = urls;
+      return this;
+   }
+
+   @Override
+   public String getNetworkCheckURLList() {
+      return networkURLList;
+   }
+
+   /**
+    * The interval on which we will perform network checks.
+    */
+   @Override
+   public ConfigurationImpl setNetworkCheckPeriod(long period) {
+      this.networkCheckPeriod = period;
+      return this;
+   }
+
+   @Override
+   public long getNetworkCheckPeriod() {
+      return this.networkCheckPeriod;
+   }
+
+   /**
+    * Time in ms for how long we should wait for a ping to finish.
+    */
+   @Override
+   public ConfigurationImpl setNetworkCheckTimeout(int timeout) {
+      this.networkCheckTimeout = timeout;
+      return this;
+   }
+
+   @Override
+   public int getNetworkCheckTimeout() {
+      return this.networkCheckTimeout;
+   }
+
+   @Override
+   public Configuration setNetworCheckNIC(String nic) {
+      this.networkCheckNIC = nic;
+      return this;
+   }
+
+   @Override
+   public String getNetworkCheckNIC() {
+      return networkCheckNIC;
+   }
+
+   @Override
+   public String getNetworkCheckPingCommand() {
+      return networkCheckPingCommand;
+   }
+
+   @Override
+   public ConfigurationImpl setNetworkCheckPingCommand(String command) {
+      this.networkCheckPingCommand = command;
+      return this;
+   }
+
+   @Override
+   public String getNetworkCheckPing6Command() {
+      return networkCheckPing6Command;
+   }
+
+   @Override
+   public Configuration setNetworkCheckPing6Command(String command) {
+      this.networkCheckPing6Command = command;
+      return this;
+   }
+
+   @Override
+   public boolean isCriticalAnalyzer() {
+      return criticalAnalyzer;
+   }
+
+   @Override
+   public Configuration setCriticalAnalyzer(boolean CriticalAnalyzer) {
+      this.criticalAnalyzer = CriticalAnalyzer;
+      return this;
+   }
+
+   @Override
+   public long getCriticalAnalyzerTimeout() {
+      return criticalAnalyzerTimeout;
+   }
+
+   @Override
+   public Configuration setCriticalAnalyzerTimeout(long timeout) {
+      this.criticalAnalyzerTimeout = timeout;
+      return this;
+   }
+
+   @Override
+   public long getCriticalAnalyzerCheckPeriod() {
+      if (criticalAnalyzerCheckPeriod <= 0) {
+         this.criticalAnalyzerCheckPeriod = ActiveMQDefaultConfiguration.getCriticalAnalyzerCheckPeriod(criticalAnalyzerTimeout);
+      }
+      return criticalAnalyzerCheckPeriod;
+   }
+
+   @Override
+   public Configuration setCriticalAnalyzerCheckPeriod(long checkPeriod) {
+      this.criticalAnalyzerCheckPeriod = checkPeriod;
+      return this;
+   }
+
+   @Override
+   public CriticalAnalyzerPolicy getCriticalAnalyzerPolicy() {
+      return criticalAnalyzerPolicy;
+   }
+
+   @Override
+   public Configuration setCriticalAnalyzerPolicy(CriticalAnalyzerPolicy policy) {
+      this.criticalAnalyzerPolicy = policy;
+      return this;
+   }
+
+   public static boolean checkoutDupCacheSize(final int windowSize, final int idCacheSize) {
+      final int msgNumInFlight = windowSize / DEFAULT_JMS_MESSAGE_SIZE;
+
+      if (msgNumInFlight == 0) {
+         return true;
+      }
+
+      boolean sizeGood = false;
+
+      if (idCacheSize >= msgNumInFlight) {
+         int r = idCacheSize / msgNumInFlight;
+
+         // This setting is here to accomodate the current default setting.
+         if ( (r >= RANGE_SIZE_MIN) && (r <= RANGE_SZIE_MAX)) {
+            sizeGood = true;
+         }
+      }
+      return sizeGood;
    }
 
    /**
@@ -1829,8 +2169,7 @@ public class ConfigurationImpl implements Configuration, Serializable {
    private File subFolder(String subFolder) {
       try {
          return getBrokerInstance().toPath().resolve(subFolder).toFile();
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          throw new RuntimeException(e);
       }
    }

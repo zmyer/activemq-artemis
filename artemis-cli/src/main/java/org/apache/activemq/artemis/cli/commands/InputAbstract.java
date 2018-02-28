@@ -25,19 +25,52 @@ public class InputAbstract extends ActionAbstract {
 
    private Scanner scanner;
 
+   private static boolean inputEnabled = false;
+
+   /**
+    * Test cases validating or using the CLI cannot deal with inputs,
+    * so they are generally disabled, however the main method from the CLI will enable it back. */
+   public static void enableInput() {
+      inputEnabled = true;
+   }
+
    @Option(name = "--silent", description = "It will disable all the inputs, and it would make a best guess for any required input")
    private boolean silentInput = false;
 
-   public boolean isSilentInput() {
-      return silentInput;
+   private boolean isSilentInput() {
+      return silentInput || !inputEnabled;
    }
 
-   public void setSilentInput(boolean silentInput) {
-      this.silentInput = silentInput;
+   protected boolean inputBoolean(String propertyName, String prompt, boolean silentDefault) {
+      if (isSilentInput()) {
+         return silentDefault;
+      }
+
+      Boolean booleanValue = null;
+      do {
+         String value = input(propertyName, prompt + ", valid values are Y,N,True,False", Boolean.toString(silentDefault));
+
+         switch (value.toUpperCase().trim()) {
+            case "TRUE":
+            case "Y":
+               booleanValue = Boolean.TRUE; break;
+
+            case "FALSE":
+            case "N":
+               booleanValue = Boolean.FALSE; break;
+         }
+      }
+      while (booleanValue == null);
+
+      return booleanValue.booleanValue();
    }
 
    protected String input(String propertyName, String prompt, String silentDefault) {
-      if (silentInput) {
+      return input(propertyName, prompt, silentDefault, false);
+   }
+
+   protected String input(String propertyName, String prompt, String silentDefault, boolean acceptNull) {
+      if (isSilentInput()) {
          return silentDefault;
       }
 
@@ -45,40 +78,48 @@ public class InputAbstract extends ActionAbstract {
       boolean valid = false;
       System.out.println();
       do {
-         context.out.println(propertyName + ": mandatory:");
+         context.out.println(propertyName + ": is a mandatory property!");
          context.out.println(prompt);
          inputStr = scanner.nextLine();
-         if (inputStr.trim().equals("")) {
+         if (!acceptNull && inputStr.trim().equals("")) {
             System.out.println("Invalid Entry!");
-         }
-         else {
+         } else {
             valid = true;
          }
-      } while (!valid);
+      }
+      while (!valid);
 
       return inputStr.trim();
    }
 
    protected String inputPassword(String propertyName, String prompt, String silentDefault) {
-      if (silentInput) {
+      if (isSilentInput()) {
          return silentDefault;
       }
 
-      String inputStr;
+      String inputStr = "";
       boolean valid = false;
       System.out.println();
       do {
          context.out.println(propertyName + ": is mandatory with this configuration:");
          context.out.println(prompt);
-         inputStr = new String(System.console().readPassword());
+         char[] chars = System.console().readPassword();
+
+         // could be null if the user input something weird like Ctrl-d
+         if (chars == null) {
+            System.out.println("Invalid Entry!");
+            continue;
+         }
+
+         inputStr = new String(chars);
 
          if (inputStr.trim().equals("")) {
             System.out.println("Invalid Entry!");
-         }
-         else {
+         } else {
             valid = true;
          }
-      } while (!valid);
+      }
+      while (!valid);
 
       return inputStr.trim();
    }
@@ -91,5 +132,4 @@ public class InputAbstract extends ActionAbstract {
 
       return null;
    }
-
 }

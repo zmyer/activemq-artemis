@@ -23,21 +23,25 @@ import org.apache.activemq.artemis.api.core.client.ClientProducer;
 import org.apache.activemq.artemis.api.core.client.ClientSession;
 import org.apache.activemq.artemis.api.core.client.ClientSessionFactory;
 import org.apache.activemq.artemis.api.core.client.ServerLocator;
-import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.core.server.Queue;
+import org.apache.activemq.artemis.api.core.RoutingType;
+import org.apache.activemq.artemis.core.server.impl.AddressInfo;
 import org.apache.activemq.artemis.core.settings.impl.AddressFullMessagePolicy;
 import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
+import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.junit.Before;
 import org.junit.Test;
 
 public class PagingReceiveTest extends ActiveMQTestBase {
 
-   private static final SimpleString ADDRESS = new SimpleString("jms.queue.catalog-service.price.change.bm");
+   private static final SimpleString ADDRESS = new SimpleString("catalog-service.price.change.bm");
 
    private ActiveMQServer server;
 
    private ServerLocator locator;
+
+   private int numMsgs = 500;
 
    protected boolean isNetty() {
       return false;
@@ -46,10 +50,19 @@ public class PagingReceiveTest extends ActiveMQTestBase {
    @Test
    public void testReceive() throws Exception {
       ClientMessage message = receiveMessage();
-      System.out.println("message received:" + message);
-
       assertNotNull("Message not found.", message);
    }
+
+   @Test
+   public void testReceiveThenCheckCounter() throws Exception {
+
+      Queue queue = server.locateQueue(ADDRESS);
+      assertEquals(numMsgs, queue.getMessagesAdded());
+      receiveAllMessages();
+      queue.getPageSubscription().cleanupEntries(true);
+      assertEquals(numMsgs, queue.getMessagesAdded());
+   }
+
 
    @Override
    @Before
@@ -57,7 +70,8 @@ public class PagingReceiveTest extends ActiveMQTestBase {
       super.setUp();
       server = internalCreateServer();
 
-      Queue queue = server.createQueue(ADDRESS, ADDRESS, null, true, false);
+      server.addAddressInfo(new AddressInfo(ADDRESS, RoutingType.ANYCAST));
+      Queue queue = server.createQueue(ADDRESS, RoutingType.ANYCAST, ADDRESS, null, true, false);
       queue.getPageSubscription().getPagingStore().startPaging();
 
       for (int i = 0; i < 10; i++) {
@@ -82,7 +96,7 @@ public class PagingReceiveTest extends ActiveMQTestBase {
 
       server.stop();
 
-      internalCreateServer();
+      server = internalCreateServer();
 
    }
 
@@ -95,6 +109,22 @@ public class PagingReceiveTest extends ActiveMQTestBase {
 
       locator = createFactory(isNetty());
       return server;
+   }
+
+   private void receiveAllMessages() throws Exception {
+      final ClientSessionFactory sf = createSessionFactory(locator);
+      ClientSession session = sf.createSession(null, null, false, true, true, false, 0);
+
+      session.start();
+      ClientConsumer consumer = session.createConsumer(ADDRESS);
+      for (int i = 0; i < numMsgs; i++) {
+         ClientMessage message = consumer.receive(2000);
+         assertNotNull(message);
+         message.acknowledge();
+      }
+
+      session.commit();
+      session.close();
    }
 
    private ClientMessage receiveMessage() throws Exception {

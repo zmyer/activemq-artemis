@@ -23,7 +23,7 @@ public class RestReceive {
 
    public static void main(String[] args) throws Exception {
       // first get the create URL for the shipping queue
-      ClientRequest request = new ClientRequest("http://localhost:8080/queues/jms.queue.orders");
+      ClientRequest request = new ClientRequest("http://localhost:8080/queues/orders");
       ClientResponse res = request.head();
       Link pullConsumers = res.getHeaderAsLink("msg-pull-consumers");
       res = pullConsumers.request().formParameter("autoAck", "false").post();
@@ -35,15 +35,13 @@ public class RestReceive {
          if (res.getStatus() == 503) {
             System.out.println("Timeout...");
             ackNext = res.getHeaderAsLink("msg-acknowledge-next");
-         }
-         else if (res.getStatus() == 200) {
+         } else if (res.getStatus() == 200) {
             Order order = (Order) res.getEntity(Order.class);
             System.out.println(order);
             Link ack = res.getHeaderAsLink("msg-acknowledgement");
             res = ack.request().formParameter("acknowledge", "true").post();
             ackNext = res.getHeaderAsLink("msg-acknowledge-next");
-         }
-         else {
+         } else {
             throw new RuntimeException("Failure! " + res.getStatus());
          }
          res.releaseConnection();

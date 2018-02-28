@@ -16,20 +16,25 @@
  */
 package org.apache.activemq.artemis.core.server.impl;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
 import org.apache.activemq.artemis.api.core.TransportConfiguration;
 import org.apache.activemq.artemis.core.config.Configuration;
 import org.apache.activemq.artemis.core.config.impl.ConfigurationImpl;
 import org.apache.activemq.artemis.core.remoting.impl.invm.InVMAcceptorFactory;
+import org.apache.activemq.artemis.core.server.ActiveMQComponent;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.core.server.ActiveMQServers;
+import org.apache.activemq.artemis.core.server.ServiceComponent;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 public class EmbeddedServerTest {
 
@@ -46,8 +51,7 @@ public class EmbeddedServerTest {
       server = ActiveMQServers.newActiveMQServer(configuration);
       try {
          server.start();
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          Assert.fail();
       }
    }
@@ -56,8 +60,7 @@ public class EmbeddedServerTest {
    public void teardown() {
       try {
          server.stop();
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          // Do Nothing
       }
    }
@@ -66,6 +69,78 @@ public class EmbeddedServerTest {
    public void testNoLockFileWithPersistenceFalse() {
       Path journalDir = Paths.get(SERVER_JOURNAL_DIR, SERVER_LOCK_NAME);
       boolean lockExists = Files.exists(journalDir);
-      Assert.assertFalse(lockExists);
+      assertFalse(lockExists);
+   }
+
+   @Test
+   //make sure the correct stop/exit API is called.
+   public void testExternalComponentStop() throws Exception {
+      FakeExternalComponent normalComponent = new FakeExternalComponent();
+      FakeExternalServiceComponent serviceComponent = new FakeExternalServiceComponent();
+
+      server.addExternalComponent(normalComponent);
+      server.addExternalComponent(serviceComponent);
+
+      server.stop(false);
+      assertTrue(normalComponent.stopCalled);
+
+      assertTrue(serviceComponent.stopCalled);
+      assertFalse(serviceComponent.exitCalled);
+
+      normalComponent.resetFlags();
+      serviceComponent.resetFlags();
+
+      server.start();
+      server.stop();
+      assertTrue(normalComponent.stopCalled);
+
+      assertFalse(serviceComponent.stopCalled);
+      assertTrue(serviceComponent.exitCalled);
+   }
+
+   private class FakeExternalComponent implements ActiveMQComponent {
+
+      volatile boolean startCalled;
+      volatile boolean stopCalled;
+
+      @Override
+      public void start() throws Exception {
+         startCalled = true;
+      }
+
+      @Override
+      public void stop() throws Exception {
+         stopCalled = true;
+      }
+
+      @Override
+      public boolean isStarted() {
+         return startCalled;
+      }
+
+      public void resetFlags() {
+         startCalled = false;
+         stopCalled = false;
+      }
+   }
+
+   private class FakeExternalServiceComponent extends FakeExternalComponent implements ServiceComponent {
+
+      volatile boolean exitCalled;
+
+      @Override
+      public void stop(boolean isShutdown) throws Exception {
+         if (isShutdown) {
+            exitCalled = true;
+         } else {
+            stop();
+         }
+      }
+
+      @Override
+      public void resetFlags() {
+         super.resetFlags();
+         exitCalled = false;
+      }
    }
 }

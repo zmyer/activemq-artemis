@@ -16,50 +16,49 @@
  */
 package org.apache.activemq.artemis.tests.integration.ssl;
 
-import javax.net.ssl.SSLPeerUnverifiedException;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 
-import io.netty.handler.ssl.SslHandler;
+import javax.net.ssl.SSLPeerUnverifiedException;
+
 import org.apache.activemq.artemis.api.core.ActiveMQException;
 import org.apache.activemq.artemis.api.core.ActiveMQNotConnectedException;
 import org.apache.activemq.artemis.api.core.Interceptor;
-import org.apache.activemq.artemis.api.core.Message;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.api.core.TransportConfiguration;
+import org.apache.activemq.artemis.api.core.client.ActiveMQClient;
 import org.apache.activemq.artemis.api.core.client.ClientConsumer;
 import org.apache.activemq.artemis.api.core.client.ClientMessage;
 import org.apache.activemq.artemis.api.core.client.ClientProducer;
 import org.apache.activemq.artemis.api.core.client.ClientSession;
 import org.apache.activemq.artemis.api.core.client.ClientSessionFactory;
-import org.apache.activemq.artemis.api.core.client.ActiveMQClient;
 import org.apache.activemq.artemis.api.core.client.ServerLocator;
-import org.apache.activemq.artemis.core.remoting.impl.netty.NettyAcceptor;
-import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
-import org.apache.activemq.artemis.utils.RandomUtil;
 import org.apache.activemq.artemis.core.config.impl.ConfigurationImpl;
 import org.apache.activemq.artemis.core.protocol.core.Packet;
 import org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl;
+import org.apache.activemq.artemis.core.remoting.impl.netty.NettyAcceptor;
 import org.apache.activemq.artemis.core.remoting.impl.netty.NettyConnection;
 import org.apache.activemq.artemis.core.remoting.impl.netty.TransportConstants;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.spi.core.protocol.RemotingConnection;
+import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
+import org.apache.activemq.artemis.utils.RandomUtil;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
+import io.netty.handler.ssl.SslHandler;
+
 @RunWith(value = Parameterized.class)
 public class CoreClientOverTwoWaySSLTest extends ActiveMQTestBase {
 
    @Parameterized.Parameters(name = "storeType={0}")
    public static Collection getParameters() {
-      return Arrays.asList(new Object[][]{
-         {"JCEKS"},
-         {"JKS"}});
+      return Arrays.asList(new Object[][]{{"JCEKS"}, {"JKS"}});
    }
 
    public CoreClientOverTwoWaySSLTest(String storeType) {
@@ -119,8 +118,7 @@ public class CoreClientOverTwoWaySSLTest extends ActiveMQTestBase {
                   Assert.assertNotNull(sslHandler.engine().getSession());
                   Assert.assertNotNull(sslHandler.engine().getSession().getPeerCertificateChain());
                }
-            }
-            catch (SSLPeerUnverifiedException e) {
+            } catch (SSLPeerUnverifiedException e) {
                Assert.fail(e.getMessage());
             }
          }
@@ -154,7 +152,7 @@ public class CoreClientOverTwoWaySSLTest extends ActiveMQTestBase {
       ClientConsumer consumer = session.createConsumer(CoreClientOverTwoWaySSLTest.QUEUE);
       session.start();
 
-      Message m = consumer.receive(1000);
+      ClientMessage m = consumer.receive(1000);
       Assert.assertNotNull(m);
       Assert.assertEquals(text, m.getBodyBuffer().readString());
    }
@@ -192,7 +190,7 @@ public class CoreClientOverTwoWaySSLTest extends ActiveMQTestBase {
       ClientConsumer consumer = session.createConsumer(CoreClientOverTwoWaySSLTest.QUEUE);
       session.start();
 
-      Message m = consumer.receive(1000);
+      ClientMessage m = consumer.receive(1000);
       Assert.assertNotNull(m);
       Assert.assertEquals(text, m.getBodyBuffer().readString());
    }
@@ -219,8 +217,79 @@ public class CoreClientOverTwoWaySSLTest extends ActiveMQTestBase {
       try {
          ClientSessionFactory sf = createSessionFactory(locator);
          fail("Creating a session here should fail due to a certificate with a CN that doesn't match the host name.");
+      } catch (Exception e) {
+         // ignore
       }
-      catch (Exception e) {
+   }
+
+   @Test
+   public void testTwoWaySSLVerifyClientTrustAllTrue() throws Exception {
+      NettyAcceptor acceptor = (NettyAcceptor) server.getRemotingService().getAcceptor("nettySSL");
+      acceptor.getConfiguration().put(TransportConstants.NEED_CLIENT_AUTH_PROP_NAME, true);
+      server.getRemotingService().stop(false);
+      server.getRemotingService().start();
+      server.getRemotingService().startAcceptors();
+
+      //Set trust all so this should work even with no trust store set
+      tc.getParams().put(TransportConstants.SSL_ENABLED_PROP_NAME, true);
+      tc.getParams().put(TransportConstants.TRUST_ALL_PROP_NAME, true);
+      tc.getParams().put(TransportConstants.KEYSTORE_PROVIDER_PROP_NAME, storeType);
+      tc.getParams().put(TransportConstants.KEYSTORE_PATH_PROP_NAME, CLIENT_SIDE_KEYSTORE);
+      tc.getParams().put(TransportConstants.KEYSTORE_PASSWORD_PROP_NAME, PASSWORD);
+
+      server.getRemotingService().addIncomingInterceptor(new MyInterceptor());
+
+      ServerLocator locator = addServerLocator(ActiveMQClient.createServerLocatorWithoutHA(tc));
+      ClientSessionFactory sf = createSessionFactory(locator);
+      sf.close();
+   }
+
+   @Test
+   public void testTwoWaySSLVerifyClientTrustAllTrueByURI() throws Exception {
+      NettyAcceptor acceptor = (NettyAcceptor) server.getRemotingService().getAcceptor("nettySSL");
+      acceptor.getConfiguration().put(TransportConstants.NEED_CLIENT_AUTH_PROP_NAME, true);
+      server.getRemotingService().stop(false);
+      server.getRemotingService().start();
+      server.getRemotingService().startAcceptors();
+
+      //Set trust all so this should work even with no trust store set
+      StringBuilder uri = new StringBuilder("tcp://" + tc.getParams().get(TransportConstants.HOST_PROP_NAME).toString()
+            + ":" + tc.getParams().get(TransportConstants.PORT_PROP_NAME).toString());
+
+      uri.append("?").append(TransportConstants.SSL_ENABLED_PROP_NAME).append("=true");
+      uri.append("&").append(TransportConstants.TRUST_ALL_PROP_NAME).append("=true");
+      uri.append("&").append(TransportConstants.KEYSTORE_PROVIDER_PROP_NAME).append("=").append(storeType);
+      uri.append("&").append(TransportConstants.KEYSTORE_PATH_PROP_NAME).append("=").append(CLIENT_SIDE_KEYSTORE);
+      uri.append("&").append(TransportConstants.KEYSTORE_PASSWORD_PROP_NAME).append("=").append(PASSWORD);
+
+      server.getRemotingService().addIncomingInterceptor(new MyInterceptor());
+
+      ServerLocator locator = addServerLocator(ActiveMQClient.createServerLocator(uri.toString()));
+      ClientSessionFactory sf = createSessionFactory(locator);
+      sf.close();
+   }
+
+   @Test
+   public void testTwoWaySSLVerifyClientTrustAllFalse() throws Exception {
+      NettyAcceptor acceptor = (NettyAcceptor) server.getRemotingService().getAcceptor("nettySSL");
+      acceptor.getConfiguration().put(TransportConstants.NEED_CLIENT_AUTH_PROP_NAME, true);
+      server.getRemotingService().stop(false);
+      server.getRemotingService().start();
+      server.getRemotingService().startAcceptors();
+
+      //Trust all defaults to false so this should fail with no trust store set
+      tc.getParams().put(TransportConstants.SSL_ENABLED_PROP_NAME, true);
+      tc.getParams().put(TransportConstants.KEYSTORE_PROVIDER_PROP_NAME, storeType);
+      tc.getParams().put(TransportConstants.KEYSTORE_PATH_PROP_NAME, CLIENT_SIDE_KEYSTORE);
+      tc.getParams().put(TransportConstants.KEYSTORE_PASSWORD_PROP_NAME, PASSWORD);
+
+      server.getRemotingService().addIncomingInterceptor(new MyInterceptor());
+
+      ServerLocator locator = addServerLocator(ActiveMQClient.createServerLocatorWithoutHA(tc));
+      try {
+         ClientSessionFactory sf = createSessionFactory(locator);
+         fail("Creating a session here should fail due to no trust store being set");
+      } catch (Exception e) {
          // ignore
       }
    }
@@ -236,11 +305,9 @@ public class CoreClientOverTwoWaySSLTest extends ActiveMQTestBase {
       try {
          createSessionFactory(locator);
          Assert.fail();
-      }
-      catch (ActiveMQNotConnectedException se) {
+      } catch (ActiveMQNotConnectedException se) {
          //ok
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          Assert.fail("Invalid Exception type:" + e.getType());
       }
    }

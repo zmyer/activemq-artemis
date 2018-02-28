@@ -13,12 +13,11 @@ please see [Persistence](persistence.md).
 
 These are the native libraries distributed by Apache ActiveMQ Artemis:
 
--   libActiveMQAIO32.so - x86 32 bits
-
--   libActiveMQAIO64.so - x86 64 bits
+-   libartemis-native-64.so - x86 64 bits
+-   We distributed a 32-bit version until early 2017. While it's not available on the distribution any longer it should still be possible to compile to a 32-bit environment if needed.
 
 When using libaio, Apache ActiveMQ Artemis will always try loading these files as long
-as they are on the [library path](using-server.html#library-path)
+as they are on the [library path](using-server.md#library-path)
 
 
 ## Runtime dependencies
@@ -86,5 +85,5 @@ Or on Debian systems:
 In the source distribution or git clone, in the `artemis-native` directory, execute the shell
 script `compile-native.sh`. This script will invoke the proper commands to perform the native build.
 
-If you want more information refer to the [cmake web pages](http://cmake.org).
+If you want more information refer to the [cmake web pages](https://cmake.org).
 

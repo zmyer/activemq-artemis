@@ -21,20 +21,53 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Executor;
 
+import org.apache.activemq.artemis.api.config.ActiveMQDefaultConfiguration;
+import org.apache.activemq.artemis.api.core.Message;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.core.filter.Filter;
 import org.apache.activemq.artemis.core.paging.cursor.PageSubscription;
+import org.apache.activemq.artemis.core.persistence.OperationContext;
+import org.apache.activemq.artemis.core.postoffice.Binding;
 import org.apache.activemq.artemis.core.server.Consumer;
 import org.apache.activemq.artemis.core.server.MessageReference;
 import org.apache.activemq.artemis.core.server.Queue;
 import org.apache.activemq.artemis.core.server.RoutingContext;
-import org.apache.activemq.artemis.core.server.ServerMessage;
 import org.apache.activemq.artemis.core.server.impl.AckReason;
 import org.apache.activemq.artemis.core.transaction.Transaction;
-import org.apache.activemq.artemis.utils.LinkedListIterator;
 import org.apache.activemq.artemis.utils.ReferenceCounter;
+import org.apache.activemq.artemis.utils.collections.LinkedListIterator;
+import org.apache.activemq.artemis.utils.critical.CriticalComponentImpl;
+import org.apache.activemq.artemis.utils.critical.EmptyCriticalAnalyzer;
 
-public class FakeQueue implements Queue {
+public class FakeQueue extends CriticalComponentImpl implements Queue {
+
+   @Override
+   public void setPurgeOnNoConsumers(boolean value) {
+
+   }
+
+   @Override
+   public boolean isExclusive() {
+      // no-op
+      return false;
+   }
+
+   @Override
+   public void setExclusive(boolean value) {
+      // no-op
+   }
+
+   @Override
+   public boolean isLastValue() {
+      // no-op
+      return false;
+   }
+
+   @Override
+   public void setMaxConsumer(int maxConsumers) {
+
+   }
 
    @Override
    public boolean isInternalQueue() {
@@ -54,6 +87,21 @@ public class FakeQueue implements Queue {
    @Override
    public void unproposed(SimpleString groupID) {
 
+   }
+
+   @Override
+   public void reloadPause(long recordID) {
+
+   }
+
+   @Override
+   public void recheckRefCount(OperationContext context) {
+
+   }
+
+   @Override
+   public boolean isPersistedPause() {
+      return false;
    }
 
    @Override
@@ -103,6 +151,11 @@ public class FakeQueue implements Queue {
    }
 
    @Override
+   public void pause(boolean persist) {
+
+   }
+
+   @Override
    public boolean flushExecutor() {
       return true;
    }
@@ -148,6 +201,7 @@ public class FakeQueue implements Queue {
    }
 
    public FakeQueue(final SimpleString name, final long id) {
+      super(EmptyCriticalAnalyzer.getInstance(), 1);
       this.name = name;
       this.id = id;
    }
@@ -308,6 +362,21 @@ public class FakeQueue implements Queue {
       return messageCount;
    }
 
+   @Override
+   public long getPersistentSize() {
+      return 0;
+   }
+
+   @Override
+   public long getDurableMessageCount() {
+      return 0;
+   }
+
+   @Override
+   public long getDurablePersistentSize() {
+      return 0;
+   }
+
    public void setMessageCount(long messageCount) {
       this.messageCount = messageCount;
    }
@@ -399,9 +468,21 @@ public class FakeQueue implements Queue {
    }
 
    @Override
+   public long getScheduledSize() {
+      // no-op
+      return 0;
+   }
+
+   @Override
    public List<MessageReference> getScheduledMessages() {
       // no-op
       return null;
+   }
+
+   @Override
+   public boolean isDurableMessage() {
+      // no-op
+      return false;
    }
 
    @Override
@@ -428,19 +509,23 @@ public class FakeQueue implements Queue {
    }
 
    @Override
+   public boolean isPurgeOnNoConsumers() {
+      return false;
+   }
+
+   @Override
+   public int getMaxConsumers() {
+      return -1;
+   }
+
+   @Override
    public LinkedListIterator<MessageReference> iterator() {
       // no-op
       return null;
    }
 
    @Override
-   public boolean moveReference(final long messageID, final SimpleString toAddress) throws Exception {
-      // no-op
-      return false;
-   }
-
-   @Override
-   public int moveReferences(final Filter filter, final SimpleString toAddress) throws Exception {
+   public int moveReferences(final Filter filter, final SimpleString toAddress, Binding binding) throws Exception {
       // no-op
       return 0;
    }
@@ -458,7 +543,7 @@ public class FakeQueue implements Queue {
    }
 
    @Override
-   public void referenceHandled() {
+   public void referenceHandled(MessageReference ref) {
       // no-op
 
    }
@@ -502,18 +587,18 @@ public class FakeQueue implements Queue {
    }
 
    @Override
-   public void route(final ServerMessage message, final RoutingContext context) throws Exception {
+   public void route(final Message message, final RoutingContext context) throws Exception {
       // no-op
 
    }
 
    @Override
-   public void routeWithAck(ServerMessage message, RoutingContext context) {
+   public void routeWithAck(Message message, RoutingContext context) {
 
    }
 
    @Override
-   public boolean hasMatchingConsumer(final ServerMessage message) {
+   public boolean hasMatchingConsumer(final Message message) {
       // no-op
       return false;
    }
@@ -534,12 +619,22 @@ public class FakeQueue implements Queue {
       return subs;
    }
 
+   @Override
+   public RoutingType getRoutingType() {
+      return ActiveMQDefaultConfiguration.getDefaultRoutingType();
+   }
+
+   @Override
+   public void setRoutingType(RoutingType routingType) {
+
+   }
+
    public void setPageSubscription(PageSubscription sub) {
       this.subs = sub;
    }
 
    @Override
-   public boolean moveReference(long messageID, SimpleString toAddress, boolean rejectDuplicates) throws Exception {
+   public boolean moveReference(long messageID, SimpleString toAddress, Binding binding, boolean rejectDuplicates) throws Exception {
       // no-op
       return false;
    }
@@ -550,7 +645,7 @@ public class FakeQueue implements Queue {
    }
 
    @Override
-   public int deleteMatchingReferences(int flushLImit, Filter filter) throws Exception {
+   public int deleteMatchingReferences(int flushLImit, Filter filter, AckReason reason) throws Exception {
       return 0;
    }
 
@@ -558,7 +653,8 @@ public class FakeQueue implements Queue {
    public int moveReferences(int flushLimit,
                              Filter filter,
                              SimpleString toAddress,
-                             boolean rejectDuplicates) throws Exception {
+                             boolean rejectDuplicates,
+                             Binding binding) throws Exception {
       return 0;
    }
 
@@ -589,7 +685,7 @@ public class FakeQueue implements Queue {
    }
 
    @Override
-   public LinkedListIterator<MessageReference> totalIterator() {
+   public LinkedListIterator<MessageReference> browserIterator() {
       // TODO Auto-generated method stub
       return null;
    }
@@ -609,6 +705,28 @@ public class FakeQueue implements Queue {
    }
 
    @Override
-   public void decDelivering(int size) {
+   public long getDeliveringSize() {
+      return 0;
    }
+
+   @Override
+   public int getDurableDeliveringCount() {
+      return 0;
+   }
+
+   @Override
+   public long getDurableDeliveringSize() {
+      return 0;
+   }
+
+   @Override
+   public int getDurableScheduledCount() {
+      return 0;
+   }
+
+   @Override
+   public long getDurableScheduledSize() {
+      return 0;
+   }
+
 }

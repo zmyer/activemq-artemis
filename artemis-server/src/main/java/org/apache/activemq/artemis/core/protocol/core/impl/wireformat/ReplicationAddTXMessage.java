@@ -19,9 +19,10 @@ package org.apache.activemq.artemis.core.protocol.core.impl.wireformat;
 import java.util.Arrays;
 
 import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
-import org.apache.activemq.artemis.core.journal.EncodingSupport;
+import org.apache.activemq.artemis.core.persistence.Persister;
 import org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl;
 import org.apache.activemq.artemis.core.replication.ReplicationManager.ADD_OPERATION_TYPE;
+import org.apache.activemq.artemis.utils.DataConstants;
 
 public class ReplicationAddTXMessage extends PacketImpl {
 
@@ -36,7 +37,9 @@ public class ReplicationAddTXMessage extends PacketImpl {
 
    private byte recordType;
 
-   private EncodingSupport encodingData;
+   private Persister persister;
+
+   private Object encodingData;
 
    private byte[] recordData;
 
@@ -51,7 +54,8 @@ public class ReplicationAddTXMessage extends PacketImpl {
                                   final long txId,
                                   final long id,
                                   final byte recordType,
-                                  final EncodingSupport encodingData) {
+                                  final Persister persister,
+                                  final Object encodingData) {
       this();
       this.journalID = journalID;
       this.operation = operation;
@@ -59,9 +63,22 @@ public class ReplicationAddTXMessage extends PacketImpl {
       this.id = id;
       this.recordType = recordType;
       this.encodingData = encodingData;
+      this.persister = persister;
    }
 
    // Public --------------------------------------------------------
+
+   @Override
+   public int expectedEncodeSize() {
+      return PACKET_HEADERS_SIZE +
+            DataConstants.SIZE_BYTE + // buffer.writeByte(journalID);
+            DataConstants.SIZE_BOOLEAN + // buffer.writeBoolean(operation.toBoolean());
+            DataConstants.SIZE_LONG + // buffer.writeLong(txId);
+            DataConstants.SIZE_LONG + // buffer.writeLong(id);
+            DataConstants.SIZE_BYTE + // buffer.writeByte(recordType);
+            DataConstants.SIZE_INT + // buffer.writeInt(persister.getEncodeSize(encodingData));
+            persister.getEncodeSize(encodingData); // persister.encode(buffer, encodingData);
+   }
 
    @Override
    public void encodeRest(final ActiveMQBuffer buffer) {
@@ -70,8 +87,8 @@ public class ReplicationAddTXMessage extends PacketImpl {
       buffer.writeLong(txId);
       buffer.writeLong(id);
       buffer.writeByte(recordType);
-      buffer.writeInt(encodingData.getEncodeSize());
-      encodingData.encode(buffer);
+      buffer.writeInt(persister.getEncodeSize(encodingData));
+      persister.encode(buffer, encodingData);
    }
 
    @Override
@@ -148,8 +165,7 @@ public class ReplicationAddTXMessage extends PacketImpl {
       if (encodingData == null) {
          if (other.encodingData != null)
             return false;
-      }
-      else if (!encodingData.equals(other.encodingData))
+      } else if (!encodingData.equals(other.encodingData))
          return false;
       if (id != other.id)
          return false;

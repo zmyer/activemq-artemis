@@ -16,10 +16,10 @@
  */
 package org.apache.activemq.artemis.core.management.impl;
 
-import java.util.Map;
-
 import javax.management.MBeanAttributeInfo;
 import javax.management.MBeanOperationInfo;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.apache.activemq.artemis.api.core.TransportConfiguration;
 import org.apache.activemq.artemis.api.core.management.AcceptorControl;
@@ -55,8 +55,7 @@ public class AcceptorControlImpl extends AbstractControl implements AcceptorCont
       clearIO();
       try {
          return configuration.getFactoryClassName();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -66,8 +65,7 @@ public class AcceptorControlImpl extends AbstractControl implements AcceptorCont
       clearIO();
       try {
          return configuration.getName();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -76,9 +74,14 @@ public class AcceptorControlImpl extends AbstractControl implements AcceptorCont
    public Map<String, Object> getParameters() {
       clearIO();
       try {
-         return configuration.getParams();
-      }
-      finally {
+         Map<String, Object> clone = new HashMap(configuration.getParams());
+         for (Map.Entry<String, Object> entry : clone.entrySet()) {
+            if (entry.getKey().toLowerCase().contains("password")) {
+               entry.setValue("****");
+            }
+         }
+         return clone;
+      } finally {
          blockOnIO();
       }
    }
@@ -88,8 +91,7 @@ public class AcceptorControlImpl extends AbstractControl implements AcceptorCont
       clearIO();
       try {
          acceptor.reload();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -99,8 +101,7 @@ public class AcceptorControlImpl extends AbstractControl implements AcceptorCont
       clearIO();
       try {
          return acceptor.isStarted();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -110,8 +111,7 @@ public class AcceptorControlImpl extends AbstractControl implements AcceptorCont
       clearIO();
       try {
          acceptor.start();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }
@@ -121,8 +121,7 @@ public class AcceptorControlImpl extends AbstractControl implements AcceptorCont
       clearIO();
       try {
          acceptor.stop();
-      }
-      finally {
+      } finally {
          blockOnIO();
       }
    }

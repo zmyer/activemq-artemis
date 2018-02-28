@@ -16,15 +16,6 @@
  */
 package org.apache.activemq.artemis.tests.integration.ra;
 
-import org.apache.activemq.artemis.api.core.SimpleString;
-import org.apache.activemq.artemis.api.core.client.ServerLocator;
-import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
-import org.apache.activemq.artemis.jms.client.ActiveMQMessage;
-import org.apache.activemq.artemis.ra.ActiveMQResourceAdapter;
-import org.apache.activemq.artemis.ra.inflow.ActiveMQActivation;
-import org.apache.activemq.artemis.tests.util.JMSTestBase;
-import org.junit.Before;
-
 import javax.jms.Message;
 import javax.jms.MessageListener;
 import javax.resource.ResourceException;
@@ -45,14 +36,23 @@ import java.util.Map;
 import java.util.Timer;
 import java.util.concurrent.CountDownLatch;
 
+import org.apache.activemq.artemis.api.core.SimpleString;
+import org.apache.activemq.artemis.api.core.client.ServerLocator;
+import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
+import org.apache.activemq.artemis.jms.client.ActiveMQMessage;
+import org.apache.activemq.artemis.ra.ActiveMQResourceAdapter;
+import org.apache.activemq.artemis.ra.inflow.ActiveMQActivation;
+import org.apache.activemq.artemis.tests.util.JMSTestBase;
+import org.junit.Before;
+
 public abstract class ActiveMQRATestBase extends JMSTestBase {
 
    protected ServerLocator locator;
 
    protected static final String MDBQUEUE = "mdbQueue";
    protected static final String DLQ = "dlqQueue";
-   protected static final String MDBQUEUEPREFIXED = "jms.queue.mdbQueue";
-   protected static final SimpleString MDBQUEUEPREFIXEDSIMPLE = new SimpleString("jms.queue.mdbQueue");
+   protected static final String MDBQUEUEPREFIXED = "mdbQueue";
+   protected static final SimpleString MDBQUEUEPREFIXEDSIMPLE = new SimpleString("mdbQueue");
 
    @Override
    @Before
@@ -65,7 +65,7 @@ public abstract class ActiveMQRATestBase extends JMSTestBase {
    }
 
    protected void setupDLQ(int maxDeliveries) {
-      AddressSettings settings = new AddressSettings().setDeadLetterAddress(SimpleString.toSimpleString("jms.queue." + DLQ)).setMaxDeliveryAttempts(maxDeliveries);
+      AddressSettings settings = new AddressSettings().setDeadLetterAddress(SimpleString.toSimpleString(DLQ)).setMaxDeliveryAttempts(maxDeliveries);
       server.getAddressSettingsRepository().addMatch("#", settings);
    }
 

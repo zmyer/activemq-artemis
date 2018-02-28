@@ -16,26 +16,6 @@
  */
 package org.apache.activemq.artemis.tests.integration.jms.cluster;
 
-import org.apache.activemq.artemis.api.core.ActiveMQException;
-import org.apache.activemq.artemis.api.core.ActiveMQNotConnectedException;
-import org.apache.activemq.artemis.api.core.SimpleString;
-import org.apache.activemq.artemis.api.core.TransportConfiguration;
-import org.apache.activemq.artemis.api.core.client.ClientSession;
-import org.apache.activemq.artemis.api.jms.ActiveMQJMSClient;
-import org.apache.activemq.artemis.api.jms.JMSFactoryType;
-import org.apache.activemq.artemis.core.client.impl.ClientSessionInternal;
-import org.apache.activemq.artemis.core.server.ActiveMQServer;
-import org.apache.activemq.artemis.core.server.ActiveMQServers;
-import org.apache.activemq.artemis.jms.client.ActiveMQConnectionFactory;
-import org.apache.activemq.artemis.jms.client.ActiveMQDestination;
-import org.apache.activemq.artemis.jms.client.ActiveMQSession;
-import org.apache.activemq.artemis.spi.core.protocol.RemotingConnection;
-import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
-import org.apache.activemq.artemis.utils.RandomUtil;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
-
 import javax.jms.BytesMessage;
 import javax.jms.Connection;
 import javax.jms.DeliveryMode;
@@ -48,6 +28,26 @@ import javax.jms.Queue;
 import javax.jms.Session;
 import javax.jms.TextMessage;
 import javax.jms.Topic;
+
+import org.apache.activemq.artemis.api.core.ActiveMQException;
+import org.apache.activemq.artemis.api.core.ActiveMQNotConnectedException;
+import org.apache.activemq.artemis.api.core.SimpleString;
+import org.apache.activemq.artemis.api.core.TransportConfiguration;
+import org.apache.activemq.artemis.api.core.client.ClientSession;
+import org.apache.activemq.artemis.api.jms.ActiveMQJMSClient;
+import org.apache.activemq.artemis.api.jms.JMSFactoryType;
+import org.apache.activemq.artemis.core.client.impl.ClientSessionInternal;
+import org.apache.activemq.artemis.core.server.ActiveMQServer;
+import org.apache.activemq.artemis.core.server.ActiveMQServers;
+import org.apache.activemq.artemis.api.core.RoutingType;
+import org.apache.activemq.artemis.jms.client.ActiveMQConnectionFactory;
+import org.apache.activemq.artemis.jms.client.ActiveMQSession;
+import org.apache.activemq.artemis.spi.core.protocol.RemotingConnection;
+import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
+import org.apache.activemq.artemis.utils.RandomUtil;
+import org.junit.Assert;
+import org.junit.Before;
+import org.junit.Test;
 
 public class JMSReconnectTest extends ActiveMQTestBase {
 
@@ -99,9 +99,9 @@ public class JMSReconnectTest extends ActiveMQTestBase {
 
       RemotingConnection coreConn = ((ClientSessionInternal) coreSession).getConnection();
 
-      SimpleString jmsQueueName = new SimpleString(ActiveMQDestination.JMS_QUEUE_ADDRESS_PREFIX + "myqueue");
+      SimpleString jmsQueueName = new SimpleString("myqueue");
 
-      coreSession.createQueue(jmsQueueName, jmsQueueName, null, true);
+      coreSession.createQueue(jmsQueueName, RoutingType.ANYCAST, jmsQueueName, null, true);
 
       Queue queue = sess.createQueue("myqueue");
 
@@ -179,11 +179,10 @@ public class JMSReconnectTest extends ActiveMQTestBase {
       Destination dest;
 
       if (nonDurableSub) {
-         coreSession.createQueue(ActiveMQDestination.JMS_TOPIC_ADDRESS_PREFIX + "mytopic", "blahblah", null, false);
+         coreSession.createQueue("mytopic", "blahblah", null, false);
 
          dest = ActiveMQJMSClient.createTopic("mytopic");
-      }
-      else {
+      } else {
          dest = sess.createTemporaryQueue();
       }
 
@@ -243,7 +242,7 @@ public class JMSReconnectTest extends ActiveMQTestBase {
 
       ClientSession coreSession = ((ActiveMQSession) sess).getCoreSession();
 
-      coreSession.createQueue(ActiveMQDestination.JMS_TOPIC_ADDRESS_PREFIX + "mytopic", "blahblah", null, false);
+      coreSession.createQueue("mytopic", "blahblah", null, false);
 
       Topic topic = ActiveMQJMSClient.createTopic("mytopic");
 

@@ -22,6 +22,8 @@ import org.jboss.logging.annotations.LogMessage;
 import org.jboss.logging.annotations.Message;
 import org.jboss.logging.annotations.MessageLogger;
 
+import java.io.File;
+
 /**
  * Logger Code 24
  *
@@ -39,9 +41,6 @@ import org.jboss.logging.annotations.MessageLogger;
 @MessageLogger(projectCode = "AMQ")
 public interface ActiveMQWebLogger extends BasicLogger {
 
-   /**
-    * The aerogear logger.
-    */
    ActiveMQWebLogger LOGGER = Logger.getMessageLogger(ActiveMQWebLogger.class, ActiveMQWebLogger.class.getPackage().getName());
 
    @LogMessage(level = Logger.Level.INFO)
@@ -52,4 +51,11 @@ public interface ActiveMQWebLogger extends BasicLogger {
    @Message(id = 241002, value = "Artemis Jolokia REST API available at {0}", format = Message.Format.MESSAGE_FORMAT)
    void jolokiaAvailable(String bind);
 
+   @LogMessage(level = Logger.Level.WARN)
+   @Message(id = 244003, value = "Temporary file not deleted on shutdown: {0}", format = Message.Format.MESSAGE_FORMAT)
+   void tmpFileNotDeleted(File tmpdir);
+
+   @LogMessage(level = Logger.Level.INFO)
+   @Message(id = 241004, value = "Artemis Console available at {0}", format = Message.Format.MESSAGE_FORMAT)
+   void consoleAvailable(String bind);
 }

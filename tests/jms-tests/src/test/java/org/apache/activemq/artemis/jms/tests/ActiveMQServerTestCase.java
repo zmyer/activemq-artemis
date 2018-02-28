@@ -42,6 +42,7 @@ import org.apache.activemq.artemis.core.postoffice.Binding;
 import org.apache.activemq.artemis.core.postoffice.impl.LocalQueueBinding;
 import org.apache.activemq.artemis.core.security.Role;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
+import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
 import org.apache.activemq.artemis.jms.server.JMSServerManager;
 import org.apache.activemq.artemis.jms.tests.tools.ServerManagement;
 import org.apache.activemq.artemis.jms.tests.tools.container.Server;
@@ -78,8 +79,7 @@ public abstract class ActiveMQServerTestCase {
          System.gc();
          try {
             Thread.sleep(500);
-         }
-         catch (InterruptedException e) {
+         } catch (InterruptedException e) {
          }
       }
    }
@@ -130,8 +130,7 @@ public abstract class ActiveMQServerTestCase {
          // deploy the objects for this test
          deployAdministeredObjects();
          lookUp();
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          // if we get here we need to clean up for the next test
          e.printStackTrace();
          ActiveMQServerTestCase.servers.get(0).stop();
@@ -207,6 +206,8 @@ public abstract class ActiveMQServerTestCase {
    }
 
    protected void deployAdministeredObjects() throws Exception {
+      // set DLA and expiry to avoid spamming the log with warnings
+      getJmsServer().getAddressSettingsRepository().addMatch("#", new AddressSettings().setDeadLetterAddress(SimpleString.toSimpleString("DLA")).setExpiryAddress(SimpleString.toSimpleString("Expiry")));
       createTopic("Topic1");
       createTopic("Topic2");
       createTopic("Topic3");
@@ -230,35 +231,13 @@ public abstract class ActiveMQServerTestCase {
       queue4 = (Queue) ic.lookup("/queue/Queue4");
    }
 
-   protected void undeployAdministeredObjects() throws Exception {
-      removeAllMessages("Topic1", false);
-      removeAllMessages("Topic2", false);
-      removeAllMessages("Topic3", false);
-      removeAllMessages("Queue1", true);
-      removeAllMessages("Queue2", true);
-      removeAllMessages("Queue3", true);
-      removeAllMessages("Queue4", true);
-
-      destroyTopic("Topic1");
-      destroyTopic("Topic2");
-      destroyTopic("Topic3");
-      destroyQueue("Queue1");
-      destroyQueue("Queue2");
-      destroyQueue("Queue3");
-      destroyQueue("Queue4");
-
-      undeployConnectionFactory("ConnectionFactory");
-      undeployConnectionFactory("CF_TOPIC");
-      undeployConnectionFactory("CF_XA_TRUE");
-   }
 
    @AfterClass
    public static final void tearDownAllServers() {
       for (Server s : servers) {
          try {
             s.stop();
-         }
-         catch (Exception cause) {
+         } catch (Exception cause) {
             // ignore
          }
       }
@@ -293,8 +272,7 @@ public abstract class ActiveMQServerTestCase {
             }
             log.trace("Drained message");
          }
-      }
-      finally {
+      } finally {
          if (conn != null) {
             conn.close();
          }
@@ -366,16 +344,24 @@ public abstract class ActiveMQServerTestCase {
    }
 
    protected void removeAllMessages(final String destName, final boolean isQueue) throws Exception {
-      ActiveMQServerTestCase.servers.get(0).removeAllMessages(destName, isQueue);
+      ActiveMQServerTestCase.servers.get(0).removeAllMessages(destName);
    }
 
    protected boolean assertRemainingMessages(final int expected) throws Exception {
       String queueName = "Queue1";
-      Binding binding = servers.get(0).getActiveMQServer().getPostOffice().getBinding(SimpleString.toSimpleString("jms.queue." + queueName));
+      Binding binding = servers.get(0).getActiveMQServer().getPostOffice().getBinding(SimpleString.toSimpleString(queueName));
       if (binding != null && binding instanceof LocalQueueBinding) {
          ((LocalQueueBinding) binding).getQueue().flushExecutor();
       }
-      Long messageCount = ActiveMQServerTestCase.servers.get(0).getMessageCountForQueue(queueName);
+      Long messageCount = null;
+      for (int i = 0; i < 10; i++) {
+         messageCount = servers.get(0).getMessageCountForQueue(queueName);
+         if (messageCount.longValue() == expected) {
+            break;
+         } else {
+            Thread.sleep(100);
+         }
+      }
 
       ProxyAssertSupport.assertEquals(expected, messageCount.intValue());
       return expected == messageCount.intValue();

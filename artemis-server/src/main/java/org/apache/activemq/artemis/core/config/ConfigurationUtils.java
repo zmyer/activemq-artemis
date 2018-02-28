@@ -16,7 +16,11 @@
  */
 package org.apache.activemq.artemis.core.config;
 
+import java.net.URI;
+import java.util.List;
+
 import org.apache.activemq.artemis.api.core.ActiveMQIllegalStateException;
+import org.apache.activemq.artemis.api.core.TransportConfiguration;
 import org.apache.activemq.artemis.core.config.ha.ColocatedPolicyConfiguration;
 import org.apache.activemq.artemis.core.config.ha.LiveOnlyPolicyConfiguration;
 import org.apache.activemq.artemis.core.config.ha.ReplicaPolicyConfiguration;
@@ -24,6 +28,7 @@ import org.apache.activemq.artemis.core.config.ha.ReplicatedPolicyConfiguration;
 import org.apache.activemq.artemis.core.config.ha.SharedStoreMasterPolicyConfiguration;
 import org.apache.activemq.artemis.core.config.ha.SharedStoreSlavePolicyConfiguration;
 import org.apache.activemq.artemis.core.server.ActiveMQMessageBundle;
+import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.core.server.ActiveMQServerLogger;
 import org.apache.activemq.artemis.core.server.cluster.ha.BackupPolicy;
 import org.apache.activemq.artemis.core.server.cluster.ha.ColocatedPolicy;
@@ -34,6 +39,8 @@ import org.apache.activemq.artemis.core.server.cluster.ha.ReplicatedPolicy;
 import org.apache.activemq.artemis.core.server.cluster.ha.ScaleDownPolicy;
 import org.apache.activemq.artemis.core.server.cluster.ha.SharedStoreMasterPolicy;
 import org.apache.activemq.artemis.core.server.cluster.ha.SharedStoreSlavePolicy;
+import org.apache.activemq.artemis.uri.AcceptorTransportConfigurationParser;
+import org.apache.activemq.artemis.uri.ConnectorTransportConfigurationParser;
 
 public final class ConfigurationUtils {
 
@@ -52,7 +59,8 @@ public final class ConfigurationUtils {
       throw new ActiveMQIllegalStateException("Missing cluster-configuration for replication-clustername '" + replicationCluster + "'.");
    }
 
-   public static HAPolicy getHAPolicy(HAPolicyConfiguration conf) throws ActiveMQIllegalStateException {
+   public static HAPolicy getHAPolicy(HAPolicyConfiguration conf,
+                                      ActiveMQServer server) throws ActiveMQIllegalStateException {
       if (conf == null) {
          return new LiveOnlyPolicy();
       }
@@ -64,15 +72,15 @@ public final class ConfigurationUtils {
          }
          case REPLICATED: {
             ReplicatedPolicyConfiguration pc = (ReplicatedPolicyConfiguration) conf;
-            return new ReplicatedPolicy(pc.isCheckForLiveServer(), pc.getGroupName(), pc.getClusterName(), pc.getInitialReplicationSyncTimeout());
+            return new ReplicatedPolicy(pc.isCheckForLiveServer(), pc.getGroupName(), pc.getClusterName(), pc.getInitialReplicationSyncTimeout(), server.getNetworkHealthCheck(), pc.getVoteOnReplicationFailure(), pc.getQuorumSize(), pc.getVoteRetries(), pc.getVoteRetryWait());
          }
          case REPLICA: {
             ReplicaPolicyConfiguration pc = (ReplicaPolicyConfiguration) conf;
-            return new ReplicaPolicy(pc.getClusterName(), pc.getMaxSavedReplicatedJournalsSize(), pc.getGroupName(), pc.isRestartBackup(), pc.isAllowFailBack(), pc.getInitialReplicationSyncTimeout(), getScaleDownPolicy(pc.getScaleDownConfiguration()));
+            return new ReplicaPolicy(pc.getClusterName(), pc.getMaxSavedReplicatedJournalsSize(), pc.getGroupName(), pc.isRestartBackup(), pc.isAllowFailBack(), pc.getInitialReplicationSyncTimeout(), getScaleDownPolicy(pc.getScaleDownConfiguration()), server.getNetworkHealthCheck(), pc.getVoteOnReplicationFailure(), pc.getQuorumSize(), pc.getVoteRetries(), pc.getVoteRetryWait());
          }
          case SHARED_STORE_MASTER: {
             SharedStoreMasterPolicyConfiguration pc = (SharedStoreMasterPolicyConfiguration) conf;
-            return new SharedStoreMasterPolicy(pc.isFailoverOnServerShutdown());
+            return new SharedStoreMasterPolicy(pc.isFailoverOnServerShutdown(), pc.isWaitForActivation());
          }
          case SHARED_STORE_SLAVE: {
             SharedStoreSlavePolicyConfiguration pc = (SharedStoreSlavePolicyConfiguration) conf;
@@ -85,30 +93,25 @@ public final class ConfigurationUtils {
             HAPolicy livePolicy;
             //if null default to colocated
             if (liveConf == null) {
-               livePolicy = new ReplicatedPolicy();
-            }
-            else {
-               livePolicy = getHAPolicy(liveConf);
+               livePolicy = new ReplicatedPolicy(server.getNetworkHealthCheck());
+            } else {
+               livePolicy = getHAPolicy(liveConf, server);
             }
             HAPolicyConfiguration backupConf = pc.getBackupConfig();
             BackupPolicy backupPolicy;
             if (backupConf == null) {
                if (livePolicy instanceof ReplicatedPolicy) {
-                  backupPolicy = new ReplicaPolicy();
-               }
-               else if (livePolicy instanceof SharedStoreMasterPolicy) {
+                  backupPolicy = new ReplicaPolicy(server.getNetworkHealthCheck());
+               } else if (livePolicy instanceof SharedStoreMasterPolicy) {
                   backupPolicy = new SharedStoreSlavePolicy();
-               }
-               else {
+               } else {
                   throw ActiveMQMessageBundle.BUNDLE.liveBackupMismatch();
                }
-            }
-            else {
-               backupPolicy = (BackupPolicy) getHAPolicy(backupConf);
+            } else {
+               backupPolicy = (BackupPolicy) getHAPolicy(backupConf, server);
             }
 
-            if ((livePolicy instanceof ReplicatedPolicy && !(backupPolicy instanceof ReplicaPolicy)) ||
-                  (livePolicy instanceof SharedStoreMasterPolicy && !(backupPolicy instanceof SharedStoreSlavePolicy))) {
+            if ((livePolicy instanceof ReplicatedPolicy && !(backupPolicy instanceof ReplicaPolicy)) || (livePolicy instanceof SharedStoreMasterPolicy && !(backupPolicy instanceof SharedStoreSlavePolicy))) {
                throw ActiveMQMessageBundle.BUNDLE.liveBackupMismatch();
             }
             return new ColocatedPolicy(pc.isRequestBackup(), pc.getBackupRequestRetries(), pc.getBackupRequestRetryInterval(), pc.getMaxBackups(), pc.getBackupPortOffset(), pc.getExcludedConnectors(), livePolicy, backupPolicy);
@@ -122,8 +125,7 @@ public final class ConfigurationUtils {
       if (scaleDownConfiguration != null) {
          if (scaleDownConfiguration.getDiscoveryGroup() != null) {
             return new ScaleDownPolicy(scaleDownConfiguration.getDiscoveryGroup(), scaleDownConfiguration.getGroupName(), scaleDownConfiguration.getClusterName(), scaleDownConfiguration.isEnabled());
-         }
-         else {
+         } else {
             return new ScaleDownPolicy(scaleDownConfiguration.getConnectors(), scaleDownConfiguration.getGroupName(), scaleDownConfiguration.getClusterName(), scaleDownConfiguration.isEnabled());
          }
       }
@@ -134,6 +136,57 @@ public final class ConfigurationUtils {
    public static void validateConfiguration(Configuration configuration) {
       // Warn if connection-ttl-override/connection-ttl == check-period
       compareTTLWithCheckPeriod(configuration);
+   }
+
+   public static List<TransportConfiguration> parseAcceptorURI(String name, String uri) {
+      try {
+         AcceptorTransportConfigurationParser parser = new AcceptorTransportConfigurationParser();
+
+         List<TransportConfiguration> configurations = parser.newObject(parser.expandURI(uri), name);
+
+         return configurations;
+      } catch (Exception e) {
+         throw new RuntimeException(e.getMessage(), e);
+      }
+   }
+
+   public static List<TransportConfiguration> parseAcceptorURI(String name, URI uri)  {
+      try {
+         AcceptorTransportConfigurationParser parser = new AcceptorTransportConfigurationParser();
+
+         List<TransportConfiguration> configurations = parser.newObject(uri, name);
+
+         return configurations;
+      } catch (Exception e) {
+         throw new RuntimeException(e.getMessage(), e);
+      }
+
+   }
+
+   public static List<TransportConfiguration> parseConnectorURI(String name, String uri) {
+
+      try {
+         ConnectorTransportConfigurationParser parser = new ConnectorTransportConfigurationParser();
+
+         List<TransportConfiguration> configurations = parser.newObject(parser.expandURI(uri), name);
+
+         return configurations;
+      } catch (Exception e) {
+         throw new RuntimeException(e.getMessage(), e);
+      }
+   }
+
+   public static List<TransportConfiguration> parseConnectorURI(String name, URI uri) {
+      try {
+         ConnectorTransportConfigurationParser parser = new ConnectorTransportConfigurationParser();
+
+         List<TransportConfiguration> configurations = parser.newObject(uri, name);
+
+         return configurations;
+      } catch (Exception e) {
+         throw new RuntimeException(e.getMessage(), e);
+      }
+
    }
 
    private static void compareTTLWithCheckPeriod(Configuration configuration) {

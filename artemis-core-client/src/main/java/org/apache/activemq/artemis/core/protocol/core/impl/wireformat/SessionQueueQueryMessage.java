@@ -18,11 +18,8 @@ package org.apache.activemq.artemis.core.protocol.core.impl.wireformat;
 
 import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
 import org.apache.activemq.artemis.api.core.SimpleString;
-import org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl;
 
-public class SessionQueueQueryMessage extends PacketImpl {
-
-   private SimpleString queueName;
+public class SessionQueueQueryMessage extends QueueAbstractPacket {
 
    public SessionQueueQueryMessage(final SimpleString queueName) {
       super(SESS_QUEUEQUERY);
@@ -32,10 +29,6 @@ public class SessionQueueQueryMessage extends PacketImpl {
 
    public SessionQueueQueryMessage() {
       super(SESS_QUEUEQUERY);
-   }
-
-   public SimpleString getQueueName() {
-      return queueName;
    }
 
    @Override
@@ -76,8 +69,7 @@ public class SessionQueueQueryMessage extends PacketImpl {
       if (queueName == null) {
          if (other.queueName != null)
             return false;
-      }
-      else if (!queueName.equals(other.queueName))
+      } else if (!queueName.equals(other.queueName))
          return false;
       return true;
    }

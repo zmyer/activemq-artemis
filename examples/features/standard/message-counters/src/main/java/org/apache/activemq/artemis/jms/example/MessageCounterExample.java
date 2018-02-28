@@ -16,8 +16,6 @@
  */
 package org.apache.activemq.artemis.jms.example;
 
-import java.util.HashMap;
-
 import javax.jms.MessageConsumer;
 import javax.jms.MessageProducer;
 import javax.jms.Queue;
@@ -33,17 +31,20 @@ import javax.management.remote.JMXConnector;
 import javax.management.remote.JMXConnectorFactory;
 import javax.management.remote.JMXServiceURL;
 import javax.naming.InitialContext;
+import java.util.HashMap;
 
+import org.apache.activemq.artemis.api.core.RoutingType;
+import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.api.core.management.MessageCounterInfo;
 import org.apache.activemq.artemis.api.core.management.ObjectNameBuilder;
-import org.apache.activemq.artemis.api.jms.management.JMSQueueControl;
+import org.apache.activemq.artemis.api.core.management.QueueControl;
 
 /**
  * An example showing how to use message counters to have information on a queue.
  */
 public class MessageCounterExample {
 
-   private static final String JMX_URL = "service:jmx:rmi:///jndi/rmi://localhost:3001/jmxrmi";
+   private static final String JMX_URL = "service:jmx:rmi:///jndi/rmi://localhost:1099/jmxrmi";
 
    public static void main(final String[] args) throws Exception {
       QueueConnection connection = null;
@@ -73,10 +74,14 @@ public class MessageCounterExample {
          Thread.sleep(3000);
 
          // Step 7. Use JMX to retrieve the message counters using the JMSQueueControl
-         ObjectName on = ObjectNameBuilder.DEFAULT.getJMSQueueObjectName(queue.getQueueName());
-         JMXConnector connector = JMXConnectorFactory.connect(new JMXServiceURL(JMX_URL), new HashMap<String, Object>());
+         ObjectName on = ObjectNameBuilder.DEFAULT.getQueueObjectName(SimpleString.toSimpleString(queue.getQueueName()), SimpleString.toSimpleString(queue.getQueueName()), RoutingType.ANYCAST);
+         //we dont actually need credentials as the guest login i sused but this is how its done
+         HashMap env = new HashMap();
+         String[] creds = {"guest", "guest"};
+         env.put(JMXConnector.CREDENTIALS, creds);
+         JMXConnector connector = JMXConnectorFactory.connect(new JMXServiceURL(JMX_URL), env);
          MBeanServerConnection mbsc = connector.getMBeanServerConnection();
-         JMSQueueControl queueControl = MBeanServerInvocationHandler.newProxyInstance(mbsc, on, JMSQueueControl.class, false);
+         QueueControl queueControl = MBeanServerInvocationHandler.newProxyInstance(mbsc, on, QueueControl.class, false);
 
          // Step 8. List the message counters and convert them to MessageCounterInfo data structure.
          String counters = queueControl.listMessageCounter();
@@ -112,8 +117,7 @@ public class MessageCounterExample {
          counters = queueControl.listMessageCounter();
          messageCounter = MessageCounterInfo.fromJSON(counters);
          displayMessageCounter(messageCounter);
-      }
-      finally {
+      } finally {
          // Step 17. Be sure to close our JMS resources!
          if (initialContext != null) {
             initialContext.close();

@@ -85,6 +85,7 @@ public final class XMLUtil {
       DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
       // see http://bugs.sun.com/bugdatabase/view_bug.do?bug_id=6529766
       factory.setNamespaceAware(true);
+      factory.setXIncludeAware(true);
       DocumentBuilder parser = factory.newDocumentBuilder();
       Document doc = parser.parse(new InputSource(sreader));
       return doc.getDocumentElement();
@@ -121,12 +122,10 @@ public final class XMLUtil {
       if (children.getLength() == 0) {
          if ((textContent = XMLUtil.getTextContent(n)) != null && !"".equals(textContent)) {
             sb.append(textContent).append("</").append(name).append('>');
-         }
-         else {
+         } else {
             sb.append("/>").append('\n');
          }
-      }
-      else {
+      } else {
          sb.append('>').append('\n');
          boolean hasValidChildren = false;
          for (int i = 0; i < children.getLength(); i++) {
@@ -258,23 +257,6 @@ public final class XMLUtil {
       }
       return s;
    }
-
-   /* public static String replaceSystemProps(String xml)
-    {
-       Properties properties = System.getProperties();
-       Enumeration e = properties.propertyNames();
-       while (e.hasMoreElements())
-       {
-          String key = (String)e.nextElement();
-          String s = "${" + key + "}";
-          if (xml.contains(s))
-          {
-             xml = xml.replace(s, properties.getProperty(key));
-          }
-
-       }
-       return xml;
-    }*/
    public static String replaceSystemProps(String xml) {
       while (xml.contains("${")) {
          int start = xml.indexOf("${");
@@ -303,8 +285,7 @@ public final class XMLUtil {
 
       try {
          return Long.parseLong(value);
-      }
-      catch (NumberFormatException e) {
+      } catch (NumberFormatException e) {
          throw ActiveMQClientMessageBundle.BUNDLE.mustBeLong(elem, value);
       }
    }
@@ -314,8 +295,7 @@ public final class XMLUtil {
 
       try {
          return Integer.parseInt(value);
-      }
-      catch (NumberFormatException e) {
+      } catch (NumberFormatException e) {
          throw ActiveMQClientMessageBundle.BUNDLE.mustBeInteger(elem, value);
       }
    }
@@ -325,8 +305,7 @@ public final class XMLUtil {
 
       try {
          return Boolean.parseBoolean(value);
-      }
-      catch (NumberFormatException e) {
+      } catch (NumberFormatException e) {
          throw ActiveMQClientMessageBundle.BUNDLE.mustBeBoolean(elem, value);
       }
    }
@@ -336,8 +315,7 @@ public final class XMLUtil {
 
       try {
          return Double.parseDouble(value);
-      }
-      catch (NumberFormatException e) {
+      } catch (NumberFormatException e) {
          throw ActiveMQClientMessageBundle.BUNDLE.mustBeDouble(elem, value);
       }
    }
@@ -351,8 +329,7 @@ public final class XMLUtil {
       // validate the DOM tree
       try {
          validator.validate(new DOMSource(node));
-      }
-      catch (SAXException e) {
+      } catch (SAXException e) {
          ActiveMQClientLogger.LOGGER.errorOnXMLTransformInvalidConf(e);
 
          throw new IllegalStateException("Invalid configuration", e);
@@ -376,7 +353,7 @@ public final class XMLUtil {
       return nodes;
    }
 
-   private static URL findResource(final String resourceName) {
+   public static URL findResource(final String resourceName) {
       return AccessController.doPrivileged(new PrivilegedAction<URL>() {
          @Override
          public URL run() {

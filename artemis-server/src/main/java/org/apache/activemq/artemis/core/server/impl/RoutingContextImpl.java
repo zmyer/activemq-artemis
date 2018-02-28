@@ -21,10 +21,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.activemq.artemis.api.core.Message;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.core.server.Queue;
 import org.apache.activemq.artemis.core.server.RouteContextList;
 import org.apache.activemq.artemis.core.server.RoutingContext;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.core.transaction.Transaction;
 
 public final class RoutingContextImpl implements RoutingContext {
@@ -35,6 +37,10 @@ public final class RoutingContextImpl implements RoutingContext {
    private Transaction transaction;
 
    private int queueCount;
+
+   private SimpleString address;
+
+   private RoutingType routingType;
 
    public RoutingContextImpl(final Transaction transaction) {
       this.transaction = transaction;
@@ -54,10 +60,9 @@ public final class RoutingContextImpl implements RoutingContext {
 
       RouteContextList listing = getContextListing(address);
 
-      if (queue.isDurable()) {
+      if (queue.isDurableMessage()) {
          listing.getDurableQueues().add(queue);
-      }
-      else {
+      } else {
          listing.getNonDurableQueues().add(queue);
       }
 
@@ -75,6 +80,29 @@ public final class RoutingContextImpl implements RoutingContext {
    public boolean isAlreadyAcked(SimpleString address, Queue queue) {
       RouteContextList listing = map.get(address);
       return listing == null ? false : listing.isAlreadyAcked(queue);
+   }
+
+   @Override
+   public void setAddress(SimpleString address) {
+      this.address = address;
+   }
+
+   @Override
+   public void setRoutingType(RoutingType routingType) {
+      this.routingType = routingType;
+   }
+
+   @Override
+   public SimpleString getAddress(Message message) {
+      if (address == null && message != null) {
+         return message.getAddressSimpleString();
+      }
+      return address;
+   }
+
+   @Override
+   public RoutingType getRoutingType() {
+      return routingType;
    }
 
    @Override

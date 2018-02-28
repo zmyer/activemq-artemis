@@ -17,6 +17,7 @@
 package org.apache.activemq.artemis.core.protocol.core.impl.wireformat;
 
 import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
+import org.apache.activemq.artemis.api.core.ActiveMQBuffers;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl;
 import org.apache.activemq.artemis.core.server.cluster.qourum.QuorumVoteHandler;
@@ -51,7 +52,8 @@ public class QuorumVoteMessage extends PacketImpl {
    public void decodeRest(ActiveMQBuffer buffer) {
       super.decodeRest(buffer);
       handler = buffer.readSimpleString();
-      voteBuffer = buffer.readSlice(buffer.readableBytes());
+      voteBuffer = ActiveMQBuffers.fixedBuffer(buffer.readableBytes());
+      buffer.readBytes(voteBuffer);
    }
 
    public SimpleString getHandler() {
@@ -64,5 +66,21 @@ public class QuorumVoteMessage extends PacketImpl {
 
    public void decode(QuorumVoteHandler voteHandler) {
       vote = voteHandler.decode(voteBuffer);
+   }
+
+
+   @Override
+   public String toString() {
+      StringBuffer buff = new StringBuffer(getParentString());
+      buff.append("]");
+      return buff.toString();
+   }
+
+   @Override
+   public String getParentString() {
+      StringBuffer buff = new StringBuffer(super.getParentString());
+      buff.append(", vote=" + vote);
+      buff.append(", handler=" + handler);
+      return buff.toString();
    }
 }

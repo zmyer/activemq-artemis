@@ -19,28 +19,49 @@
 
 package org.apache.activemq.artemis.spi.core.protocol;
 
-import org.apache.activemq.artemis.api.core.BaseInterceptor;
-import org.apache.activemq.artemis.core.server.ActiveMQServerLogger;
-
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
-public abstract class AbstractProtocolManager<P, I extends BaseInterceptor<P>, C extends RemotingConnection>
-      implements ProtocolManager<I> {
+import org.apache.activemq.artemis.api.core.BaseInterceptor;
+import org.apache.activemq.artemis.api.core.SimpleString;
+import org.apache.activemq.artemis.core.server.ActiveMQServerLogger;
+import org.apache.activemq.artemis.api.core.RoutingType;
 
-   protected void invokeInterceptors(final List<I> interceptors,
-                                     final P message,
-                                     final C connection) {
+public abstract class AbstractProtocolManager<P, I extends BaseInterceptor<P>, C extends RemotingConnection> implements ProtocolManager<I> {
+
+   private final Map<SimpleString, RoutingType> prefixes = new HashMap<>();
+
+   protected void invokeInterceptors(final List<I> interceptors, final P message, final C connection) {
       if (interceptors != null && !interceptors.isEmpty()) {
          for (I interceptor : interceptors) {
             try {
                if (!interceptor.intercept(message, connection)) {
                   break;
                }
-            }
-            catch (Exception e) {
-               ActiveMQServerLogger.LOGGER.error(e);
+            } catch (Exception e) {
+               ActiveMQServerLogger.LOGGER.failedToInvokeAninterceptor(e);
             }
          }
       }
+   }
+
+   @Override
+   public void setAnycastPrefix(String anycastPrefix) {
+      for (String prefix : anycastPrefix.split(",")) {
+         prefixes.put(SimpleString.toSimpleString(prefix), RoutingType.ANYCAST);
+      }
+   }
+
+   @Override
+   public void setMulticastPrefix(String multicastPrefix) {
+      for (String prefix : multicastPrefix.split(",")) {
+         prefixes.put(SimpleString.toSimpleString(prefix), RoutingType.MULTICAST);
+      }
+   }
+
+   @Override
+   public Map<SimpleString, RoutingType> getPrefixes() {
+      return prefixes;
    }
 }

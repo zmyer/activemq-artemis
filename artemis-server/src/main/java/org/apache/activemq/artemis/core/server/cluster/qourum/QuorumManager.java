@@ -29,6 +29,7 @@ import org.apache.activemq.artemis.api.core.client.ClusterTopologyListener;
 import org.apache.activemq.artemis.api.core.client.TopologyMember;
 import org.apache.activemq.artemis.core.client.impl.TopologyMemberImpl;
 import org.apache.activemq.artemis.core.server.ActiveMQComponent;
+import org.apache.activemq.artemis.core.server.ActiveMQServerLogger;
 import org.apache.activemq.artemis.core.server.cluster.ClusterControl;
 import org.apache.activemq.artemis.core.server.cluster.ClusterController;
 
@@ -96,10 +97,10 @@ public final class QuorumManager implements ClusterTopologyListener, ActiveMQCom
             }
          }
       }
-      quorums.clear();
       for (Quorum quorum : quorums.values()) {
          quorum.close();
       }
+      quorums.clear();
    }
 
    /**
@@ -181,6 +182,7 @@ public final class QuorumManager implements ClusterTopologyListener, ActiveMQCom
          if (!started)
             return;
          //send a vote to each node
+         ActiveMQServerLogger.LOGGER.initiatingQuorumVote(quorumVote.getName());
          for (TopologyMemberImpl tm : clusterController.getDefaultClusterTopology().getMembers()) {
             //but not ourselves
             if (!tm.getNodeId().equals(clusterController.getNodeID().toString())) {
@@ -199,8 +201,7 @@ public final class QuorumManager implements ClusterTopologyListener, ActiveMQCom
             for (VoteRunnable runnable : runnables) {
                executor.submit(runnable);
             }
-         }
-         else {
+         } else {
             quorumVote.allVotesCast(clusterController.getDefaultClusterTopology());
          }
       }
@@ -251,6 +252,22 @@ public final class QuorumManager implements ClusterTopologyListener, ActiveMQCom
       return handlers.get(handler);
    }
 
+   public TransportConfiguration getLiveTransportConfiguration(String targetServerID) {
+      TopologyMemberImpl member = clusterController.getDefaultClusterTopology().getMember(targetServerID);
+      return member != null ? member.getLive() : null;
+   }
+
+   public boolean checkLive(TransportConfiguration liveTransportConfiguration) {
+      try {
+         ClusterControl control = clusterController.connectToNode(liveTransportConfiguration);
+         control.close();
+         return true;
+      } catch (Throwable t) {
+         return false;
+      }
+   }
+
+
    private final class VoteRunnableHolder {
 
       private final QuorumVote quorumVote;
@@ -298,26 +315,23 @@ public final class QuorumManager implements ClusterTopologyListener, ActiveMQCom
             clusterControl.authorize();
             //if we are successful get the vote and check whether we need to send it to the target server,
             //just connecting may be enough
+
             vote = quorumVote.connected();
             if (vote.isRequestServerVote()) {
                vote = clusterControl.sendQuorumVote(quorumVote.getName(), vote);
                quorumVote.vote(vote);
-            }
-            else {
+            } else {
                quorumVote.vote(vote);
             }
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             Vote vote = quorumVote.notConnected();
             quorumVote.vote(vote);
-         }
-         finally {
+         } finally {
             try {
                if (clusterControl != null) {
                   clusterControl.close();
                }
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                //ignore
             }
             QuorumManager.this.votingComplete(quorumVote);

@@ -6,7 +6,7 @@
  * (the "License"); you may not use this file except in compliance with
  * the License. You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -23,7 +23,7 @@ import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.HashSet;
 
-import org.jboss.logging.Logger;
+import org.apache.activemq.artemis.logs.ActiveMQUtilLogger;
 
 import static java.nio.file.attribute.PosixFilePermission.GROUP_EXECUTE;
 import static java.nio.file.attribute.PosixFilePermission.GROUP_READ;
@@ -36,17 +36,13 @@ import static java.nio.file.attribute.PosixFilePermission.OWNER_WRITE;
 
 public class FileUtil {
 
-   private static final Logger logger = Logger.getLogger(FileUtil.class);
-
    public static void makeExec(File file) throws IOException {
       try {
          Files.setPosixFilePermissions(file.toPath(), new HashSet<>(Arrays.asList(OWNER_READ, OWNER_WRITE, OWNER_EXECUTE, GROUP_READ, GROUP_WRITE, GROUP_EXECUTE, OTHERS_READ, OTHERS_EXECUTE)));
-      }
-      catch (Throwable ignore) {
+      } catch (Throwable ignore) {
          // Our best effort was not good enough :)
       }
    }
-
 
    public static final boolean deleteDirectory(final File directory) {
       if (directory.isDirectory()) {
@@ -56,21 +52,19 @@ public class FileUtil {
          while (files == null && (attempts < num)) {
             try {
                Thread.sleep(100);
-            }
-            catch (InterruptedException e) {
+            } catch (InterruptedException e) {
             }
             files = directory.list();
             attempts++;
          }
 
          if (files == null) {
-            logger.warn("Could not list files to clean up in: " + directory.getAbsolutePath());
-         }
-         else {
+            ActiveMQUtilLogger.LOGGER.failedListFilesToCleanup(directory.getAbsolutePath());
+         } else {
             for (String file : files) {
                File f = new File(directory, file);
                if (!deleteDirectory(f)) {
-                  logger.warn("Failed to clean up file: " + f.getAbsolutePath());
+                  ActiveMQUtilLogger.LOGGER.failedToCleanupFile(f.getAbsolutePath());
                }
             }
          }
@@ -78,6 +72,5 @@ public class FileUtil {
 
       return directory.delete();
    }
-
 
 }

@@ -18,7 +18,6 @@ package org.apache.activemq.artemis.tests.stress.journal;
 
 import java.io.File;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
@@ -34,18 +33,18 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.apache.activemq.artemis.api.config.ActiveMQDefaultConfiguration;
 import org.apache.activemq.artemis.core.io.IOCallback;
+import org.apache.activemq.artemis.core.io.SequentialFileFactory;
+import org.apache.activemq.artemis.core.io.aio.AIOSequentialFileFactory;
+import org.apache.activemq.artemis.core.io.nio.NIOSequentialFileFactory;
 import org.apache.activemq.artemis.core.journal.PreparedTransactionInfo;
 import org.apache.activemq.artemis.core.journal.RecordInfo;
-import org.apache.activemq.artemis.core.io.SequentialFileFactory;
 import org.apache.activemq.artemis.core.journal.TransactionFailureCallback;
-import org.apache.activemq.artemis.core.io.aio.AIOSequentialFileFactory;
 import org.apache.activemq.artemis.core.journal.impl.JournalImpl;
-import org.apache.activemq.artemis.core.io.nio.NIOSequentialFileFactory;
 import org.apache.activemq.artemis.core.persistence.impl.journal.OperationContextImpl;
 import org.apache.activemq.artemis.jlibaio.LibaioContext;
 import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.apache.activemq.artemis.utils.ActiveMQThreadFactory;
-import org.apache.activemq.artemis.utils.OrderedExecutorFactory;
+import org.apache.activemq.artemis.utils.actors.OrderedExecutorFactory;
 import org.apache.activemq.artemis.utils.RandomUtil;
 import org.apache.activemq.artemis.utils.SimpleIDGenerator;
 import org.junit.After;
@@ -109,8 +108,7 @@ public class JournalCleanupCompactStressTest extends ActiveMQTestBase {
       if (LibaioContext.isLoaded()) {
          factory = new AIOSequentialFileFactory(dir, 10);
          maxAIO = ActiveMQDefaultConfiguration.getDefaultJournalMaxIoAio();
-      }
-      else {
+      } else {
          factory = new NIOSequentialFileFactory(dir, true, 1);
          maxAIO = ActiveMQDefaultConfiguration.getDefaultJournalMaxIoNio();
       }
@@ -134,8 +132,7 @@ public class JournalCleanupCompactStressTest extends ActiveMQTestBase {
                         journal.appendDeleteRecord(id, id == 20);
                      }
                      // System.out.println("OnCompactStart leave");
-                  }
-                  catch (Exception e) {
+                  } catch (Exception e) {
                      e.printStackTrace();
                      errors.incrementAndGet();
                   }
@@ -158,8 +155,7 @@ public class JournalCleanupCompactStressTest extends ActiveMQTestBase {
          if (journal.isStarted()) {
             journal.stop();
          }
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          // don't care :-)
       }
 
@@ -241,12 +237,15 @@ public class JournalCleanupCompactStressTest extends ActiveMQTestBase {
 
       reloadJournal();
 
-      Collection<Long> records = journal.getRecords().keySet();
-
       System.out.println("Deleting everything!");
-      for (Long delInfo : records) {
-         journal.appendDeleteRecord(delInfo, false);
-      }
+
+      journal.getRecords().forEach((id, record) -> {
+         try {
+            journal.appendDeleteRecord(id, false);
+         } catch (Exception e) {
+            new RuntimeException(e);
+         }
+      });
 
       journal.forceMoveNextFile();
 
@@ -278,8 +277,7 @@ public class JournalCleanupCompactStressTest extends ActiveMQTestBase {
       for (RecordInfo record : committedRecords) {
          if (record.isUpdate) {
             updates++;
-         }
-         else {
+         } else {
             appends++;
          }
       }
@@ -355,13 +353,11 @@ public class JournalCleanupCompactStressTest extends ActiveMQTestBase {
                rwLock.readLock().lock();
 
             }
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             e.printStackTrace();
             running = false;
             errors.incrementAndGet();
-         }
-         finally {
+         } finally {
             rwLock.readLock().unlock();
          }
       }
@@ -419,13 +415,11 @@ public class JournalCleanupCompactStressTest extends ActiveMQTestBase {
             if (txCount > 0) {
                journal.appendCommitRecord(txID, true);
             }
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             e.printStackTrace();
             running = false;
             errors.incrementAndGet();
-         }
-         finally {
+         } finally {
             rwLock.readLock().unlock();
          }
       }
@@ -451,14 +445,12 @@ public class JournalCleanupCompactStressTest extends ActiveMQTestBase {
                   numberOfDeletes.incrementAndGet();
                }
             }
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             System.err.println("Can't delete id");
             e.printStackTrace();
             running = false;
             errors.incrementAndGet();
-         }
-         finally {
+         } finally {
             rwLock.readLock().unlock();
          }
       }
@@ -507,12 +499,10 @@ public class JournalCleanupCompactStressTest extends ActiveMQTestBase {
                   numberOfDeletes.incrementAndGet();
                }
             }
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             e.printStackTrace();
             System.exit(-1);
-         }
-         finally {
+         } finally {
             rwLock.readLock().unlock();
          }
       }

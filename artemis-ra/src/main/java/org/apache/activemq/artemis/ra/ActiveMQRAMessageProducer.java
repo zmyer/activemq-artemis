@@ -73,8 +73,7 @@ public class ActiveMQRAMessageProducer implements MessageProducer {
       }
       try {
          closeProducer();
-      }
-      finally {
+      } finally {
          session.removeProducer(this);
       }
    }
@@ -118,8 +117,7 @@ public class ActiveMQRAMessageProducer implements MessageProducer {
          if (ActiveMQRAMessageProducer.trace) {
             ActiveMQRALogger.LOGGER.trace("sent " + this + " result=" + message);
          }
-      }
-      finally {
+      } finally {
          session.unlock();
       }
    }
@@ -146,8 +144,7 @@ public class ActiveMQRAMessageProducer implements MessageProducer {
          if (ActiveMQRAMessageProducer.trace) {
             ActiveMQRALogger.LOGGER.trace("sent " + this + " result=" + message);
          }
-      }
-      finally {
+      } finally {
          session.unlock();
       }
    }
@@ -187,8 +184,7 @@ public class ActiveMQRAMessageProducer implements MessageProducer {
          if (ActiveMQRAMessageProducer.trace) {
             ActiveMQRALogger.LOGGER.trace("sent " + this + " result=" + message);
          }
-      }
-      finally {
+      } finally {
          session.unlock();
       }
    }
@@ -214,8 +210,7 @@ public class ActiveMQRAMessageProducer implements MessageProducer {
          if (ActiveMQRAMessageProducer.trace) {
             ActiveMQRALogger.LOGGER.trace("sent " + this + " result=" + message);
          }
-      }
-      finally {
+      } finally {
          session.unlock();
       }
    }
@@ -229,7 +224,7 @@ public class ActiveMQRAMessageProducer implements MessageProducer {
    @Override
    public int getDeliveryMode() throws JMSException {
       if (ActiveMQRAMessageProducer.trace) {
-         ActiveMQRALogger.LOGGER.trace("getDeliveryMode()");
+         ActiveMQRALogger.LOGGER.trace("getRoutingType()");
       }
 
       return producer.getDeliveryMode();
@@ -319,7 +314,7 @@ public class ActiveMQRAMessageProducer implements MessageProducer {
    @Override
    public void setDeliveryMode(final int deliveryMode) throws JMSException {
       if (ActiveMQRAMessageProducer.trace) {
-         ActiveMQRALogger.LOGGER.trace("setDeliveryMode(" + deliveryMode + ")");
+         ActiveMQRALogger.LOGGER.trace("setRoutingType(" + deliveryMode + ")");
       }
 
       producer.setDeliveryMode(deliveryMode);

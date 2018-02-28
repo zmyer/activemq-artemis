@@ -30,13 +30,15 @@ import org.apache.activemq.artemis.api.core.client.ClientSession.QueueQuery;
 import org.apache.activemq.artemis.api.core.client.ClientSessionFactory;
 import org.apache.activemq.artemis.api.core.client.ServerLocator;
 import org.apache.activemq.artemis.api.core.client.SessionFailureListener;
-import org.apache.activemq.artemis.tests.util.CountDownSessionFailureListener;
-import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.apache.activemq.artemis.core.client.impl.ClientSessionFactoryInternal;
 import org.apache.activemq.artemis.core.client.impl.ClientSessionInternal;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.core.server.Queue;
+import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
 import org.apache.activemq.artemis.spi.core.protocol.RemotingConnection;
+import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
+import org.apache.activemq.artemis.tests.util.CountDownSessionFailureListener;
+import org.apache.activemq.artemis.tests.util.Wait;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
@@ -106,8 +108,7 @@ public class SessionTest extends ActiveMQTestBase {
          clientSession.close();
          server.stop();
          Assert.assertFalse(listener.called);
-      }
-      finally {
+      } finally {
          ((ClientSessionFactoryInternal) cf).causeExit();
          cf.close();
       }
@@ -229,10 +230,12 @@ public class SessionTest extends ActiveMQTestBase {
 
    @Test
    public void testQueueQueryNoQ() throws Exception {
+      server.getAddressSettingsRepository().addMatch("#", new AddressSettings().setAutoCreateQueues(false));
       cf = createSessionFactory(locator);
       ClientSession clientSession = cf.createSession(false, true, true);
       QueueQuery resp = clientSession.queueQuery(new SimpleString(queueName));
       Assert.assertFalse(resp.isExists());
+      Assert.assertFalse(resp.isAutoCreateQueues());
       Assert.assertEquals(null, resp.getAddress());
       clientSession.close();
    }
@@ -480,6 +483,7 @@ public class SessionTest extends ActiveMQTestBase {
       Assert.assertNotNull(m);
       m.acknowledge();
       clientSession.rollback();
+      Wait.waitFor(() -> getMessageCount(q) == 10);
       Assert.assertEquals(10, getMessageCount(q));
       clientSession.close();
       sendSession.close();

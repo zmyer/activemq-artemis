@@ -18,6 +18,7 @@ package org.apache.activemq.artemis.core.protocol.openwire;
 
 import javax.jms.InvalidClientIDException;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -32,8 +33,11 @@ import io.netty.channel.ChannelPipeline;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import org.apache.activemq.advisory.AdvisorySupport;
 import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
+import org.apache.activemq.artemis.api.core.ActiveMQSecurityException;
 import org.apache.activemq.artemis.api.core.BaseInterceptor;
 import org.apache.activemq.artemis.api.core.Interceptor;
+import org.apache.activemq.artemis.api.core.RoutingType;
+import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.api.core.client.ClusterTopologyListener;
 import org.apache.activemq.artemis.api.core.client.TopologyMember;
 import org.apache.activemq.artemis.core.protocol.openwire.amq.AMQConnectionContext;
@@ -44,17 +48,19 @@ import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.core.server.ActiveMQServerLogger;
 import org.apache.activemq.artemis.core.server.cluster.ClusterConnection;
 import org.apache.activemq.artemis.core.server.cluster.ClusterManager;
+import org.apache.activemq.artemis.reader.MessageUtil;
+import org.apache.activemq.artemis.selector.impl.LRUCache;
 import org.apache.activemq.artemis.spi.core.protocol.ConnectionEntry;
-import org.apache.activemq.artemis.spi.core.protocol.MessageConverter;
 import org.apache.activemq.artemis.spi.core.protocol.ProtocolManager;
 import org.apache.activemq.artemis.spi.core.protocol.ProtocolManagerFactory;
 import org.apache.activemq.artemis.spi.core.protocol.RemotingConnection;
 import org.apache.activemq.artemis.spi.core.remoting.Acceptor;
 import org.apache.activemq.artemis.spi.core.remoting.Connection;
-import org.apache.activemq.artemis.spi.core.security.ActiveMQSecurityManager;
-import org.apache.activemq.artemis.spi.core.security.ActiveMQSecurityManager3;
+import org.apache.activemq.artemis.utils.CompositeAddress;
 import org.apache.activemq.artemis.utils.DataConstants;
+import org.apache.activemq.command.ActiveMQDestination;
 import org.apache.activemq.command.ActiveMQMessage;
+import org.apache.activemq.command.ActiveMQQueue;
 import org.apache.activemq.command.ActiveMQTopic;
 import org.apache.activemq.command.BrokerId;
 import org.apache.activemq.command.BrokerInfo;
@@ -62,11 +68,14 @@ import org.apache.activemq.command.Command;
 import org.apache.activemq.command.ConnectionControl;
 import org.apache.activemq.command.ConnectionInfo;
 import org.apache.activemq.command.ConsumerId;
+import org.apache.activemq.command.DestinationInfo;
 import org.apache.activemq.command.MessageDispatch;
 import org.apache.activemq.command.MessageId;
 import org.apache.activemq.command.ProducerId;
 import org.apache.activemq.command.ProducerInfo;
 import org.apache.activemq.command.WireFormatInfo;
+import org.apache.activemq.filter.DestinationFilter;
+import org.apache.activemq.filter.DestinationPath;
 import org.apache.activemq.openwire.OpenWireFormat;
 import org.apache.activemq.openwire.OpenWireFormatFactory;
 import org.apache.activemq.state.ProducerState;
@@ -116,7 +125,17 @@ public class OpenWireProtocolManager implements ProtocolManager<Interceptor>, Cl
    private long maxInactivityDurationInitalDelay = 10 * 1000L;
    private boolean useKeepAlive = true;
 
-   private final OpenWireMessageConverter messageConverter;
+   private boolean supportAdvisory = true;
+   //prevents advisory addresses/queues to be registered
+   //to management service
+   private boolean suppressInternalManagementObjects = true;
+
+   private final OpenWireFormat wireFormat;
+
+   private final Map<SimpleString, RoutingType> prefixes = new HashMap<>();
+
+   private final Map<DestinationFilter, Integer> vtConsumerDestinationMatchers = new HashMap<>();
+   protected final LRUCache<ActiveMQDestination, ActiveMQDestination> vtDestMapCache = new LRUCache();
 
    public OpenWireProtocolManager(OpenWireProtocolManagerFactory factory, ActiveMQServer server) {
       this.factory = factory;
@@ -126,20 +145,15 @@ public class OpenWireProtocolManager implements ProtocolManager<Interceptor>, Cl
       wireFactory.setCacheEnabled(false);
       advisoryProducerId.setConnectionId(ID_GENERATOR.generateId());
       scheduledPool = server.getScheduledPool();
-      this.messageConverter = new OpenWireMessageConverter(wireFactory.createWireFormat());
+      this.wireFormat = (OpenWireFormat) wireFactory.createWireFormat();
 
       final ClusterManager clusterManager = this.server.getClusterManager();
 
-      // TODO-NOW: use a property name for the cluster connection
       ClusterConnection cc = clusterManager.getDefaultConnection(null);
 
       if (cc != null) {
          cc.addClusterTopologyListener(this);
       }
-   }
-
-   public OpenWireFormat getNewWireFormat() {
-      return (OpenWireFormat) wireFactory.createWireFormat();
    }
 
    @Override
@@ -167,8 +181,7 @@ public class OpenWireProtocolManager implements ProtocolManager<Interceptor>, Cl
                this.connections.remove(context.getConnection());
                this.clientIdSet.remove(clientId);
             }
-         }
-         else {
+         } else {
             throw new InvalidClientIDException("No clientID specified for connection disconnect request");
          }
       }
@@ -193,8 +206,7 @@ public class OpenWireProtocolManager implements ProtocolManager<Interceptor>, Cl
          ConnectionControl control = newConnectionControl();
          try {
             c.updateClient(control);
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             ActiveMQServerLogger.LOGGER.warn(e.getMessage(), e);
             c.sendException(e);
          }
@@ -228,11 +240,6 @@ public class OpenWireProtocolManager implements ProtocolManager<Interceptor>, Cl
       ConnectionEntry entry = new ConnectionEntry(owConn, null, System.currentTimeMillis(), -1);
       owConn.setConnectionEntry(entry);
       return entry;
-   }
-
-   @Override
-   public MessageConverter getConverter() {
-      return messageConverter;
    }
 
    @Override
@@ -290,8 +297,13 @@ public class OpenWireProtocolManager implements ProtocolManager<Interceptor>, Cl
       String username = info.getUserName();
       String password = info.getPassword();
 
-      if (!this.validateUser(username, password)) {
-         throw new SecurityException("User name [" + username + "] or password is invalid.");
+      try {
+         validateUser(username, password, connection);
+      } catch (ActiveMQSecurityException e) {
+         // We need to send an exception used by the openwire
+         SecurityException ex = new SecurityException("User name [" + username + "] or password is invalid.");
+         ex.initCause(e);
+         throw ex;
       }
 
       String clientId = info.getClientId();
@@ -308,12 +320,10 @@ public class OpenWireProtocolManager implements ProtocolManager<Interceptor>, Cl
                oldConnection.disconnect(true);
                connections.remove(oldConnection);
                connection.reconnect(context, info);
-            }
-            else {
+            } else {
                throw new InvalidClientIDException("Broker: " + getBrokerName() + " - Client: " + clientId + " already connected from " + context.getConnection().getRemoteAddress());
             }
-         }
-         else {
+         } else {
             //new connection
             context = connection.initContext(info);
             clientIdSet.put(clientId, context);
@@ -333,7 +343,7 @@ public class OpenWireProtocolManager implements ProtocolManager<Interceptor>, Cl
    }
 
    public void fireAdvisory(AMQConnectionContext context, ActiveMQTopic topic, Command copy) throws Exception {
-      this.fireAdvisory(context, topic, copy, null);
+      this.fireAdvisory(context, topic, copy, null, null);
    }
 
    public BrokerId getBrokerId() {
@@ -350,8 +360,17 @@ public class OpenWireProtocolManager implements ProtocolManager<Interceptor>, Cl
    public void fireAdvisory(AMQConnectionContext context,
                             ActiveMQTopic topic,
                             Command command,
-                            ConsumerId targetConsumerId) throws Exception {
+                            ConsumerId targetConsumerId,
+                            String originalConnectionId) throws Exception {
+      if (!this.isSupportAdvisory()) {
+         return;
+      }
       ActiveMQMessage advisoryMessage = new ActiveMQMessage();
+
+      if (originalConnectionId == null) {
+         originalConnectionId = context.getConnectionId().getValue();
+      }
+      advisoryMessage.setStringProperty(MessageUtil.CONNECTION_ID_PROPERTY_NAME.toString(), originalConnectionId);
       advisoryMessage.setStringProperty(AdvisorySupport.MSG_PROPERTY_ORIGIN_BROKER_NAME, getBrokerName());
       String id = getBrokerId() != null ? getBrokerId().getValue() : "NOT_SET";
       advisoryMessage.setStringProperty(AdvisorySupport.MSG_PROPERTY_ORIGIN_BROKER_ID, id);
@@ -379,8 +398,7 @@ public class OpenWireProtocolManager implements ProtocolManager<Interceptor>, Cl
          if (sess != null) {
             sess.send(producerExchange.getProducerState().getInfo(), advisoryMessage, false);
          }
-      }
-      finally {
+      } finally {
          context.setProducerFlowControl(originalFlowControl);
       }
    }
@@ -389,8 +407,7 @@ public class OpenWireProtocolManager implements ProtocolManager<Interceptor>, Cl
       if (brokerName == null) {
          try {
             brokerName = InetAddressUtil.getLocalHostName().toLowerCase(Locale.ENGLISH);
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             brokerName = server.getNodeID().toString();
          }
       }
@@ -454,21 +471,8 @@ public class OpenWireProtocolManager implements ProtocolManager<Interceptor>, Cl
       return false;
    }
 
-   public boolean validateUser(String login, String passcode) {
-      boolean validated = true;
-
-      ActiveMQSecurityManager sm = server.getSecurityManager();
-
-      if (sm != null && server.getConfiguration().isSecurityEnabled()) {
-         if (sm instanceof ActiveMQSecurityManager3) {
-            validated = ((ActiveMQSecurityManager3) sm).validateUser(login, passcode, null) != null;
-         }
-         else {
-            validated = sm.validateUser(login, passcode);
-         }
-      }
-
-      return validated;
+   public void validateUser(String login, String passcode, OpenWireConnection connection) throws Exception {
+      server.getSecurityStore().authenticate(login, passcode, connection);
    }
 
    public void sendBrokerInfo(OpenWireConnection connection) throws Exception {
@@ -564,5 +568,118 @@ public class OpenWireProtocolManager implements ProtocolManager<Interceptor>, Cl
    @SuppressWarnings("unused")
    public void setMaxInactivityDurationInitalDelay(long maxInactivityDurationInitalDelay) {
       this.maxInactivityDurationInitalDelay = maxInactivityDurationInitalDelay;
+   }
+
+   @Override
+   public void setAnycastPrefix(String anycastPrefix) {
+      for (String prefix : anycastPrefix.split(",")) {
+         prefixes.put(SimpleString.toSimpleString(prefix), RoutingType.ANYCAST);
+      }
+   }
+
+   @Override
+   public void setMulticastPrefix(String multicastPrefix) {
+      for (String prefix : multicastPrefix.split(",")) {
+         prefixes.put(SimpleString.toSimpleString(prefix), RoutingType.MULTICAST);
+      }
+   }
+
+   @Override
+   public Map<SimpleString, RoutingType> getPrefixes() {
+      return prefixes;
+   }
+
+   public List<DestinationInfo> getTemporaryDestinations() {
+      List<DestinationInfo> total = new ArrayList<>();
+      for (OpenWireConnection connection : connections) {
+         total.addAll(connection.getTemporaryDestinations());
+      }
+      return total;
+   }
+
+   public OpenWireFormat wireFormat() {
+      return wireFormat;
+   }
+
+   public boolean isSupportAdvisory() {
+      return supportAdvisory;
+   }
+
+   public void setSupportAdvisory(boolean supportAdvisory) {
+      this.supportAdvisory = supportAdvisory;
+   }
+
+   public boolean isSuppressInternalManagementObjects() {
+      return suppressInternalManagementObjects;
+   }
+
+   public void setSuppressInternalManagementObjects(boolean suppressInternalManagementObjects) {
+      this.suppressInternalManagementObjects = suppressInternalManagementObjects;
+   }
+
+   public void setVirtualTopicConsumerWildcards(String virtualTopicConsumerWildcards) {
+      for (String filter : virtualTopicConsumerWildcards.split(",")) {
+         String[] wildcardLimitPair = filter.split(";");
+         vtConsumerDestinationMatchers.put(DestinationFilter.parseFilter(new ActiveMQQueue(wildcardLimitPair[0])), Integer.valueOf(wildcardLimitPair[1]));
+      }
+   }
+
+   public void setVirtualTopicConsumerLruCacheMax(int max) {
+      vtDestMapCache.setMaxCacheSize(max);
+   }
+
+   public ActiveMQDestination virtualTopicConsumerToFQQN(final ActiveMQDestination destination) {
+
+      if (vtConsumerDestinationMatchers.isEmpty()) {
+         return destination;
+      }
+
+      ActiveMQDestination mappedDestination = null;
+      synchronized (vtDestMapCache) {
+         mappedDestination = vtDestMapCache.get(destination);
+      }
+
+      if (mappedDestination != null) {
+         return mappedDestination;
+      }
+
+      for (Map.Entry<DestinationFilter, Integer> candidate : vtConsumerDestinationMatchers.entrySet()) {
+         if (candidate.getKey().matches(destination)) {
+            // convert to matching FQQN
+            String[] paths = DestinationPath.getDestinationPaths(destination);
+            StringBuilder fqqn = new StringBuilder();
+            int filterPathTerminus = candidate.getValue();
+            // address - ie: topic
+            for (int i = filterPathTerminus; i < paths.length; i++) {
+               if (i > filterPathTerminus) {
+                  fqqn.append(ActiveMQDestination.PATH_SEPERATOR);
+               }
+               fqqn.append(paths[i]);
+            }
+            fqqn.append(CompositeAddress.SEPARATOR);
+            // consumer queue
+            for (int i = 0; i < filterPathTerminus; i++) {
+               if (i > 0) {
+                  fqqn.append(ActiveMQDestination.PATH_SEPERATOR);
+               }
+               fqqn.append(paths[i]);
+            }
+            mappedDestination = new ActiveMQQueue(fqqn.toString());
+            break;
+         }
+      }
+      if (mappedDestination == null) {
+         // cache the identity mapping
+         mappedDestination = destination;
+      }
+      synchronized (vtDestMapCache) {
+         ActiveMQDestination existing = vtDestMapCache.put(destination, mappedDestination);
+         if (existing != null) {
+            // some one beat us to the put, revert
+            vtDestMapCache.put(destination, existing);
+            mappedDestination = existing;
+         }
+      }
+      return mappedDestination;
    }
 }

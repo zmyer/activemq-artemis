@@ -29,6 +29,7 @@ import com.arjuna.ats.arjuna.coordinator.TransactionReaper;
 import com.arjuna.ats.arjuna.coordinator.TxControl;
 import org.apache.activemq.artemis.api.core.ActiveMQException;
 import org.apache.activemq.artemis.api.core.TransportConfiguration;
+import org.apache.activemq.artemis.api.core.client.ActiveMQClient;
 import org.apache.activemq.artemis.api.core.client.ClientConsumer;
 import org.apache.activemq.artemis.api.core.client.ClientMessage;
 import org.apache.activemq.artemis.api.core.client.ClientProducer;
@@ -36,7 +37,6 @@ import org.apache.activemq.artemis.api.core.client.ClientSession;
 import org.apache.activemq.artemis.api.core.client.ClientSessionFactory;
 import org.apache.activemq.artemis.api.core.client.FailoverEventListener;
 import org.apache.activemq.artemis.api.core.client.FailoverEventType;
-import org.apache.activemq.artemis.api.core.client.ActiveMQClient;
 import org.apache.activemq.artemis.api.core.client.ServerLocator;
 import org.apache.activemq.artemis.api.jms.ActiveMQJMSClient;
 import org.apache.activemq.artemis.api.jms.JMSFactoryType;
@@ -171,7 +171,7 @@ public abstract class ClusteredBridgeTestBase extends ActiveMQTestBase {
          backupNode.start();
          waitForRemoteBackupSynchronization(backupNode.getActiveMQServer());
 
-         locator = ActiveMQClient.createServerLocatorWithHA(liveConnector).setReconnectAttempts(-1);
+         locator = ActiveMQClient.createServerLocatorWithHA(liveConnector).setReconnectAttempts(15);
          sessionFactory = locator.createSessionFactory();
       }
 
@@ -191,7 +191,7 @@ public abstract class ClusteredBridgeTestBase extends ActiveMQTestBase {
             @Override
             public ConnectionFactory createConnectionFactory() throws Exception {
                ActiveMQConnectionFactory cf = ActiveMQJMSClient.createConnectionFactoryWithHA(JMSFactoryType.XA_CF, liveConnector);
-               cf.getServerLocator().setReconnectAttempts(-1);
+               cf.getServerLocator().setReconnectAttempts(15);
                return cf;
             }
          };
@@ -212,7 +212,7 @@ public abstract class ClusteredBridgeTestBase extends ActiveMQTestBase {
 
       public void sendMessages(String queueName, int num) throws ActiveMQException {
          ClientSession session = sessionFactory.createSession();
-         ClientProducer producer = session.createProducer("jms.queue." + queueName);
+         ClientProducer producer = session.createProducer(queueName);
          for (int i = 0; i < num; i++) {
             ClientMessage m = session.createMessage(true);
             m.putStringProperty("bridge-message", "hello " + index);
@@ -225,7 +225,7 @@ public abstract class ClusteredBridgeTestBase extends ActiveMQTestBase {
       public void receiveMessages(String queueName, int num, boolean checkDup) throws ActiveMQException {
          ClientSession session = sessionFactory.createSession();
          session.start();
-         ClientConsumer consumer = session.createConsumer("jms.queue." + queueName);
+         ClientConsumer consumer = session.createConsumer(queueName);
          for (int i = 0; i < num; i++) {
             ClientMessage m = consumer.receive(30000);
             assertNotNull("i=" + i, m);
@@ -236,8 +236,7 @@ public abstract class ClusteredBridgeTestBase extends ActiveMQTestBase {
          ClientMessage m = consumer.receive(500);
          if (checkDup) {
             assertNull(m);
-         }
-         else {
+         } else {
             //drain messages
             while (m != null) {
                m = consumer.receive(200);

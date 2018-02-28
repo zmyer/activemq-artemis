@@ -14,7 +14,7 @@ All interceptors are protocol specific.
 An interceptor for the core protocol must implement the interface `Interceptor`:
 
 ``` java
-package org.apache.artemis.activemq.api.core.interceptor;
+package org.apache.activemq.artemis.api.core.interceptor;
 
 public interface Interceptor
 {
@@ -67,12 +67,12 @@ Both incoming and outgoing interceptors are configured in
        <class-name>org.apache.activemq.artemis.jms.example.AdditionalPropertyInterceptor</class-name>
     </remoting-outgoing-interceptors>
 
-The interceptors classes (and their dependencies) must be added to the
-server classpath to be properly instantiated and called.
+See the documentation on [adding runtime dependencies](using-server.md) to 
+understand how to make your interceptor available to the broker.
 
 ## Interceptors on the Client Side
 
-The interceptors can also be run on the client side to intercept packets
+The interceptors can also be run on the Apache ActiveMQ Artemit client side to intercept packets
 either sent by the client to the server or by the server to the client.
 This is done by adding the interceptor to the `ServerLocator` with the
 `addIncomingInterceptor(Interceptor)` or

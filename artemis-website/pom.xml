@@ -20,7 +20,7 @@
    <parent>
       <groupId>org.apache.activemq</groupId>
       <artifactId>artemis-pom</artifactId>
-      <version>1.5.0-SNAPSHOT</version>
+      <version>2.5.0-SNAPSHOT</version>
    </parent>
 
    <artifactId>artemis-website</artifactId>
@@ -61,17 +61,16 @@
 
       <!-- stuff needed to resolve various classes during javadoc processing -->
       <dependency>
-          <groupId>org.jboss.logging</groupId>
-          <artifactId>jboss-logging-processor</artifactId>
-          <scope>provided</scope>
-          <optional>true</optional>
+         <groupId>org.jboss.logging</groupId>
+         <artifactId>jboss-logging-processor</artifactId>
+         <scope>provided</scope>
+         <optional>true</optional>
       </dependency>
       <dependency>
-          <groupId>xalan</groupId>
-          <artifactId>xalan</artifactId>
-          <version>2.7.2</version>
-          <optional>true</optional>
-          <scope>provided</scope>
+         <groupId>xalan</groupId>
+         <artifactId>xalan</artifactId>
+         <optional>true</optional>
+         <scope>provided</scope>
       </dependency>
    </dependencies>
 
@@ -80,9 +79,10 @@
       <webapp-dir>${project.artifactId}-${project.version}</webapp-dir>
       <webapp-outdir-user-manual>${basedir}/target/classes/user-manual</webapp-outdir-user-manual>
       <webapp-outdir-hacking-guide>${basedir}/target/classes/hacking-guide</webapp-outdir-hacking-guide>
+      <webapp-outdir-migration-guide>${basedir}/target/classes/migration-guide</webapp-outdir-migration-guide>
 
       <frontend-maven-plugin-version>0.0.29</frontend-maven-plugin-version>
-      <nodeVersion>v0.10.32</nodeVersion>
+      <nodeVersion>v6.11.0</nodeVersion>
       <npmVersion>1.4.12</npmVersion>
 
    </properties>
@@ -119,7 +119,8 @@
                      </dependencySourceIncludes>
                      <quiet>false</quiet>
                      <aggregate>true</aggregate>
-                     <excludePackageNames>org.apache.activemq.artemis.core:org.apache.activemq.artemis.utils</excludePackageNames>
+                     <excludePackageNames>org.apache.activemq.artemis.core:org.apache.activemq.artemis.utils
+                     </excludePackageNames>
                   </configuration>
                </execution>
             </executions>
@@ -159,6 +160,8 @@
                         </configuration>
                      </execution>
                   </executions>
+                  <configuration>
+                  </configuration>
                </plugin>
                <plugin>
                   <artifactId>maven-antrun-plugin</artifactId>
@@ -187,6 +190,14 @@
                                  <arg value="build" />
                                  <arg value="${basedir}/../docs/hacking-guide/en" />
                                  <arg value="${webapp-outdir-hacking-guide}" />
+                              </exec>
+                              <mkdir dir="${webapp-outdir-migration-guide}" />
+                              <echo>executing ${gitbook.cmd}</echo>
+                              <exec executable="${gitbook.cmd}" failonerror="true">
+                                 <env key="PATH" path="${basedir}/node" />
+                                 <arg value="build" />
+                                 <arg value="${basedir}/../docs/migration-guide/en" />
+                                 <arg value="${webapp-outdir-migration-guide}" />
                               </exec>
                            </target>
                         </configuration>

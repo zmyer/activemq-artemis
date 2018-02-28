@@ -6,7 +6,7 @@
  * (the "License"); you may not use this file except in compliance with
  * the License. You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -33,6 +33,7 @@ import org.apache.activemq.artemis.core.config.Configuration;
 import org.apache.activemq.artemis.core.protocol.hornetq.client.HornetQClientProtocolManagerFactory;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.jms.client.ActiveMQConnectionFactory;
+import org.apache.activemq.artemis.jms.client.ActiveMQQueue;
 import org.apache.activemq.artemis.jms.server.config.ConnectionFactoryConfiguration;
 import org.apache.activemq.artemis.jms.server.config.JMSConfiguration;
 import org.apache.activemq.artemis.jms.server.config.impl.ConnectionFactoryConfigurationImpl;
@@ -46,10 +47,14 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
+/**
+ * These tests attempt to mimic a legacy client without actually using a legacy versions of the client libraries.
+ */
 public class HornetQProtocolManagerTest extends ActiveMQTestBase {
 
    ActiveMQServer server;
    EmbeddedJMS embeddedJMS;
+
    @Override
    @Before
    public void setUp() throws Exception {
@@ -58,7 +63,7 @@ public class HornetQProtocolManagerTest extends ActiveMQTestBase {
       configuration.setPersistenceEnabled(false);
       configuration.getAcceptorConfigurations().clear();
       configuration.addAcceptorConfiguration("legacy", "tcp://localhost:61616?protocols=HORNETQ").
-                    addAcceptorConfiguration("corepr", "tcp://localhost:61617?protocols=CORE");
+         addAcceptorConfiguration("corepr", "tcp://localhost:61617?protocols=CORE");
 
       configuration.addConnectorConfiguration("legacy", "tcp://localhost:61616");
       JMSConfiguration jmsConfiguration = new JMSConfigurationImpl();
@@ -87,16 +92,15 @@ public class HornetQProtocolManagerTest extends ActiveMQTestBase {
       manager.register(connectionFactory, null, null, new ConcurrentHashMap<String, String>());
       manager.register(connectionFactory2, null, null, new ConcurrentHashMap<String, String>());
 
-      for (XARecoveryConfig resource :manager.getResources()) {
+      for (XARecoveryConfig resource : manager.getResources()) {
          try (ServerLocator locator = resource.createServerLocator();
-             ClientSessionFactory factory = locator.createSessionFactory();
-             ClientSession session = factory.createSession())         {
+              ClientSessionFactory factory = locator.createSessionFactory();
+              ClientSession session = factory.createSession()) {
             // Nothing
          }
       }
 
    }
-
 
    /** This test will use an ArtemisConnectionFactory with clientProtocolManager=*/
    @Test
@@ -108,8 +112,9 @@ public class HornetQProtocolManagerTest extends ActiveMQTestBase {
       configuration.setProtocolManagerFactoryStr(HornetQClientProtocolManagerFactory.class.getName());
       embeddedJMS.getJMSServerManager().createConnectionFactory(false, configuration, "legacy");
 
-      Queue queue = (Queue) embeddedJMS.lookup("testQueue");
-
+      // WORKAROUND: the 2.0.0 broker introduced addressing change and the 2.2.0 broker added compatibility for old
+      // client libraries relying on the legacy prefixes. The new client being used in this test needs prefix explicitly.
+      Queue queue = new ActiveMQQueue("jms.queue.testQueue");
 
       ActiveMQConnectionFactory connectionFactory = (ActiveMQConnectionFactory) embeddedJMS.lookup("legacy");
       Connection connection = connectionFactory.createConnection();
@@ -124,7 +129,7 @@ public class HornetQProtocolManagerTest extends ActiveMQTestBase {
 
       connection.start();
       MessageConsumer consumer = session.createConsumer(queue);
-      TextMessage messageRec = (TextMessage)consumer.receive(5000);
+      TextMessage messageRec = (TextMessage) consumer.receive(5000);
       Assert.assertNotNull(messageRec);
 
       Assert.assertEquals("Test", messageRec.getText());
@@ -133,7 +138,6 @@ public class HornetQProtocolManagerTest extends ActiveMQTestBase {
       connectionFactory.close();
 
    }
-
 
 }
 

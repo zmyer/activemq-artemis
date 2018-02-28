@@ -29,7 +29,9 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.regex.Pattern;
 
+import org.apache.activemq.artemis.core.config.WildcardConfiguration;
 import org.apache.activemq.artemis.core.server.ActiveMQServerLogger;
 import org.apache.activemq.artemis.core.settings.HierarchicalRepository;
 import org.apache.activemq.artemis.core.settings.HierarchicalRepositoryChangeListener;
@@ -43,6 +45,7 @@ public class HierarchicalObjectRepository<T> implements HierarchicalRepository<T
 
    private static final Logger logger = Logger.getLogger(HierarchicalObjectRepository.class);
 
+   private static final WildcardConfiguration DEFAULT_WILDCARD_CONFIGURATION = new WildcardConfiguration();
    private boolean listenersEnabled = true;
    /**
     * The default Match to fall back to
@@ -66,7 +69,9 @@ public class HierarchicalObjectRepository<T> implements HierarchicalRepository<T
    /**
     * a regex comparator
     */
-   private final MatchComparator matchComparator = new MatchComparator();
+   private final MatchComparator matchComparator;
+
+   private final WildcardConfiguration wildcardConfiguration;
 
    /**
     * a cache
@@ -94,13 +99,21 @@ public class HierarchicalObjectRepository<T> implements HierarchicalRepository<T
     */
    private final ArrayList<HierarchicalRepositoryChangeListener> listeners = new ArrayList<>();
 
+   public HierarchicalObjectRepository() {
+      this(null);
+   }
+
+   public HierarchicalObjectRepository(final WildcardConfiguration wildcardConfiguration) {
+      this.wildcardConfiguration = wildcardConfiguration == null ? DEFAULT_WILDCARD_CONFIGURATION : wildcardConfiguration;
+      this.matchComparator = new MatchComparator(this.wildcardConfiguration);
+   }
+
    @Override
    public void disableListeners() {
       lock.writeLock().lock();
       try {
          this.listenersEnabled = false;
-      }
-      finally {
+      } finally {
          lock.writeLock().unlock();
       }
    }
@@ -110,8 +123,7 @@ public class HierarchicalObjectRepository<T> implements HierarchicalRepository<T
       lock.writeLock().lock();
       try {
          this.listenersEnabled = true;
-      }
-      finally {
+      } finally {
          lock.writeLock().unlock();
       }
       onChange();
@@ -133,8 +145,7 @@ public class HierarchicalObjectRepository<T> implements HierarchicalRepository<T
          }
 
          return values;
-      }
-      finally {
+      } finally {
          lock.readLock().unlock();
       }
    }
@@ -158,12 +169,10 @@ public class HierarchicalObjectRepository<T> implements HierarchicalRepository<T
          if (immutableMatch) {
             immutables.add(match);
          }
-         Match.verify(match);
-         Match<T> match1 = new Match<>(match);
-         match1.setValue(value);
+         Match.verify(match, wildcardConfiguration);
+         Match<T> match1 = new Match<>(match, value, wildcardConfiguration);
          matches.put(match, match1);
-      }
-      finally {
+      } finally {
          lock.writeLock().unlock();
       }
 
@@ -201,8 +210,7 @@ public class HierarchicalObjectRepository<T> implements HierarchicalRepository<T
             cache.put(match, value);
          }
          return value;
-      }
-      finally {
+      } finally {
          lock.readLock().unlock();
       }
    }
@@ -221,8 +229,7 @@ public class HierarchicalObjectRepository<T> implements HierarchicalRepository<T
             if (!Mergeable.class.isAssignableFrom(actualMatch.getClass())) {
                break;
             }
-         }
-         else {
+         } else {
             ((Mergeable) actualMatch).merge(match.getValue());
          }
       }
@@ -258,8 +265,7 @@ public class HierarchicalObjectRepository<T> implements HierarchicalRepository<T
          boolean isImmutable = immutables.contains(match);
          if (isImmutable) {
             logger.debug("Cannot remove match " + match + " since it came from a main config");
-         }
-         else {
+         } else {
             /**
              * clear the cache before removing the match. This will force any thread at
              * {@link #getMatch(String)} to get the lock to recompute.
@@ -268,8 +274,7 @@ public class HierarchicalObjectRepository<T> implements HierarchicalRepository<T
             matches.remove(match);
             onChange();
          }
-      }
-      finally {
+      } finally {
          lock.writeLock().unlock();
       }
    }
@@ -282,8 +287,7 @@ public class HierarchicalObjectRepository<T> implements HierarchicalRepository<T
          if (listenersEnabled) {
             listener.onChange();
          }
-      }
-      finally {
+      } finally {
          lock.writeLock().unlock();
       }
    }
@@ -293,8 +297,7 @@ public class HierarchicalObjectRepository<T> implements HierarchicalRepository<T
       lock.writeLock().lock();
       try {
          listeners.remove(listener);
-      }
-      finally {
+      } finally {
          lock.writeLock().unlock();
       }
    }
@@ -317,8 +320,7 @@ public class HierarchicalObjectRepository<T> implements HierarchicalRepository<T
          clearCache();
          listeners.clear();
          matches.clear();
-      }
-      finally {
+      } finally {
          lock.writeLock().unlock();
       }
    }
@@ -333,8 +335,7 @@ public class HierarchicalObjectRepository<T> implements HierarchicalRepository<T
          for (Map.Entry<String, T> entry : entries) {
             addMatch(entry.getKey(), entry.getValue(), true, false);
          }
-      }
-      finally {
+      } finally {
          lock.writeLock().unlock();
       }
 
@@ -358,14 +359,12 @@ public class HierarchicalObjectRepository<T> implements HierarchicalRepository<T
             for (HierarchicalRepositoryChangeListener listener : listeners) {
                try {
                   listener.onChange();
-               }
-               catch (Throwable e) {
+               } catch (Throwable e) {
                   ActiveMQServerLogger.LOGGER.errorCallingRepoListener(e);
                }
             }
          }
-      }
-      finally {
+      } finally {
          lock.readLock().unlock();
       }
    }
@@ -395,33 +394,37 @@ public class HierarchicalObjectRepository<T> implements HierarchicalRepository<T
 
       private static final long serialVersionUID = -6182535107518999740L;
 
+      private final String quotedDelimiter;
+      private final String anyWords;
+      private final String singleWord;
+
+      MatchComparator(final WildcardConfiguration wildcardConfiguration) {
+         this.quotedDelimiter = Pattern.quote(wildcardConfiguration.getDelimiterString());
+         this.singleWord = wildcardConfiguration.getSingleWordString();
+         this.anyWords = wildcardConfiguration.getAnyWordsString();
+      }
+
       @Override
       public int compare(final String o1, final String o2) {
-         if (o1.contains(Match.WILDCARD) && !o2.contains(Match.WILDCARD)) {
+         if (o1.contains(anyWords) && !o2.contains(anyWords)) {
             return +1;
-         }
-         else if (!o1.contains(Match.WILDCARD) && o2.contains(Match.WILDCARD)) {
+         } else if (!o1.contains(anyWords) && o2.contains(anyWords)) {
             return -1;
-         }
-         else if (o1.contains(Match.WILDCARD) && o2.contains(Match.WILDCARD)) {
+         } else if (o1.contains(anyWords) && o2.contains(anyWords)) {
             return o2.length() - o1.length();
-         }
-         else if (o1.contains(Match.WORD_WILDCARD) && !o2.contains(Match.WORD_WILDCARD)) {
+         } else if (o1.contains(singleWord) && !o2.contains(singleWord)) {
             return +1;
-         }
-         else if (!o1.contains(Match.WORD_WILDCARD) && o2.contains(Match.WORD_WILDCARD)) {
+         } else if (!o1.contains(singleWord) && o2.contains(singleWord)) {
             return -1;
-         }
-         else if (o1.contains(Match.WORD_WILDCARD) && o2.contains(Match.WORD_WILDCARD)) {
-            String[] leftSplits = o1.split("\\.");
-            String[] rightSplits = o2.split("\\.");
+         } else if (o1.contains(singleWord) && o2.contains(singleWord)) {
+            String[] leftSplits = o1.split(quotedDelimiter);
+            String[] rightSplits = o2.split(quotedDelimiter);
             for (int i = 0; i < leftSplits.length; i++) {
                String left = leftSplits[i];
-               if (left.equals(Match.WORD_WILDCARD)) {
-                  if (rightSplits.length < i || !rightSplits[i].equals(Match.WORD_WILDCARD)) {
+               if (left.equals(singleWord)) {
+                  if (rightSplits.length < i || !rightSplits[i].equals(singleWord)) {
                      return -1;
-                  }
-                  else {
+                  } else {
                      return +1;
                   }
                }

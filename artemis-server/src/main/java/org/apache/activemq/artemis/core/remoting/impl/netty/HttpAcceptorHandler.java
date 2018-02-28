@@ -31,7 +31,7 @@ import io.netty.channel.ChannelPromise;
 import io.netty.handler.codec.http.DefaultFullHttpResponse;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.FullHttpResponse;
-import io.netty.handler.codec.http.HttpHeaders;
+import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
@@ -73,7 +73,7 @@ public class HttpAcceptorHandler extends ChannelDuplexHandler {
    @Override
    public void channelRead(final ChannelHandlerContext ctx, final Object msg) throws Exception {
       FullHttpRequest request = (FullHttpRequest) msg;
-      HttpMethod method = request.getMethod();
+      HttpMethod method = request.method();
       // if we are a post then we send upstream, otherwise we are just being prompted for a response.
       if (method.equals(HttpMethod.POST)) {
          ctx.fireChannelRead(ReferenceCountUtil.retain(((FullHttpRequest) msg).content()));
@@ -90,8 +90,7 @@ public class HttpAcceptorHandler extends ChannelDuplexHandler {
       // we are either a channel buffer, which gets delayed until a response is available, or we are the actual response
       if (msg instanceof ByteBuf) {
          executor.execute(new ResponseRunner((ByteBuf) msg, promise));
-      }
-      else {
+      } else {
          ctx.write(msg, promise);
       }
    }
@@ -102,8 +101,7 @@ public class HttpAcceptorHandler extends ChannelDuplexHandler {
       for (ResponseHolder response : responses) {
          if (response.timeReceived < time) {
             lateResponses++;
-         }
-         else {
+         } else {
             break;
          }
       }
@@ -141,21 +139,20 @@ public class HttpAcceptorHandler extends ChannelDuplexHandler {
          do {
             try {
                responseHolder = responses.take();
-            }
-            catch (InterruptedException e) {
+            } catch (InterruptedException e) {
                if (executor.isShutdown())
                   return;
                // otherwise ignore, we'll just try again
             }
-         } while (responseHolder == null);
+         }
+         while (responseHolder == null);
          if (!bogusResponse) {
             piggyBackResponses(responseHolder.response.content());
-            responseHolder.response.headers().set(HttpHeaders.Names.CONTENT_LENGTH, String.valueOf(responseHolder.response.content().readableBytes()));
+            responseHolder.response.headers().set(HttpHeaderNames.CONTENT_LENGTH, String.valueOf(responseHolder.response.content().readableBytes()));
             channel.writeAndFlush(responseHolder.response, promise);
-         }
-         else {
+         } else {
             responseHolder.response.content().writeBytes(buffer);
-            responseHolder.response.headers().set(HttpHeaders.Names.CONTENT_LENGTH, String.valueOf(responseHolder.response.content().readableBytes()));
+            responseHolder.response.headers().set(HttpHeaderNames.CONTENT_LENGTH, String.valueOf(responseHolder.response.content().readableBytes()));
             channel.writeAndFlush(responseHolder.response, promise);
          }
 
@@ -176,11 +173,11 @@ public class HttpAcceptorHandler extends ChannelDuplexHandler {
                   }
                   buf.writeBytes(responseRunner.buffer);
                   responseRunner.buffer.release();
-               }
-               catch (InterruptedException e) {
+               } catch (InterruptedException e) {
                   break;
                }
-            } while (responses.isEmpty());
+            }
+            while (responses.isEmpty());
             return;
          }
          buf.writeBytes(buffer);
@@ -192,11 +189,9 @@ public class HttpAcceptorHandler extends ChannelDuplexHandler {
       executor.shutdown();
       try {
          executor.awaitTermination(10, TimeUnit.SECONDS);
-      }
-      catch (InterruptedException e) {
+      } catch (InterruptedException e) {
          // no-op
-      }
-      finally {
+      } finally {
          executor.shutdownNow();
       }
       responses.clear();

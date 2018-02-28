@@ -6,7 +6,7 @@
  * (the "License"); you may not use this file except in compliance with
  * the License. You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -60,5 +60,12 @@ public class ClusterConnectionConfigurationTest {
       ClusterConnectionConfiguration configuration = parser.newObject(new URI("multicast://myGroup?minLargeMessageSize=132"), null);
       Assert.assertEquals("myGroup", configuration.getDiscoveryGroupName());
       Assert.assertEquals(132, configuration.getMinLargeMessageSize());
+   }
+
+   @Test
+   public void testClusterConnectionProducerWindowSize() throws Exception {
+      ClusterConnectionConfigurationParser parser = new ClusterConnectionConfigurationParser();
+      ClusterConnectionConfiguration configuration = parser.newObject(new URI("static:(tcp://localhost:6556)?producerWindowSize=1234"), null);
+      Assert.assertEquals(1234, configuration.getProducerWindowSize());
    }
 }

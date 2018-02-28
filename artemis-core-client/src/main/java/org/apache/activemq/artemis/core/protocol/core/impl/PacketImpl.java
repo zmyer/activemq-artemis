@@ -16,20 +16,29 @@
  */
 package org.apache.activemq.artemis.core.protocol.core.impl;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
+import org.apache.activemq.artemis.api.core.SimpleString;
+import org.apache.activemq.artemis.core.buffers.impl.ChannelBufferWrapper;
+import org.apache.activemq.artemis.core.protocol.core.CoreRemotingConnection;
 import org.apache.activemq.artemis.core.protocol.core.Packet;
-import org.apache.activemq.artemis.spi.core.protocol.RemotingConnection;
 import org.apache.activemq.artemis.utils.DataConstants;
 
 public class PacketImpl implements Packet {
    // Constants -------------------------------------------------------------------------
 
+
+   // 2.0.0
+   public static final int ADDRESSING_CHANGE_VERSION = 129;
+
+   public static final SimpleString OLD_QUEUE_PREFIX = new SimpleString("jms.queue.");
+   public static final SimpleString OLD_TOPIC_PREFIX = new SimpleString("jms.topic.");
+
    // The minimal size for all the packets, Common data for all the packets (look at
    // PacketImpl.encode)
    public static final int PACKET_HEADERS_SIZE = DataConstants.SIZE_INT + DataConstants.SIZE_BYTE +
       DataConstants.SIZE_LONG;
-
-   private static final int INITIAL_PACKET_SIZE = 1500;
 
    protected long channelID;
 
@@ -249,6 +258,16 @@ public class PacketImpl implements Packet {
 
    public static final byte SESS_BINDINGQUERY_RESP_V3 = -10;
 
+   public static final byte CREATE_ADDRESS = -11;
+
+   public static final byte CREATE_QUEUE_V2 = -12;
+
+   public static final byte CREATE_SHARED_QUEUE_V2 = -13;
+
+   public static final byte SESS_QUEUEQUERY_RESP_V3 = -14;
+
+   public static final byte SESS_BINDINGQUERY_RESP_V4 = -15;
+
    // Static --------------------------------------------------------
 
    public PacketImpl(final byte type) {
@@ -256,6 +275,20 @@ public class PacketImpl implements Packet {
    }
 
    // Public --------------------------------------------------------
+
+   public SimpleString convertName(SimpleString name) {
+      if (name == null) {
+         return null;
+      }
+
+      if (name.startsWith(OLD_QUEUE_PREFIX)) {
+         return name.subSeq(OLD_QUEUE_PREFIX.length(), name.length());
+      } else if (name.startsWith(OLD_TOPIC_PREFIX)) {
+         return name.subSeq(OLD_TOPIC_PREFIX.length(), name.length());
+      } else {
+         return name;
+      }
+   }
 
    @Override
    public byte getType() {
@@ -273,25 +306,43 @@ public class PacketImpl implements Packet {
    }
 
    @Override
-   public ActiveMQBuffer encode(final RemotingConnection connection) {
-      ActiveMQBuffer buffer = connection.createTransportBuffer(PacketImpl.INITIAL_PACKET_SIZE);
+   public ActiveMQBuffer encode(final CoreRemotingConnection connection) {
+      ActiveMQBuffer buffer =  createPacket(connection);
 
-      // The standard header fields
-
-      buffer.writeInt(0); // The length gets filled in at the end
-      buffer.writeByte(type);
-      buffer.writeLong(channelID);
+      encodeHeader(buffer);
 
       encodeRest(buffer);
 
+      encodeSize(buffer);
+
+      return buffer;
+   }
+
+   protected void encodeHeader(ActiveMQBuffer buffer) {
+      // The standard header fields
+      buffer.writeInt(0); // The length gets filled in at the end
+      buffer.writeByte(type);
+      buffer.writeLong(channelID);
+   }
+
+   protected void encodeSize(ActiveMQBuffer buffer) {
       size = buffer.writerIndex();
 
       // The length doesn't include the actual length byte
       int len = size - DataConstants.SIZE_INT;
 
       buffer.setInt(0, len);
+   }
 
-      return buffer;
+   protected ActiveMQBuffer createPacket(CoreRemotingConnection connection) {
+
+      int size = expectedEncodeSize();
+
+      if (connection == null) {
+         return new ChannelBufferWrapper(Unpooled.buffer(size));
+      } else {
+         return connection.createTransportBuffer(size);
+      }
    }
 
    @Override
@@ -302,6 +353,22 @@ public class PacketImpl implements Packet {
 
       size = buffer.readerIndex();
    }
+
+   protected ByteBuf copyMessageBuffer(ByteBuf buffer, int skipBytes) {
+
+      ByteBuf newNettyBuffer = Unpooled.buffer(buffer.capacity() - PACKET_HEADERS_SIZE - skipBytes);
+
+      int read = buffer.readerIndex();
+      int writ = buffer.writerIndex();
+      buffer.readerIndex(PACKET_HEADERS_SIZE);
+
+      newNettyBuffer.writeBytes(buffer, buffer.readableBytes() - skipBytes);
+      buffer.setIndex( read, writ );
+      newNettyBuffer.setIndex( 0, writ - PACKET_HEADERS_SIZE - skipBytes);
+
+      return newNettyBuffer;
+   }
+
 
    @Override
    public int getPacketSize() {
@@ -343,6 +410,7 @@ public class PacketImpl implements Packet {
       return result;
    }
 
+
    @Override
    public boolean equals(Object obj) {
       if (this == obj) {
@@ -366,4 +434,6 @@ public class PacketImpl implements Packet {
    protected int nullableStringEncodeSize(final String str) {
       return DataConstants.SIZE_BOOLEAN + (str != null ? stringEncodeSize(str) : 0);
    }
+
+
 }

@@ -33,6 +33,8 @@ cd $ARTEMIS_HOME/examples/features/standard/
 cd bridge; mvn verify; cd ..
 cd bridge; mvn verify; cd ..
 cd browser; mvn verify; cd ..
+cd broker-plugin; mvn verify; cd ..
+cd cdi; mvn verify; cd ..
 cd client-kickoff; mvn verify; cd ..
 cd consumer-rate-limit; mvn verify; cd ..
 cd dead-letter; mvn verify; cd ..
@@ -45,6 +47,7 @@ cd expiry; mvn verify; cd ..
 cd http-transport; mvn verify; cd ..
 cd interceptor; mvn verify; cd ..
 cd interceptor-client; mvn verify; cd ..
+cd interceptor-client-mqtt; mvn verify; cd ..
 cd jms-auto-closeable; mvn verify; cd ..
 cd instantiate-connection-factory; mvn verify; cd ..
 cd jms-bridge; mvn verify; cd ..

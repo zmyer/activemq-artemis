@@ -21,11 +21,13 @@ import java.io.File;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -42,16 +44,16 @@ import org.apache.activemq.artemis.core.io.IOCriticalErrorListener;
 import org.apache.activemq.artemis.core.io.SequentialFile;
 import org.apache.activemq.artemis.core.io.SequentialFileFactory;
 import org.apache.activemq.artemis.core.io.aio.AIOSequentialFileFactory;
+import org.apache.activemq.artemis.core.io.mapped.MappedSequentialFileFactory;
 import org.apache.activemq.artemis.core.io.nio.NIOSequentialFileFactory;
 import org.apache.activemq.artemis.core.journal.Journal;
 import org.apache.activemq.artemis.core.journal.impl.JournalFile;
 import org.apache.activemq.artemis.core.journal.impl.JournalImpl;
-import org.apache.activemq.artemis.core.message.impl.MessageInternal;
 import org.apache.activemq.artemis.core.paging.PagedMessage;
 import org.apache.activemq.artemis.core.paging.PagingManager;
 import org.apache.activemq.artemis.core.paging.PagingStore;
 import org.apache.activemq.artemis.core.persistence.OperationContext;
-import org.apache.activemq.artemis.core.persistence.impl.journal.codec.LargeMessageEncoding;
+import org.apache.activemq.artemis.core.persistence.impl.journal.codec.LargeMessagePersister;
 import org.apache.activemq.artemis.core.persistence.impl.journal.codec.PendingLargeMessageEncoding;
 import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.ReplicationLiveIsStoppingMessage;
 import org.apache.activemq.artemis.core.replication.ReplicatedJournal;
@@ -60,77 +62,111 @@ import org.apache.activemq.artemis.core.server.ActiveMQMessageBundle;
 import org.apache.activemq.artemis.core.server.ActiveMQServerLogger;
 import org.apache.activemq.artemis.core.server.JournalType;
 import org.apache.activemq.artemis.core.server.LargeServerMessage;
-import org.apache.activemq.artemis.core.server.ServerMessage;
 import org.apache.activemq.artemis.core.server.files.FileStoreMonitor;
 import org.apache.activemq.artemis.utils.ExecutorFactory;
+import org.apache.activemq.artemis.utils.critical.CriticalAnalyzer;
 import org.jboss.logging.Logger;
 
 public class JournalStorageManager extends AbstractJournalStorageManager {
+
    private static final Logger logger = Logger.getLogger(JournalStorageManager.class);
 
-   private SequentialFileFactory journalFF;
+   protected SequentialFileFactory journalFF;
 
-   private SequentialFileFactory bindingsFF;
+   protected SequentialFileFactory bindingsFF;
 
    SequentialFileFactory largeMessagesFactory;
 
-   private Journal originalMessageJournal;
+   protected Journal originalMessageJournal;
 
-   private Journal originalBindingsJournal;
+   protected Journal originalBindingsJournal;
 
    protected String largeMessagesDirectory;
 
-   private ReplicationManager replicator;
-
-   public JournalStorageManager(final Configuration config, final ExecutorFactory executorFactory, final ScheduledExecutorService scheduledExecutorService) {
-      this(config, executorFactory, scheduledExecutorService, null);
-   }
-
-   public JournalStorageManager(final Configuration config, final ExecutorFactory executorFactory) {
-      this(config, executorFactory, null, null);
-   }
+   protected ReplicationManager replicator;
 
    public JournalStorageManager(final Configuration config,
+                                final CriticalAnalyzer analyzer,
                                 final ExecutorFactory executorFactory,
                                 final ScheduledExecutorService scheduledExecutorService,
-                                final IOCriticalErrorListener criticalErrorListener) {
-      super(config, executorFactory, scheduledExecutorService, criticalErrorListener);
+                                final ExecutorFactory ioExecutors) {
+      this(config, analyzer, executorFactory, scheduledExecutorService, ioExecutors, null);
+   }
+
+   public JournalStorageManager(final Configuration config, CriticalAnalyzer analyzer, final ExecutorFactory executorFactory, final ExecutorFactory ioExecutors) {
+      this(config, analyzer, executorFactory, null, ioExecutors, null);
    }
 
    public JournalStorageManager(final Configuration config,
+                                final CriticalAnalyzer analyzer,
                                 final ExecutorFactory executorFactory,
+                                final ScheduledExecutorService scheduledExecutorService,
+                                final ExecutorFactory ioExecutors,
                                 final IOCriticalErrorListener criticalErrorListener) {
-      super(config, executorFactory, null, criticalErrorListener);
+      super(config, analyzer, executorFactory, scheduledExecutorService, ioExecutors, criticalErrorListener);
+   }
+
+   public JournalStorageManager(final Configuration config,
+                                final CriticalAnalyzer analyzer,
+                                final ExecutorFactory executorFactory,
+                                final ExecutorFactory ioExecutors,
+                                final IOCriticalErrorListener criticalErrorListener) {
+      super(config, analyzer, executorFactory, null, ioExecutors, criticalErrorListener);
+   }
+
+   @Override
+   public SequentialFileFactory getJournalSequentialFileFactory() {
+      return journalFF;
    }
 
    @Override
    protected void init(Configuration config, IOCriticalErrorListener criticalErrorListener) {
 
-      if (config.getJournalType() != JournalType.NIO && config.getJournalType() != JournalType.ASYNCIO) {
+      if (!EnumSet.allOf(JournalType.class).contains(config.getJournalType())) {
          throw ActiveMQMessageBundle.BUNDLE.invalidJournal();
       }
 
       bindingsFF = new NIOSequentialFileFactory(config.getBindingsLocation(), criticalErrorListener, config.getJournalMaxIO_NIO());
+      bindingsFF.setDatasync(config.isJournalDatasync());
 
-      Journal localBindings = new JournalImpl(1024 * 1024, 2, config.getJournalCompactMinFiles(), config.getJournalPoolFiles(), config.getJournalCompactPercentage(), bindingsFF, "activemq-bindings", "bindings", 1);
+      Journal localBindings = new JournalImpl(ioExecutorFactory, 1024 * 1024, 2, config.getJournalCompactMinFiles(), config.getJournalPoolFiles(), config.getJournalCompactPercentage(), config.getJournalFileOpenTimeout(), bindingsFF, "activemq-bindings", "bindings", 1, 0, criticalErrorListener);
 
       bindingsJournal = localBindings;
       originalBindingsJournal = localBindings;
 
-      if (config.getJournalType() == JournalType.ASYNCIO) {
-         ActiveMQServerLogger.LOGGER.journalUseAIO();
+      switch (config.getJournalType()) {
 
-         journalFF = new AIOSequentialFileFactory(config.getJournalLocation(), config.getJournalBufferSize_AIO(), config.getJournalBufferTimeout_AIO(), config.getJournalMaxIO_AIO(), config.isLogJournalWriteRate(), criticalErrorListener);
-      }
-      else if (config.getJournalType() == JournalType.NIO) {
-         ActiveMQServerLogger.LOGGER.journalUseNIO();
-         journalFF = new NIOSequentialFileFactory(config.getJournalLocation(), true, config.getJournalBufferSize_NIO(), config.getJournalBufferTimeout_NIO(), config.getJournalMaxIO_NIO(), config.isLogJournalWriteRate(), criticalErrorListener);
-      }
-      else {
-         throw ActiveMQMessageBundle.BUNDLE.invalidJournalType2(config.getJournalType());
+         case NIO:
+            ActiveMQServerLogger.LOGGER.journalUseNIO();
+            journalFF = new NIOSequentialFileFactory(config.getJournalLocation(), true, config.getJournalBufferSize_NIO(), config.getJournalBufferTimeout_NIO(), config.getJournalMaxIO_NIO(), config.isLogJournalWriteRate(), criticalErrorListener, getCriticalAnalyzer());
+            break;
+         case ASYNCIO:
+            ActiveMQServerLogger.LOGGER.journalUseAIO();
+            journalFF = new AIOSequentialFileFactory(config.getJournalLocation(), config.getJournalBufferSize_AIO(), config.getJournalBufferTimeout_AIO(), config.getJournalMaxIO_AIO(), config.isLogJournalWriteRate(), criticalErrorListener, getCriticalAnalyzer());
+            break;
+         case MAPPED:
+            ActiveMQServerLogger.LOGGER.journalUseMAPPED();
+            journalFF = new MappedSequentialFileFactory(config.getJournalLocation(), config.getJournalFileSize(), true, config.getJournalBufferSize_NIO(), config.getJournalBufferTimeout_NIO(), criticalErrorListener);
+            break;
+         default:
+            throw ActiveMQMessageBundle.BUNDLE.invalidJournalType2(config.getJournalType());
       }
 
-      Journal localMessage = new JournalImpl(config.getJournalFileSize(), config.getJournalMinFiles(), config.getJournalPoolFiles(), config.getJournalCompactMinFiles(), config.getJournalCompactPercentage(), journalFF, "activemq-data", "amq", config.getJournalType() == JournalType.ASYNCIO ? config.getJournalMaxIO_AIO() : config.getJournalMaxIO_NIO());
+      journalFF.setDatasync(config.isJournalDatasync());
+
+
+      int fileSize = config.getJournalFileSize();
+      // we need to correct the file size if its not a multiple of the alignement
+      int modulus = fileSize % journalFF.getAlignment();
+      if (modulus != 0) {
+         int difference = modulus;
+         int low = config.getJournalFileSize() - difference;
+         int high = low + journalFF.getAlignment();
+         fileSize = difference < journalFF.getAlignment() / 2 ? low : high;
+         ActiveMQServerLogger.LOGGER.invalidJournalFileSize(config.getJournalFileSize(), fileSize, journalFF.getAlignment());
+      }
+      Journal localMessage = createMessageJournal(config, criticalErrorListener, fileSize);
+
       messageJournal = localMessage;
       originalMessageJournal = localMessage;
 
@@ -138,14 +174,17 @@ public class JournalStorageManager extends AbstractJournalStorageManager {
 
       largeMessagesFactory = new NIOSequentialFileFactory(config.getLargeMessagesLocation(), false, criticalErrorListener, 1);
 
-      perfBlastPages = config.getJournalPerfBlastPages();
-
       if (config.getPageMaxConcurrentIO() != 1) {
          pageMaxConcurrentIO = new Semaphore(config.getPageMaxConcurrentIO());
-      }
-      else {
+      } else {
          pageMaxConcurrentIO = null;
       }
+   }
+
+   protected Journal createMessageJournal(Configuration config,
+                                        IOCriticalErrorListener criticalErrorListener,
+                                        int fileSize) {
+      return new JournalImpl(ioExecutorFactory, fileSize, config.getJournalMinFiles(), config.getJournalPoolFiles(), config.getJournalCompactMinFiles(), config.getJournalCompactPercentage(), config.getJournalFileOpenTimeout(), journalFF, "activemq-data", "amq", journalFF.getMaxIO(), 0, criticalErrorListener);
    }
 
    // Life Cycle Handlers
@@ -166,7 +205,7 @@ public class JournalStorageManager extends AbstractJournalStorageManager {
 
    @Override
    public void stop() throws Exception {
-      stop(false);
+      stop(false, true);
    }
 
    public boolean isReplicated() {
@@ -184,7 +223,7 @@ public class JournalStorageManager extends AbstractJournalStorageManager {
    }
 
    @Override
-   public synchronized void stop(boolean ioCriticalError) throws Exception {
+   public synchronized void stop(boolean ioCriticalError, boolean sendFailover) throws Exception {
       if (!started) {
          return;
       }
@@ -197,27 +236,32 @@ public class JournalStorageManager extends AbstractJournalStorageManager {
       }
 
       final CountDownLatch latch = new CountDownLatch(1);
-      executor.execute(new Runnable() {
-         @Override
-         public void run() {
-            latch.countDown();
-         }
-      });
+      try {
+         executor.execute(new Runnable() {
+            @Override
+            public void run() {
+               latch.countDown();
+            }
+         });
 
-      latch.await(30, TimeUnit.SECONDS);
+         latch.await(30, TimeUnit.SECONDS);
+      } catch (RejectedExecutionException ignored) {
+         // that's ok
+      }
 
       // We cache the variable as the replicator could be changed between here and the time we call stop
       // since sendLiveIsStopping may issue a close back from the channel
       // and we want to ensure a stop here just in case
       ReplicationManager replicatorInUse = replicator;
       if (replicatorInUse != null) {
-         final OperationContext token = replicator.sendLiveIsStopping(ReplicationLiveIsStoppingMessage.LiveStopping.FAIL_OVER);
-         if (token != null) {
-            try {
-               token.waitCompletion(5000);
-            }
-            catch (Exception e) {
-               // ignore it
+         if (sendFailover) {
+            final OperationContext token = replicator.sendLiveIsStopping(ReplicationLiveIsStoppingMessage.LiveStopping.FAIL_OVER);
+            if (token != null) {
+               try {
+                  token.waitCompletion(5000);
+               } catch (Exception e) {
+                  // ignore it
+               }
             }
          }
          replicatorInUse.stop();
@@ -225,8 +269,6 @@ public class JournalStorageManager extends AbstractJournalStorageManager {
       bindingsJournal.stop();
 
       messageJournal.stop();
-
-      singleThreadExecutor.shutdown();
 
       journalLoaded = false;
 
@@ -242,12 +284,11 @@ public class JournalStorageManager extends AbstractJournalStorageManager {
          SequentialFile msg = createFileForLargeMessage(largeMsgId, LargeMessageExtension.DURABLE);
          try {
             msg.delete();
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             ActiveMQServerLogger.LOGGER.journalErrorDeletingMessage(e, largeMsgId);
          }
          if (replicator != null) {
-            replicator.largeMessageDelete(largeMsgId);
+            replicator.largeMessageDelete(largeMsgId, JournalStorageManager.this);
          }
       }
       largeMessagesToDelete.clear();
@@ -256,8 +297,7 @@ public class JournalStorageManager extends AbstractJournalStorageManager {
    protected SequentialFile createFileForLargeMessage(final long messageID, final boolean durable) {
       if (durable) {
          return createFileForLargeMessage(messageID, LargeMessageExtension.DURABLE);
-      }
-      else {
+      } else {
          return createFileForLargeMessage(messageID, LargeMessageExtension.TEMPORARY);
       }
    }
@@ -268,14 +308,11 @@ public class JournalStorageManager extends AbstractJournalStorageManager {
     * @param buff
     * @return
     * @throws Exception
-    */
-   protected LargeServerMessage parseLargeMessage(final Map<Long, ServerMessage> messages,
-                                                  final ActiveMQBuffer buff) throws Exception {
+    */ protected LargeServerMessage parseLargeMessage(final Map<Long, Message> messages,
+                                                      final ActiveMQBuffer buff) throws Exception {
       LargeServerMessage largeMessage = createLargeMessage();
 
-      LargeMessageEncoding messageEncoding = new LargeMessageEncoding(largeMessage);
-
-      messageEncoding.decode(buff);
+      LargeMessagePersister.getInstance().decode(buff, largeMessage);
 
       if (largeMessage.containsProperty(Message.HDR_ORIG_MESSAGE_ID)) {
          // for compatibility: couple with old behaviour, copying the old file to avoid message loss
@@ -304,8 +341,7 @@ public class JournalStorageManager extends AbstractJournalStorageManager {
          try {
             if (isReplicated())
                replicator.pageClosed(storeName, pageNumber);
-         }
-         finally {
+         } finally {
             readUnLock();
          }
       }
@@ -318,8 +354,7 @@ public class JournalStorageManager extends AbstractJournalStorageManager {
          try {
             if (isReplicated())
                replicator.pageDeleted(storeName, pageNumber);
-         }
-         finally {
+         } finally {
             readUnLock();
          }
       }
@@ -338,8 +373,7 @@ public class JournalStorageManager extends AbstractJournalStorageManager {
          try {
             if (isReplicated())
                replicator.pageWrite(message, pageNumber);
-         }
-         finally {
+         } finally {
             readUnLock();
          }
       }
@@ -355,16 +389,22 @@ public class JournalStorageManager extends AbstractJournalStorageManager {
       journalFF.releaseBuffer(buffer);
    }
 
-   public long storePendingLargeMessage(final long messageID) throws Exception {
+   public long storePendingLargeMessage(final long messageID, long recordID) throws Exception {
       readLock();
       try {
-         long recordID = generateID();
+         if (recordID == LargeServerMessage.NO_PENDING_ID) {
+            recordID = generateID();
+         } else {
+            //this means the large message doesn't
+            //have a pendingRecordID, but one has been
+            //generated (coming from live server) for use.
+            recordID = -recordID;
+         }
 
          messageJournal.appendAddRecord(recordID, JournalRecordIds.ADD_LARGE_MESSAGE_PENDING, new PendingLargeMessageEncoding(messageID), true, getContext(true));
 
          return recordID;
-      }
-      finally {
+      } finally {
          readUnLock();
       }
    }
@@ -377,9 +417,8 @@ public class JournalStorageManager extends AbstractJournalStorageManager {
             // And the client won't be waiting for the actual file to be deleted.
             // We set a temporary record (short lived) on the journal
             // to avoid a situation where the server is restarted and pending large message stays on forever
-            largeServerMessage.setPendingRecordID(storePendingLargeMessage(largeServerMessage.getMessageID()));
-         }
-         catch (Exception e) {
+            largeServerMessage.setPendingRecordID(storePendingLargeMessage(largeServerMessage.getMessageID(), largeServerMessage.getPendingRecordID()));
+         } catch (Exception e) {
             throw new ActiveMQInternalErrorException(e.getMessage(), e);
          }
       }
@@ -398,8 +437,7 @@ public class JournalStorageManager extends AbstractJournalStorageManager {
                }
                return;
             }
-         }
-         finally {
+         } finally {
             readUnLock();
          }
       }
@@ -410,18 +448,16 @@ public class JournalStorageManager extends AbstractJournalStorageManager {
                readLock();
                try {
                   if (replicator != null) {
-                     replicator.largeMessageDelete(largeServerMessage.getMessageID());
+                     replicator.largeMessageDelete(largeServerMessage.getMessageID(), JournalStorageManager.this);
                   }
                   file.delete();
 
                   // The confirm could only be done after the actual delete is done
                   confirmLargeMessage(largeServerMessage);
-               }
-               finally {
+               } finally {
                   readUnLock();
                }
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                ActiveMQServerLogger.LOGGER.journalErrorDeletingMessage(e, largeServerMessage.getMessageID());
             }
          }
@@ -430,8 +466,7 @@ public class JournalStorageManager extends AbstractJournalStorageManager {
 
       if (executor == null) {
          deleteAction.run();
-      }
-      else {
+      } else {
          executor.execute(deleteAction);
       }
    }
@@ -442,7 +477,7 @@ public class JournalStorageManager extends AbstractJournalStorageManager {
    }
 
    @Override
-   public LargeServerMessage createLargeMessage(final long id, final MessageInternal message) throws Exception {
+   public LargeServerMessage createLargeMessage(final long id, final Message message) throws Exception {
       readLock();
       try {
          if (isReplicated()) {
@@ -461,14 +496,13 @@ public class JournalStorageManager extends AbstractJournalStorageManager {
 
          if (largeMessage.isDurable()) {
             // We store a marker on the journal that the large file is pending
-            long pendingRecordID = storePendingLargeMessage(id);
+            long pendingRecordID = storePendingLargeMessage(id, LargeServerMessage.NO_PENDING_ID);
 
             largeMessage.setPendingRecordID(pendingRecordID);
          }
 
          return largeMessage;
-      }
-      finally {
+      } finally {
          readUnLock();
       }
    }
@@ -534,6 +568,14 @@ public class JournalStorageManager extends AbstractJournalStorageManager {
                throw new ActiveMQIllegalStateException("already replicating");
             replicator = replicationManager;
 
+            if (!((JournalImpl) originalMessageJournal).flushAppendExecutor(10, TimeUnit.SECONDS)) {
+               throw new Exception("Live message journal is busy");
+            }
+
+            if (!((JournalImpl) originalBindingsJournal).flushAppendExecutor(10, TimeUnit.SECONDS)) {
+               throw new Exception("Live bindings journal is busy");
+            }
+
             // Establishes lock
             originalMessageJournal.synchronizationLock();
             originalBindingsJournal.synchronizationLock();
@@ -549,12 +591,10 @@ public class JournalStorageManager extends AbstractJournalStorageManager {
                   bindingsFiles = prepareJournalForCopy(originalBindingsJournal, JournalContent.BINDINGS, nodeID, autoFailBack);
                   pageFilesToSync = getPageInformationForSync(pagingManager);
                   pendingLargeMessages = recoverPendingLargeMessages();
-               }
-               finally {
+               } finally {
                   pagingManager.unlock();
                }
-            }
-            finally {
+            } finally {
                originalMessageJournal.synchronizationUnlock();
                originalBindingsJournal.synchronizationUnlock();
             }
@@ -564,8 +604,7 @@ public class JournalStorageManager extends AbstractJournalStorageManager {
             // We need to send the list while locking otherwise part of the body might get sent too soon
             // it will send a list of IDs that we are allocating
             replicator.sendLargeMessageIdListMessage(pendingLargeMessages);
-         }
-         finally {
+         } finally {
             storageManagerLock.writeLock().unlock();
          }
 
@@ -580,21 +619,18 @@ public class JournalStorageManager extends AbstractJournalStorageManager {
                replicator.sendSynchronizationDone(nodeID, initialReplicationSyncTimeout);
                performCachedLargeMessageDeletes();
             }
-         }
-         finally {
+         } finally {
             storageManagerLock.writeLock().unlock();
          }
-      }
-      catch (Exception e) {
-         logger.warn(e.getMessage(), e);
+      } catch (Exception e) {
+         ActiveMQServerLogger.LOGGER.unableToStartReplication(e);
          stopReplication();
          throw e;
-      }
-      finally {
-         pagingManager.resumeCleanup();
+      } finally {
          // Re-enable compact and reclaim of journal files
          originalBindingsJournal.replicationSyncFinished();
          originalMessageJournal.replicationSyncFinished();
+         pagingManager.resumeCleanup();
       }
    }
 
@@ -610,8 +646,7 @@ public class JournalStorageManager extends AbstractJournalStorageManager {
             continue;
          if (replicator != null) {
             replicator.syncLargeMessageFile(seqFile, size, id);
-         }
-         else {
+         } else {
             throw ActiveMQMessageBundle.BUNDLE.replicatorIsNull();
          }
       }
@@ -632,15 +667,13 @@ public class JournalStorageManager extends AbstractJournalStorageManager {
       return info;
    }
 
-
    private void checkAndCreateDir(final File dir, final boolean create) {
       if (!dir.exists()) {
          if (create) {
             if (!dir.mkdirs()) {
                throw new IllegalStateException("Failed to create directory " + dir);
             }
-         }
-         else {
+         } else {
             throw ActiveMQMessageBundle.BUNDLE.cannotCreateDir(dir.getAbsolutePath());
          }
       }
@@ -708,8 +741,7 @@ public class JournalStorageManager extends AbstractJournalStorageManager {
          messageJournal = originalMessageJournal;
          try {
             replicator.stop();
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             ActiveMQServerLogger.LOGGER.errorStoppingReplicationManager(e);
          }
          replicator = null;
@@ -717,8 +749,7 @@ public class JournalStorageManager extends AbstractJournalStorageManager {
          // startReplication.
          // This method should not be called under normal circumstances
          performCachedLargeMessageDeletes();
-      }
-      finally {
+      } finally {
          storageManagerLock.writeLock().unlock();
       }
    }
@@ -736,8 +767,7 @@ public class JournalStorageManager extends AbstractJournalStorageManager {
          if (isReplicated()) {
             replicator.largeMessageWrite(messageId, bytes);
          }
-      }
-      finally {
+      } finally {
          readUnLock();
       }
    }

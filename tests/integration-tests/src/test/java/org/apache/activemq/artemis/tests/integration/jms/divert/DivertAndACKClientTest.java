@@ -16,6 +16,14 @@
  */
 package org.apache.activemq.artemis.tests.integration.jms.divert;
 
+import javax.jms.Connection;
+import javax.jms.MessageConsumer;
+import javax.jms.MessageProducer;
+import javax.jms.Queue;
+import javax.jms.Session;
+import javax.jms.TextMessage;
+import java.util.List;
+
 import org.apache.activemq.artemis.api.core.TransportConfiguration;
 import org.apache.activemq.artemis.api.core.client.ActiveMQClient;
 import org.apache.activemq.artemis.api.jms.JMSFactoryType;
@@ -24,14 +32,6 @@ import org.apache.activemq.artemis.core.config.DivertConfiguration;
 import org.apache.activemq.artemis.tests.util.JMSTestBase;
 import org.junit.Assert;
 import org.junit.Test;
-
-import javax.jms.Connection;
-import javax.jms.MessageConsumer;
-import javax.jms.MessageProducer;
-import javax.jms.Queue;
-import javax.jms.Session;
-import javax.jms.TextMessage;
-import java.util.List;
 
 /**
  * A DivertAndACKClientTest
@@ -93,7 +93,7 @@ public class DivertAndACKClientTest extends JMSTestBase {
 
    @Override
    protected Configuration createDefaultConfig(final boolean netty) throws Exception {
-      DivertConfiguration divert = new DivertConfiguration().setName("local-divert").setRoutingName("some-name").setAddress("jms.queue.Source").setForwardingAddress("jms.queue.Dest").setExclusive(true);
+      DivertConfiguration divert = new DivertConfiguration().setName("local-divert").setRoutingName("some-name").setAddress("Source").setForwardingAddress("Dest").setExclusive(true);
 
       Configuration config = super.createDefaultConfig(netty).addDivertConfiguration(divert);
 

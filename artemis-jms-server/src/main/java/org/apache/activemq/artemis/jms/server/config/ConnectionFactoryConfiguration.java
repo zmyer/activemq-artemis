@@ -44,7 +44,7 @@ public interface ConnectionFactoryConfiguration extends EncodingSupport {
 
    ConnectionFactoryConfiguration setConnectorNames(List<String> connectorNames);
 
-   ConnectionFactoryConfiguration setConnectorNames(String...connectorNames);
+   ConnectionFactoryConfiguration setConnectorNames(String... connectorNames);
 
    boolean isHA();
 
@@ -185,4 +185,8 @@ public interface ConnectionFactoryConfiguration extends EncodingSupport {
    String getDeserializationWhiteList();
 
    void setDeserializationWhiteList(String whiteList);
+
+   int getInitialMessagePacketSize();
+
+   ConnectionFactoryConfiguration setInitialMessagePacketSize(int size);
 }

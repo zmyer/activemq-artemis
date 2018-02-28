@@ -22,6 +22,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.activemq.artemis.api.core.ActiveMQAlreadyReplicatingException;
+import org.apache.activemq.artemis.api.core.ActiveMQDisconnectedException;
 import org.apache.activemq.artemis.api.core.ActiveMQException;
 import org.apache.activemq.artemis.api.core.ActiveMQIllegalStateException;
 import org.apache.activemq.artemis.api.core.DiscoveryGroupConfiguration;
@@ -29,7 +30,10 @@ import org.apache.activemq.artemis.api.core.Pair;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.api.core.TransportConfiguration;
 import org.apache.activemq.artemis.api.core.client.ActiveMQClient;
+import org.apache.activemq.artemis.api.core.client.ClientSession;
+import org.apache.activemq.artemis.api.core.client.ClientSessionFactory;
 import org.apache.activemq.artemis.api.core.client.ClusterTopologyListener;
+import org.apache.activemq.artemis.api.core.client.ServerLocator;
 import org.apache.activemq.artemis.api.core.client.TopologyMember;
 import org.apache.activemq.artemis.core.client.impl.ClientSessionFactoryInternal;
 import org.apache.activemq.artemis.core.client.impl.ServerLocatorInternal;
@@ -52,6 +56,8 @@ import org.apache.activemq.artemis.core.server.ActiveMQServerLogger;
 import org.apache.activemq.artemis.core.server.NodeManager;
 import org.apache.activemq.artemis.core.server.cluster.ClusterConnection;
 import org.apache.activemq.artemis.core.server.cluster.ha.ReplicatedPolicy;
+import org.apache.activemq.artemis.core.server.cluster.qourum.QuorumManager;
+import org.apache.activemq.artemis.core.server.cluster.qourum.QuorumVoteServerConnect;
 import org.apache.activemq.artemis.spi.core.remoting.Acceptor;
 import org.jboss.logging.Logger;
 
@@ -79,10 +85,13 @@ public class SharedNothingLiveActivation extends LiveActivation {
 
       if (remotingService != null && localReplicationManager != null) {
          remotingService.freeze(null, localReplicationManager.getBackupTransportConnection());
-      }
-      else if (remotingService != null) {
+      } else if (remotingService != null) {
          remotingService.freeze(null, null);
       }
+   }
+
+   public void freezeReplication() {
+      replicationManager.getBackupTransportConnection().fail(new ActiveMQDisconnectedException());
    }
 
    @Override
@@ -102,18 +111,18 @@ public class SharedNothingLiveActivation extends LiveActivation {
 
          activeMQServer.initialisePart1(false);
 
+         activeMQServer.getClusterManager().getQuorumManager().registerQuorumHandler(new ServerConnectVoteHandler(activeMQServer));
+
          activeMQServer.initialisePart2(false);
 
          activeMQServer.completeActivation();
 
          if (activeMQServer.getIdentity() != null) {
             ActiveMQServerLogger.LOGGER.serverIsLive(activeMQServer.getIdentity());
-         }
-         else {
+         } else {
             ActiveMQServerLogger.LOGGER.serverIsLive();
          }
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          ActiveMQServerLogger.LOGGER.initializationError(e);
          activeMQServer.callActivationFailureListeners(e);
       }
@@ -129,11 +138,9 @@ public class SharedNothingLiveActivation extends LiveActivation {
                ClusterConnection clusterConnection = acceptorUsed.getClusterConnection();
                try {
                   startReplication(channel.getConnection(), clusterConnection, getPair(msg.getConnector(), true), msg.isFailBackRequest());
-               }
-               catch (ActiveMQAlreadyReplicatingException are) {
+               } catch (ActiveMQAlreadyReplicatingException are) {
                   channel.send(new BackupReplicationStartFailedMessage(BackupReplicationStartFailedMessage.BackupRegistrationProblem.ALREADY_REPLICATING));
-               }
-               catch (ActiveMQException e) {
+               } catch (ActiveMQException e) {
                   logger.debug("Failed to process backup registration packet", e);
                   channel.send(new BackupReplicationStartFailedMessage(BackupReplicationStartFailedMessage.BackupRegistrationProblem.EXCEPTION));
                }
@@ -162,7 +169,7 @@ public class SharedNothingLiveActivation extends LiveActivation {
          ReplicationFailureListener listener = new ReplicationFailureListener();
          rc.addCloseListener(listener);
          rc.addFailureListener(listener);
-         replicationManager = new ReplicationManager(rc, clusterConnection.getCallTimeout(), activeMQServer.getExecutorFactory());
+         replicationManager = new ReplicationManager(rc, clusterConnection.getCallTimeout(), replicatedPolicy.getInitialReplicationSyncTimeout(), activeMQServer.getExecutorFactory());
          replicationManager.start();
          Thread t = new Thread(new Runnable() {
             @Override
@@ -180,18 +187,16 @@ public class SharedNothingLiveActivation extends LiveActivation {
                      clusterConnection.addClusterTopologyListener(listener1);
                      if (listener1.waitForBackup()) {
                         //if we have to many backups kept or are not configured to restart just stop, otherwise restart as a backup
-                        activeMQServer.stop(true);
+                        activeMQServer.fail(true);
                         ActiveMQServerLogger.LOGGER.restartingReplicatedBackupAfterFailback();
-//                        activeMQServer.moveServerData(replicatedPolicy.getReplicaPolicy().getMaxSavedReplicatedJournalsSize());
+                        //                        activeMQServer.moveServerData(replicatedPolicy.getReplicaPolicy().getMaxSavedReplicatedJournalsSize());
                         activeMQServer.setHAPolicy(replicatedPolicy.getReplicaPolicy());
                         activeMQServer.start();
-                     }
-                     else {
+                     } else {
                         ActiveMQServerLogger.LOGGER.failbackMissedBackupAnnouncement();
                      }
                   }
-               }
-               catch (Exception e) {
+               } catch (Exception e) {
                   if (activeMQServer.getState() == ActiveMQServerImpl.SERVER_STATE.STARTED) {
                   /*
                    * The reasoning here is that the exception was either caused by (1) the
@@ -203,11 +208,9 @@ public class SharedNothingLiveActivation extends LiveActivation {
                   }
                   try {
                      ActiveMQServerImpl.stopComponent(replicationManager);
-                  }
-                  catch (Exception amqe) {
+                  } catch (Exception amqe) {
                      ActiveMQServerLogger.LOGGER.errorStoppingReplication(amqe);
-                  }
-                  finally {
+                  } finally {
                      synchronized (replicationLock) {
                         replicationManager = null;
                      }
@@ -224,7 +227,7 @@ public class SharedNothingLiveActivation extends LiveActivation {
 
       @Override
       public void connectionFailed(ActiveMQException exception, boolean failedOver) {
-         connectionClosed();
+         handleClose(true);
       }
 
       @Override
@@ -234,6 +237,10 @@ public class SharedNothingLiveActivation extends LiveActivation {
 
       @Override
       public void connectionClosed() {
+         handleClose(false);
+      }
+
+      private void handleClose(boolean failed) {
          ExecutorService executorService = activeMQServer.getThreadPool();
          if (executorService != null) {
             executorService.execute(new Runnable() {
@@ -243,6 +250,45 @@ public class SharedNothingLiveActivation extends LiveActivation {
                      if (replicationManager != null) {
                         activeMQServer.getStorageManager().stopReplication();
                         replicationManager = null;
+
+                        if (failed && replicatedPolicy.isVoteOnReplicationFailure()) {
+                           QuorumManager quorumManager = activeMQServer.getClusterManager().getQuorumManager();
+                           int size = replicatedPolicy.getQuorumSize() == -1 ? quorumManager.getMaxClusterSize() : replicatedPolicy.getQuorumSize();
+
+                           QuorumVoteServerConnect quorumVote = new QuorumVoteServerConnect(size, activeMQServer.getNodeID().toString(), true);
+
+                           quorumManager.vote(quorumVote);
+
+                           try {
+                              quorumVote.await(5, TimeUnit.SECONDS);
+                           } catch (InterruptedException interruption) {
+                              // No-op. The best the quorum can do now is to return the latest number it has
+                           }
+
+                           quorumManager.voteComplete(quorumVote);
+
+                           if (!quorumVote.getDecision()) {
+                              try {
+                                 Thread startThread = new Thread(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                       try {
+                                          if (logger.isTraceEnabled()) {
+                                             logger.trace("Calling activeMQServer.stop() to stop the server");
+                                          }
+                                          activeMQServer.stop();
+                                       } catch (Exception e) {
+                                          ActiveMQServerLogger.LOGGER.errorRestartingBackupServer(e, activeMQServer);
+                                       }
+                                    }
+                                 });
+                                 startThread.start();
+                                 startThread.join();
+                              } catch (Exception e) {
+                                 e.printStackTrace();
+                              }
+                           }
+                        }
                      }
                   }
                }
@@ -272,14 +318,13 @@ public class SharedNothingLiveActivation extends LiveActivation {
       SimpleString nodeId0;
       try {
          nodeId0 = activeMQServer.getNodeManager().readNodeId();
-      }
-      catch (ActiveMQIllegalStateException e) {
+      } catch (ActiveMQIllegalStateException e) {
          nodeId0 = null;
       }
 
       ClusterConnectionConfiguration config = ConfigurationUtils.getReplicationClusterConfiguration(activeMQServer.getConfiguration(), replicatedPolicy.getClusterName());
 
-      NodeIdListener listener = new NodeIdListener(nodeId0);
+      NodeIdListener listener = new NodeIdListener(nodeId0, activeMQServer.getConfiguration().getClusterUser(), activeMQServer.getConfiguration().getClusterPassword());
 
       try (ServerLocatorInternal locator = getLocator(config)) {
          locator.addClusterTopologyListener(listener);
@@ -287,8 +332,7 @@ public class SharedNothingLiveActivation extends LiveActivation {
          try (ClientSessionFactoryInternal factory = locator.connectNoWarnings()) {
             // Just try connecting
             listener.latch.await(5, TimeUnit.SECONDS);
-         }
-         catch (Exception notConnected) {
+         } catch (Exception notConnected) {
             return false;
          }
 
@@ -307,8 +351,7 @@ public class SharedNothingLiveActivation extends LiveActivation {
          //todo does this actually make any difference, we only set a different flag in the lock file which replication doesn't use
          if (permanently) {
             nodeManagerInUse.crashLiveServer();
-         }
-         else {
+         } else {
             nodeManagerInUse.pauseLiveServer();
          }
       }
@@ -347,8 +390,7 @@ public class SharedNothingLiveActivation extends LiveActivation {
             throw ActiveMQMessageBundle.BUNDLE.noDiscoveryGroupFound(dg);
          }
          locator = (ServerLocatorInternal) ActiveMQClient.createServerLocatorWithHA(dg);
-      }
-      else {
+      } else {
          TransportConfiguration[] tcConfigs = config.getStaticConnectors() != null ? connectorNameListToArray(config.getStaticConnectors()) : null;
 
          locator = (ServerLocatorInternal) ActiveMQClient.createServerLocatorWithHA(tcConfigs);
@@ -361,21 +403,51 @@ public class SharedNothingLiveActivation extends LiveActivation {
       volatile boolean isNodePresent = false;
 
       private final SimpleString nodeId;
+      private final String user;
+      private final String password;
       private final CountDownLatch latch = new CountDownLatch(1);
 
-      NodeIdListener(SimpleString nodeId) {
+      NodeIdListener(SimpleString nodeId, String user, String password) {
          this.nodeId = nodeId;
+         this.user = user;
+         this.password = password;
       }
 
       @Override
       public void nodeUP(TopologyMember topologyMember, boolean last) {
          boolean isOurNodeId = nodeId != null && nodeId.toString().equals(topologyMember.getNodeId());
-         if (isOurNodeId) {
+         if (isOurNodeId && isActive(topologyMember.getLive())) {
             isNodePresent = true;
          }
          if (isOurNodeId || last) {
             latch.countDown();
          }
+      }
+
+      /**
+       * In a cluster of replicated live/backup pairs if a backup crashes and then its live crashes the cluster will
+       * retain the topology information of the live such that when the live server restarts it will check the
+       * cluster to see if its nodeID is present (which it will be) and then it will activate as a backup rather than
+       * a live. To prevent this situation an additional check is necessary to see if the server with the matching
+       * nodeID is actually active or not which is done by attempting to make a connection to it.
+       *
+       * @param transportConfiguration
+       * @return
+       */
+      private boolean isActive(TransportConfiguration transportConfiguration) {
+         boolean result = false;
+
+         try (ServerLocator serverLocator = ActiveMQClient.createServerLocator(false, transportConfiguration);
+              ClientSessionFactory clientSessionFactory = serverLocator.createSessionFactory();
+              ClientSession clientSession = clientSessionFactory.createSession(user, password, false, false, false, false, 0)) {
+            result = true;
+         } catch (Exception e) {
+            if (logger.isDebugEnabled()) {
+               logger.debug("isActive check failed", e);
+            }
+         }
+
+         return result;
       }
 
       @Override

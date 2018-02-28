@@ -24,11 +24,11 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.activemq.artemis.core.server.ServiceRegistry;
-import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
+import org.apache.activemq.artemis.core.server.ServiceRegistry;
 import org.apache.activemq.artemis.core.server.impl.ActiveMQServerImpl;
 import org.apache.activemq.artemis.core.server.impl.ServiceRegistryImpl;
+import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.apache.activemq.artemis.utils.ActiveMQThreadFactory;
 import org.junit.After;
 import org.junit.Before;
@@ -44,6 +44,7 @@ public class SuppliedThreadPoolTest extends ActiveMQTestBase {
    public void setup() throws Exception {
       serviceRegistry = new ServiceRegistryImpl();
       serviceRegistry.setExecutorService(Executors.newFixedThreadPool(1, ActiveMQThreadFactory.defaultThreadFactory()));
+      serviceRegistry.setIOExecutorService(Executors.newFixedThreadPool(5, ActiveMQThreadFactory.defaultThreadFactory()));
       serviceRegistry.setScheduledExecutorService(Executors.newScheduledThreadPool(1, ActiveMQThreadFactory.defaultThreadFactory()));
       server = new ActiveMQServerImpl(null, null, null, null, serviceRegistry);
       server.start();
@@ -58,6 +59,7 @@ public class SuppliedThreadPoolTest extends ActiveMQTestBase {
       }
       serviceRegistry.getExecutorService().shutdown();
       serviceRegistry.getScheduledExecutorService().shutdown();
+      serviceRegistry.getIOExecutorService().shutdown();
       super.tearDown();
    }
 

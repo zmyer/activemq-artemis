@@ -16,6 +16,13 @@
  */
 package org.apache.activemq.artemis.tests.integration.jms.connection;
 
+import javax.jms.Connection;
+import javax.jms.ExceptionListener;
+import javax.jms.JMSException;
+import javax.jms.Session;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+
 import org.apache.activemq.artemis.api.core.ActiveMQInternalErrorException;
 import org.apache.activemq.artemis.api.core.TransportConfiguration;
 import org.apache.activemq.artemis.api.jms.ActiveMQJMSClient;
@@ -33,13 +40,6 @@ import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
-
-import javax.jms.Connection;
-import javax.jms.ExceptionListener;
-import javax.jms.JMSException;
-import javax.jms.Session;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 
 /**
  * ExceptionListenerTest
@@ -140,6 +140,33 @@ public class ExceptionListenerTest extends ActiveMQTestBase {
       // Listener should only be called once even if all sessions connections die
       Assert.assertEquals(1, listener.numCalls);
 
+      conn.close();
+   }
+
+
+   /**
+    * The JMS Spec isn't specific about if ClientId can be set after Exception Listener or not,
+    * simply it states that clientId must be set before any operation (read as remote)
+    *
+    * QpidJMS and ActiveMQ5 both interpret that therefor you can set the exception lister first.
+    * As such we align with those, allowing the exception listener to be set prior to the clientId,
+    * This to avoid causing implementation nuance's, when switching code from one client to another.
+    *
+    * This test is to test this and to ensure it doesn't get accidentally regressed.
+    */
+   @Test
+   public void testSetClientIdAfterSetExceptionListener() throws Exception {
+      Connection conn = cf.createConnection();
+      conn.setExceptionListener((e) -> { });
+      conn.setClientID("clientId");
+      conn.close();
+   }
+
+   @Test
+   public void testSetClientIdAfterGetExceptionListener() throws Exception {
+      Connection conn = cf.createConnection();
+      conn.getExceptionListener();
+      conn.setClientID("clientId");
       conn.close();
    }
 

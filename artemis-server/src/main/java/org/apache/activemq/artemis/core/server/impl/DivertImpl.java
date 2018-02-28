@@ -16,14 +16,16 @@
  */
 package org.apache.activemq.artemis.core.server.impl;
 
+import org.apache.activemq.artemis.api.core.Message;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.core.filter.Filter;
 import org.apache.activemq.artemis.core.persistence.StorageManager;
 import org.apache.activemq.artemis.core.postoffice.PostOffice;
 import org.apache.activemq.artemis.core.server.Divert;
+import org.apache.activemq.artemis.core.server.DivertConfigurationRoutingType;
 import org.apache.activemq.artemis.core.server.RoutingContext;
-import org.apache.activemq.artemis.core.server.ServerMessage;
-import org.apache.activemq.artemis.core.server.cluster.Transformer;
+import org.apache.activemq.artemis.core.server.transformer.Transformer;
 import org.jboss.logging.Logger;
 
 /**
@@ -49,6 +51,8 @@ public class DivertImpl implements Divert {
 
    private final StorageManager storageManager;
 
+   private final DivertConfigurationRoutingType routingType;
+
    public DivertImpl(final SimpleString forwardAddress,
                      final SimpleString uniqueName,
                      final SimpleString routingName,
@@ -56,7 +60,8 @@ public class DivertImpl implements Divert {
                      final Filter filter,
                      final Transformer transformer,
                      final PostOffice postOffice,
-                     final StorageManager storageManager) {
+                     final StorageManager storageManager,
+                     final DivertConfigurationRoutingType routingType) {
       this.forwardAddress = forwardAddress;
 
       this.uniqueName = uniqueName;
@@ -72,10 +77,12 @@ public class DivertImpl implements Divert {
       this.postOffice = postOffice;
 
       this.storageManager = storageManager;
+
+      this.routingType = routingType;
    }
 
    @Override
-   public void route(final ServerMessage message, final RoutingContext context) throws Exception {
+   public void route(final Message message, final RoutingContext context) throws Exception {
       // We must make a copy of the message, otherwise things like returning credits to the page won't work
       // properly on ack, since the original address will be overwritten
 
@@ -83,34 +90,48 @@ public class DivertImpl implements Divert {
          logger.trace("Diverting message " + message + " into " + this);
       }
 
-      long id = storageManager.generateID();
-
-      ServerMessage copy = null;
+      Message copy = null;
 
       // Shouldn't copy if it's not routed anywhere else
-      if (!forwardAddress.equals(message.getAddress())) {
+      if (!forwardAddress.equals(context.getAddress(message))) {
+         long id = storageManager.generateID();
          copy = message.copy(id);
 
          // This will set the original MessageId, and the original address
-         copy.setOriginalHeaders(message, null, false);
+         copy.referenceOriginalMessage(message, this.getUniqueName().toString());
 
          copy.setAddress(forwardAddress);
 
          copy.setExpiration(message.getExpiration());
 
+         copy.reencode();
+
+         switch (routingType) {
+            case ANYCAST:
+               copy.setRoutingType(RoutingType.ANYCAST);
+               break;
+            case MULTICAST:
+               copy.setRoutingType(RoutingType.MULTICAST);
+               break;
+            case STRIP:
+               copy.setRoutingType(null);
+               break;
+            case PASS:
+               break;
+         }
+
          if (transformer != null) {
             copy = transformer.transform(copy);
          }
-      }
-      else {
+      } else {
          copy = message;
       }
 
-      postOffice.route(copy, null, context.getTransaction(), false);
+      postOffice.route(copy, context.getTransaction(), false);
    }
 
    @Override
-   public void routeWithAck(ServerMessage message, RoutingContext context) throws Exception {
+   public void routeWithAck(Message message, RoutingContext context) throws Exception {
       route(message, context);
    }
 

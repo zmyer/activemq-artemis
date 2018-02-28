@@ -21,13 +21,14 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.activemq.artemis.api.core.ActiveMQBuffer;
+import org.apache.activemq.artemis.api.core.ICoreMessage;
 import org.apache.activemq.artemis.api.core.Message;
 import org.apache.activemq.artemis.api.core.SimpleString;
+import org.apache.activemq.artemis.core.client.impl.ClientMessageImpl;
+import org.apache.activemq.artemis.core.message.impl.CoreMessage;
+import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionSendMessage;
 import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.apache.activemq.artemis.utils.RandomUtil;
-import org.apache.activemq.artemis.core.client.impl.ClientMessageImpl;
-import org.apache.activemq.artemis.core.protocol.core.impl.wireformat.SessionSendMessage;
-import org.apache.activemq.artemis.core.server.impl.ServerMessageImpl;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -46,9 +47,9 @@ public class MessageImplTest extends ActiveMQTestBase {
          final long expiration = RandomUtil.randomLong();
          final long timestamp = RandomUtil.randomLong();
          final byte priority = RandomUtil.randomByte();
-         Message message1 = new ClientMessageImpl(type, durable, expiration, timestamp, priority, 100);
+         ICoreMessage message1 = new ClientMessageImpl(type, durable, expiration, timestamp, priority, 100);
 
-         Message message = message1;
+         ICoreMessage message = message1;
 
          Assert.assertEquals(type, message.getType());
          Assert.assertEquals(durable, message.isDurable());
@@ -63,7 +64,7 @@ public class MessageImplTest extends ActiveMQTestBase {
          final byte priority2 = RandomUtil.randomByte();
 
          message.setAddress(destination);
-         Assert.assertEquals(destination, message.getAddress());
+         Assert.assertEquals(destination, message.getAddressSimpleString());
 
          message.setDurable(durable2);
          Assert.assertEquals(durable2, message.isDurable());
@@ -232,10 +233,9 @@ public class MessageImplTest extends ActiveMQTestBase {
 
    private void internalMessageCopy() throws Exception {
       final long RUNS = 2;
-      final ServerMessageImpl msg = new ServerMessageImpl(123, 18);
+      final CoreMessage msg = new CoreMessage(123, 18);
 
       msg.setMessageID(RandomUtil.randomLong());
-      msg.encodeMessageIDToBuffer();
       msg.setAddress(new SimpleString("Batatantkashf aksjfh aksfjh askfdjh askjfh "));
 
       final AtomicInteger errors = new AtomicInteger(0);
@@ -252,15 +252,13 @@ public class MessageImplTest extends ActiveMQTestBase {
             latchAlign.countDown();
             try {
                latchReady.await();
-            }
-            catch (Exception ignored) {
+            } catch (Exception ignored) {
             }
 
             for (int i = 0; i < RUNS; i++) {
                try {
-                  ServerMessageImpl newMsg = (ServerMessageImpl) msg.copy();
-               }
-               catch (Throwable e) {
+                  Message newMsg = msg.copy();
+               } catch (Throwable e) {
                   e.printStackTrace();
                   errors.incrementAndGet();
                }
@@ -284,19 +282,22 @@ public class MessageImplTest extends ActiveMQTestBase {
             latchAlign.countDown();
             try {
                latchReady.await();
-            }
-            catch (Exception ignored) {
+            } catch (Exception ignored) {
             }
 
             for (int i = 0; i < RUNS; i++) {
+               ActiveMQBuffer buf = null;
                try {
                   SessionSendMessage ssm = new SessionSendMessage(msg);
-                  ActiveMQBuffer buf = ssm.encode(null);
+                  buf = ssm.encode(null);
                   simulateRead(buf);
-               }
-               catch (Throwable e) {
+               } catch (Throwable e) {
                   e.printStackTrace();
                   errors.incrementAndGet();
+               } finally {
+                  if ( buf != null ) {
+                     buf.release();
+                  }
                }
             }
          }

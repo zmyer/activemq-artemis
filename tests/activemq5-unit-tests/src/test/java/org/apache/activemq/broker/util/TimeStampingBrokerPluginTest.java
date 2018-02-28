@@ -6,7 +6,7 @@
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -188,7 +188,7 @@ public class TimeStampingBrokerPluginTest extends TestCase {
       consumer.close();
       consumer = session.createConsumer(session.createQueue("DLQ." + queue));
 
-      // Get mesage from DLQ
+      // Get message from DLQ
       receivedMessage = consumer.receive(1000);
 
       // assert we got the same message ID we sent

@@ -23,20 +23,25 @@ import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.activemq.artemis.api.core.Message;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.api.core.SimpleString;
+import org.apache.activemq.artemis.api.core.TransportConfiguration;
 import org.apache.activemq.artemis.api.core.client.ClientConsumer;
 import org.apache.activemq.artemis.api.core.client.ClientMessage;
 import org.apache.activemq.artemis.api.core.client.ClientProducer;
 import org.apache.activemq.artemis.api.core.client.ClientSession;
-import org.apache.activemq.artemis.core.server.cluster.impl.MessageLoadBalancingType;
-import org.apache.activemq.artemis.tests.integration.IntegrationTestLogger;
-import org.apache.activemq.artemis.core.message.impl.MessageImpl;
+
+import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.core.server.Bindable;
+import org.apache.activemq.artemis.core.server.Queue;
+import org.apache.activemq.artemis.core.server.cluster.impl.MessageLoadBalancingType;
 import org.apache.activemq.artemis.core.server.cluster.impl.Redistributor;
 import org.apache.activemq.artemis.core.server.group.impl.GroupingHandlerConfiguration;
 import org.apache.activemq.artemis.core.server.impl.QueueImpl;
 import org.apache.activemq.artemis.core.settings.impl.AddressFullMessagePolicy;
 import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
+import org.apache.activemq.artemis.tests.integration.IntegrationTestLogger;
+import org.apache.activemq.artemis.tests.util.Wait;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
@@ -62,6 +67,17 @@ public class MessageRedistributionTest extends ClusterTestBase {
    protected boolean isNetty() {
       return false;
    }
+
+
+
+   @Override
+   protected void setSessionFactoryCreateLocator(int node, boolean ha, TransportConfiguration serverTotc) {
+      super.setSessionFactoryCreateLocator(node, ha, serverTotc);
+
+      locators[node].setConsumerWindowSize(0);
+
+   }
+
 
    //https://issues.jboss.org/browse/HORNETQ-1061
    @Test
@@ -258,6 +274,14 @@ public class MessageRedistributionTest extends ClusterTestBase {
       ClientConsumer consumer2 = sess2.createConsumer("queue2");
 
       ClientProducer producer0 = sess0.createProducer("queues.testaddress");
+
+      waitForBindings(0, "queues.testaddress", 1, 1, true);
+      waitForBindings(1, "queues.testaddress", 1, 1, true);
+      waitForBindings(2, "queues.testaddress", 1, 1, true);
+
+      waitForBindings(0, "queues.testaddress", 2, 2, false);
+      waitForBindings(1, "queues.testaddress", 2, 2, false);
+      waitForBindings(2, "queues.testaddress", 2, 2, false);
 
       final int NUMBER_OF_MESSAGES = 1000;
 
@@ -474,7 +498,7 @@ public class MessageRedistributionTest extends ClusterTestBase {
 
          bb.putLong(i);
 
-         msg.putBytesProperty(MessageImpl.HDR_BRIDGE_DUPLICATE_ID, bytes);
+         msg.putBytesProperty(Message.HDR_BRIDGE_DUPLICATE_ID, bytes);
 
          prod0.send(msg);
 
@@ -627,6 +651,52 @@ public class MessageRedistributionTest extends ClusterTestBase {
       removeConsumer(0);
 
       verifyReceiveRoundRobinInSomeOrderWithCounts(false, ids0, 2);
+   }
+
+   @Test
+   public void testRedistributionWithPrefixesWhenRemoteConsumerIsAdded() throws Exception {
+
+      for (int i = 0; i <= 2; i++) {
+         ActiveMQServer server = getServer(i);
+         for (TransportConfiguration c : server.getConfiguration().getAcceptorConfigurations()) {
+            c.getExtraParams().putIfAbsent("anycastPrefix", "jms.queue.");
+         }
+      }
+
+      setupCluster(MessageLoadBalancingType.ON_DEMAND);
+
+      startServers(0, 1, 2);
+
+      setupSessionFactory(0, isNetty());
+      setupSessionFactory(1, isNetty());
+      setupSessionFactory(2, isNetty());
+
+      String name = "queues.queue";
+
+      createQueue(0, name, name, null, false, RoutingType.ANYCAST);
+      createQueue(1, name, name, null, false, RoutingType.ANYCAST);
+      createQueue(2, name, name, null, false, RoutingType.ANYCAST);
+
+      addConsumer(0, 0, name, null);
+
+      waitForBindings(0, name, 1, 1, true);
+      waitForBindings(1, name, 1, 0, true);
+      waitForBindings(2, name, 1, 0, true);
+
+      waitForBindings(0, name, 2, 0, false);
+      waitForBindings(1, name, 2, 1, false);
+      waitForBindings(2, name, 2, 1, false);
+
+      removeConsumer(0);
+
+      Thread.sleep(2000);
+
+      send(0, "jms.queue." + name, 20, false, null);
+
+      addConsumer(1, 1, name, null);
+
+      verifyReceiveAll(20, 1);
+      verifyNotReceive(1);
    }
 
    @Test
@@ -981,7 +1051,17 @@ public class MessageRedistributionTest extends ClusterTestBase {
       removeConsumer(0);
       addConsumer(1, 1, "queue0", null);
 
-      verifyReceiveAll(QueueImpl.REDISTRIBUTOR_BATCH_SIZE * 2, 1);
+      Queue queue = servers[1].locateQueue(SimpleString.toSimpleString("queue0"));
+      Assert.assertNotNull(queue);
+      Wait.waitFor(() -> queue.getMessageCount() == QueueImpl.REDISTRIBUTOR_BATCH_SIZE * 2);
+
+      for (int i = 0; i < QueueImpl.REDISTRIBUTOR_BATCH_SIZE * 2; i++) {
+         ClientMessage message = consumers[1].getConsumer().receive(5000);
+         Assert.assertNotNull(message);
+         message.acknowledge();
+      }
+
+      Assert.assertNull(consumers[1].getConsumer().receiveImmediate());
    }
 
    /*

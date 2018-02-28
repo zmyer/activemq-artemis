@@ -38,11 +38,11 @@ import com.arjuna.ats.arjuna.coordinator.TransactionReaper;
 import com.arjuna.ats.arjuna.coordinator.TxControl;
 import com.arjuna.ats.internal.jta.transaction.arjunacore.TransactionManagerImple;
 import org.apache.activemq.artemis.api.core.TransportConfiguration;
+import org.apache.activemq.artemis.api.core.management.AddressControl;
+import org.apache.activemq.artemis.api.core.management.QueueControl;
 import org.apache.activemq.artemis.api.core.management.ResourceNames;
 import org.apache.activemq.artemis.api.jms.ActiveMQJMSClient;
 import org.apache.activemq.artemis.api.jms.JMSFactoryType;
-import org.apache.activemq.artemis.api.jms.management.JMSQueueControl;
-import org.apache.activemq.artemis.api.jms.management.TopicControl;
 import org.apache.activemq.artemis.core.config.Configuration;
 import org.apache.activemq.artemis.core.registry.JndiBindingRegistry;
 import org.apache.activemq.artemis.core.remoting.impl.invm.TransportConstants;
@@ -354,15 +354,13 @@ public abstract class BridgeTestBase extends ActiveMQTestBase {
                ((ActiveMQMessage) msg).setInputStream(ActiveMQTestBase.createFakeLargeStream(1024L * 1024L));
                msg.setStringProperty("msg", "message" + i);
                prod.send(msg);
-            }
-            else {
+            } else {
                TextMessage tm = sess.createTextMessage("message" + i);
                prod.send(tm);
             }
 
          }
-      }
-      finally {
+      } finally {
          if (conn != null) {
             conn.close();
          }
@@ -410,8 +408,7 @@ public abstract class BridgeTestBase extends ActiveMQTestBase {
                for (int i = 0; i < 1024; i++) {
                   Assert.assertEquals(1024, bmsg.readBytes(buffRead));
                }
-            }
-            else {
+            } else {
                msgs.add(((TextMessage) tm).getText());
             }
 
@@ -430,16 +427,14 @@ public abstract class BridgeTestBase extends ActiveMQTestBase {
             if (qosMode == QualityOfServiceMode.ONCE_AND_ONLY_ONCE) {
                Assert.assertEquals(numMessages, msgs.size());
             }
-         }
-         else if (qosMode == QualityOfServiceMode.AT_MOST_ONCE) {
+         } else if (qosMode == QualityOfServiceMode.AT_MOST_ONCE) {
             // No *guarantee* that any messages will be received
             // but you still might get some depending on how/where the crash occurred
          }
 
          BridgeTestBase.log.trace("Check complete");
 
-      }
-      finally {
+      } finally {
          if (conn != null) {
             conn.close();
          }
@@ -475,13 +470,11 @@ public abstract class BridgeTestBase extends ActiveMQTestBase {
                for (int j = 0; j < 1024; j++) {
                   Assert.assertEquals(1024, bmsg.readBytes(buffRead));
                }
-            }
-            else {
+            } else {
                Assert.assertEquals("message" + (i + start), ((TextMessage) tm).getText());
             }
          }
-      }
-      finally {
+      } finally {
          if (conn != null) {
             conn.close();
          }
@@ -493,7 +486,7 @@ public abstract class BridgeTestBase extends ActiveMQTestBase {
       if (index == 1) {
          managementService = server1.getManagementService();
       }
-      JMSQueueControl queueControl = (JMSQueueControl) managementService.getResource(ResourceNames.JMS_QUEUE + queue.getQueueName());
+      QueueControl queueControl = (QueueControl) managementService.getResource(ResourceNames.QUEUE + queue.getQueueName());
 
       //server may be closed
       if (queueControl != null) {
@@ -512,9 +505,10 @@ public abstract class BridgeTestBase extends ActiveMQTestBase {
       if (index == 1) {
          managementService = server1.getManagementService();
       }
-      TopicControl topicControl = (TopicControl) managementService.getResource(ResourceNames.JMS_TOPIC + topic.getTopicName());
-      Assert.assertEquals(0, topicControl.getSubscriptionCount());
-
+      AddressControl topicControl = (AddressControl) managementService.getResource(ResourceNames.ADDRESS + topic.getTopicName());
+      if (topicControl != null) {
+         Assert.assertEquals(0, topicControl.getQueueNames().length);
+      }
    }
 
    protected void removeAllMessages(final String queueName, final int index) throws Exception {
@@ -522,7 +516,7 @@ public abstract class BridgeTestBase extends ActiveMQTestBase {
       if (index == 1) {
          managementService = server1.getManagementService();
       }
-      JMSQueueControl queueControl = (JMSQueueControl) managementService.getResource(ResourceNames.JMS_QUEUE + queueName);
+      QueueControl queueControl = (QueueControl) managementService.getResource("queue." + queueName);
       queueControl.removeMessages(null);
    }
 

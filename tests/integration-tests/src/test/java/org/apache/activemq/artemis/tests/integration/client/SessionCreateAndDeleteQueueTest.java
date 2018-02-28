@@ -99,7 +99,7 @@ public class SessionCreateAndDeleteQueueTest extends ActiveMQTestBase {
 
    @Test
    public void testAddressSettingUSed() throws Exception {
-      server.getAddressSettingsRepository().addMatch(address.toString(), new AddressSettings().setLastValueQueue(true));
+      server.getAddressSettingsRepository().addMatch(address.toString(), new AddressSettings().setDefaultLastValueQueue(true));
       ClientSession session = createSessionFactory(locator).createSession(false, true, true);
       SimpleString filterString = new SimpleString("x=y");
       session.createQueue(address, queueName, filterString, false);
@@ -127,11 +127,9 @@ public class SessionCreateAndDeleteQueueTest extends ActiveMQTestBase {
       try {
          session.deleteQueue(queueName);
          Assert.fail("should throw exception");
-      }
-      catch (ActiveMQNonExistentQueueException neqe) {
+      } catch (ActiveMQNonExistentQueueException neqe) {
          //ok
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          fail("Invalid Exception type:" + e.getType());
       }
       session.close();

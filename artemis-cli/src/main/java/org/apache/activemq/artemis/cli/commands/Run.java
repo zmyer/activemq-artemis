@@ -24,12 +24,14 @@ import io.airlift.airline.Command;
 import io.airlift.airline.Option;
 import org.apache.activemq.artemis.cli.Artemis;
 import org.apache.activemq.artemis.cli.commands.tools.LockAbstract;
+import org.apache.activemq.artemis.cli.factory.BrokerFactory;
+import org.apache.activemq.artemis.cli.factory.jmx.ManagementFactory;
+import org.apache.activemq.artemis.cli.factory.security.SecurityManagerFactory;
 import org.apache.activemq.artemis.components.ExternalComponent;
-import org.apache.activemq.artemis.core.config.impl.FileConfiguration;
+import org.apache.activemq.artemis.core.server.management.ManagementContext;
 import org.apache.activemq.artemis.dto.BrokerDTO;
 import org.apache.activemq.artemis.dto.ComponentDTO;
-import org.apache.activemq.artemis.factory.BrokerFactory;
-import org.apache.activemq.artemis.factory.SecurityManagerFactory;
+import org.apache.activemq.artemis.dto.ManagementContextDTO;
 import org.apache.activemq.artemis.integration.Broker;
 import org.apache.activemq.artemis.integration.bootstrap.ActiveMQBootstrapLogger;
 import org.apache.activemq.artemis.spi.core.security.ActiveMQSecurityManager;
@@ -41,9 +43,11 @@ public class Run extends LockAbstract {
    @Option(name = "--allow-kill", description = "This will allow the server to kill itself. Useful for tests (failover tests for instance)")
    boolean allowKill;
 
-   static boolean embedded = false;
+   private static boolean embedded = false;
 
    public static final ReusableLatch latchRunning = new ReusableLatch(0);
+
+   private ManagementContext managementContext;
 
    /**
     * This will disable the System.exit at the end of the server.stop, as that means there are other things
@@ -61,11 +65,10 @@ public class Run extends LockAbstract {
    public Object execute(ActionContext context) throws Exception {
       super.execute(context);
 
-      FileConfiguration fileConfiguration = getFileConfiguration();
+      ManagementContextDTO managementDTO = getManagementDTO();
+      managementContext = ManagementFactory.create(managementDTO);
 
       Artemis.printBanner();
-
-      createDirectories(getFileConfiguration());
 
       BrokerDTO broker = getBrokerDTO();
 
@@ -75,6 +78,7 @@ public class Run extends LockAbstract {
 
       server = BrokerFactory.createServer(broker.server, security);
 
+      managementContext.start();
       server.start();
 
       if (broker.web != null) {
@@ -89,13 +93,6 @@ public class Run extends LockAbstract {
          server.getServer().addExternalComponent(component);
       }
       return null;
-   }
-
-   private void createDirectories(FileConfiguration fileConfiguration) {
-      fileConfiguration.getPagingLocation().mkdirs();
-      fileConfiguration.getJournalLocation().mkdirs();
-      fileConfiguration.getBindingsLocation().mkdirs();
-      fileConfiguration.getLargeMessagesLocation().mkdirs();
    }
 
    /**
@@ -127,22 +124,15 @@ public class Run extends LockAbstract {
                try {
                   System.err.println("Halting by user request");
                   fileKill.delete();
-               }
-               catch (Throwable ignored) {
+               } catch (Throwable ignored) {
                }
                Runtime.getRuntime().halt(0);
             }
             if (file.exists()) {
                try {
-                  try {
-                     server.stop();
-                  }
-                  catch (Exception e) {
-                     e.printStackTrace();
-                  }
+                  stop();
                   timer.cancel();
-               }
-               finally {
+               } finally {
                   System.out.println("Server stopped!");
                   System.out.flush();
                   latchRunning.countDown();
@@ -154,17 +144,23 @@ public class Run extends LockAbstract {
          }
       }, 500, 500);
 
-      Runtime.getRuntime().addShutdownHook(new Thread() {
+      Runtime.getRuntime().addShutdownHook(new Thread("shutdown-hook") {
          @Override
          public void run() {
-            try {
-               server.stop();
-            }
-            catch (Exception e) {
-               e.printStackTrace();
-            }
+            Run.this.stop();
          }
       });
 
+   }
+
+   protected void stop() {
+      try {
+         server.stop(true);
+         if (managementContext != null) {
+            managementContext.stop();
+         }
+      } catch (Exception e) {
+         e.printStackTrace();
+      }
    }
 }

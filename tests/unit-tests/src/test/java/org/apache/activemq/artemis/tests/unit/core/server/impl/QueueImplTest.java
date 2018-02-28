@@ -25,31 +25,32 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 
+import org.apache.activemq.artemis.api.core.Message;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.api.core.client.ClientMessage;
 import org.apache.activemq.artemis.api.core.client.ClientProducer;
 import org.apache.activemq.artemis.api.core.client.ClientSession;
 import org.apache.activemq.artemis.api.core.client.ClientSessionFactory;
 import org.apache.activemq.artemis.api.core.client.ServerLocator;
+import org.apache.activemq.artemis.core.filter.Filter;
+import org.apache.activemq.artemis.core.filter.impl.FilterImpl;
+import org.apache.activemq.artemis.core.postoffice.impl.LocalQueueBinding;
+import org.apache.activemq.artemis.core.server.ActiveMQServer;
+import org.apache.activemq.artemis.core.server.ActiveMQServers;
+import org.apache.activemq.artemis.core.server.Consumer;
+import org.apache.activemq.artemis.core.server.HandleStatus;
+import org.apache.activemq.artemis.core.server.MessageReference;
+import org.apache.activemq.artemis.core.server.Queue;
+import org.apache.activemq.artemis.core.server.impl.QueueImpl;
+import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
 import org.apache.activemq.artemis.tests.unit.core.server.impl.fakes.FakeConsumer;
 import org.apache.activemq.artemis.tests.unit.core.server.impl.fakes.FakeFilter;
 import org.apache.activemq.artemis.tests.unit.core.server.impl.fakes.FakePostOffice;
 import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
-import org.apache.activemq.artemis.core.filter.Filter;
-import org.apache.activemq.artemis.core.filter.impl.FilterImpl;
-import org.apache.activemq.artemis.core.postoffice.impl.LocalQueueBinding;
-import org.apache.activemq.artemis.core.server.Consumer;
-import org.apache.activemq.artemis.core.server.HandleStatus;
-import org.apache.activemq.artemis.core.server.ActiveMQServer;
-import org.apache.activemq.artemis.core.server.ActiveMQServers;
-import org.apache.activemq.artemis.core.server.MessageReference;
-import org.apache.activemq.artemis.core.server.Queue;
-import org.apache.activemq.artemis.core.server.ServerMessage;
-import org.apache.activemq.artemis.core.server.impl.QueueImpl;
-import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
 import org.apache.activemq.artemis.utils.ActiveMQThreadFactory;
 import org.apache.activemq.artemis.utils.FutureLatch;
-import org.apache.activemq.artemis.utils.LinkedListIterator;
+import org.apache.activemq.artemis.utils.actors.ArtemisExecutor;
+import org.apache.activemq.artemis.utils.collections.LinkedListIterator;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -157,7 +158,7 @@ public class QueueImplTest extends ActiveMQTestBase {
 
       Filter filter = new Filter() {
          @Override
-         public boolean match(final ServerMessage message) {
+         public boolean match(final Message message) {
             return false;
          }
 
@@ -1233,8 +1234,7 @@ public class QueueImplTest extends ActiveMQTestBase {
       public void run() {
          if (first) {
             queue.addHead(messageReference, false);
-         }
-         else {
+         } else {
             queue.addTail(messageReference);
          }
          added = true;
@@ -1275,7 +1275,7 @@ public class QueueImplTest extends ActiveMQTestBase {
       locator.close();
 
       Queue queue = ((LocalQueueBinding) server.getPostOffice().getBinding(new SimpleString(MY_QUEUE))).getQueue();
-      LinkedListIterator<MessageReference> totalIterator = queue.totalIterator();
+      LinkedListIterator<MessageReference> totalIterator = queue.browserIterator();
 
       try {
          int i = 0;
@@ -1283,8 +1283,7 @@ public class QueueImplTest extends ActiveMQTestBase {
             MessageReference ref = totalIterator.next();
             Assert.assertEquals(i++, ref.getMessage().getIntProperty("order").intValue());
          }
-      }
-      finally {
+      } finally {
          totalIterator.close();
          server.stop();
       }
@@ -1311,6 +1310,7 @@ public class QueueImplTest extends ActiveMQTestBase {
    }
 
    private QueueImpl getQueue(SimpleString name, boolean durable, boolean temporary, Filter filter) {
-      return new QueueImpl(1, QueueImplTest.address1, name, filter, null, durable, temporary, false, scheduledExecutor, new FakePostOffice(), null, null, executor);
+      return new QueueImpl(1, QueueImplTest.address1, name, filter, null, durable, temporary, false, scheduledExecutor,
+                           new FakePostOffice(), null, null, ArtemisExecutor.delegate(executor), null, null);
    }
 }

@@ -16,6 +16,11 @@
  */
 package org.apache.activemq.artemis.tests.stress.paging;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Random;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.api.core.client.ClientConsumer;
 import org.apache.activemq.artemis.api.core.client.ClientMessage;
@@ -24,6 +29,7 @@ import org.apache.activemq.artemis.api.core.client.ClientSession;
 import org.apache.activemq.artemis.api.core.client.ClientSessionFactory;
 import org.apache.activemq.artemis.api.core.client.ServerLocator;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.core.server.impl.QueueImpl;
 import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
 import org.apache.activemq.artemis.tests.unit.UnitTestLogger;
@@ -31,11 +37,6 @@ import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
-
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Random;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class MultipleConsumersPageStressTest extends ActiveMQTestBase {
 
@@ -101,7 +102,7 @@ public class MultipleConsumersPageStressTest extends ActiveMQTestBase {
       server = createServer(true, createDefaultInVMConfig(), 10024, 200024, settings);
       server.start();
 
-      pagedServerQueue = (QueueImpl) server.createQueue(ADDRESS, ADDRESS, null, true, false);
+      pagedServerQueue = (QueueImpl) server.createQueue(ADDRESS, RoutingType.ANYCAST, ADDRESS, null, true, false);
 
    }
 
@@ -135,8 +136,7 @@ public class MultipleConsumersPageStressTest extends ActiveMQTestBase {
 
       try {
          internalMultipleConsumers();
-      }
-      catch (Throwable e) {
+      } catch (Throwable e) {
          TestConsumer tstConsumer = consumers.get(0);
          System.out.println("first retry: " + tstConsumer.consumer.receive(1000));
 
@@ -235,8 +235,7 @@ public class MultipleConsumersPageStressTest extends ActiveMQTestBase {
          int numberOfMessages = random.nextInt(20);
          if (numberOfMessages <= 0) {
             return 1;
-         }
-         else {
+         } else {
             return numberOfMessages;
          }
       }
@@ -266,8 +265,7 @@ public class MultipleConsumersPageStressTest extends ActiveMQTestBase {
                sf.close();
                locator.close();
             }
-         }
-         catch (Exception ignored) {
+         } catch (Exception ignored) {
          }
 
       }
@@ -304,8 +302,7 @@ public class MultipleConsumersPageStressTest extends ActiveMQTestBase {
          try {
             if (shareConnectionFactory) {
                session = sharedSf.createSession(false, false);
-            }
-            else {
+            } else {
                locator = createInVMNonHALocator();
                sf = createSessionFactory(locator);
                session = sf.createSession(false, false);
@@ -360,8 +357,7 @@ public class MultipleConsumersPageStressTest extends ActiveMQTestBase {
                }
 
             }
-         }
-         catch (Throwable e) {
+         } catch (Throwable e) {
             exceptionHappened(e);
          }
 
@@ -381,8 +377,7 @@ public class MultipleConsumersPageStressTest extends ActiveMQTestBase {
          try {
             session.rollback();
             session.close();
-         }
-         catch (Exception ignored) {
+         } catch (Exception ignored) {
          }
 
       }
@@ -397,8 +392,7 @@ public class MultipleConsumersPageStressTest extends ActiveMQTestBase {
          try {
             if (shareConnectionFactory) {
                session = sharedSf.createSession(false, false);
-            }
-            else {
+            } else {
                locator = createInVMNonHALocator();
                sf = createSessionFactory(locator);
                session = sf.createSession(false, false);
@@ -421,8 +415,7 @@ public class MultipleConsumersPageStressTest extends ActiveMQTestBase {
                messagesAvailable.addAndGet(numberOfMessages);
                session.commit();
             }
-         }
-         catch (Throwable e) {
+         } catch (Throwable e) {
             exceptionHappened(e);
          }
       }

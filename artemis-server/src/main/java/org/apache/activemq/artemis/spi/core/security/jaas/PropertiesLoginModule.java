@@ -32,23 +32,26 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
+import org.apache.activemq.artemis.utils.HashProcessor;
+import org.apache.activemq.artemis.utils.PasswordMaskingUtil;
 import org.jboss.logging.Logger;
 
 public class PropertiesLoginModule extends PropertiesLoader implements LoginModule {
 
    private static final Logger logger = Logger.getLogger(PropertiesLoginModule.class);
 
-   private static final String USER_FILE_PROP_NAME = "org.apache.activemq.jaas.properties.user";
-   private static final String ROLE_FILE_PROP_NAME = "org.apache.activemq.jaas.properties.role";
+   public static final String USER_FILE_PROP_NAME = "org.apache.activemq.jaas.properties.user";
+   public static final String ROLE_FILE_PROP_NAME = "org.apache.activemq.jaas.properties.role";
 
    private Subject subject;
    private CallbackHandler callbackHandler;
 
    private Properties users;
-   private Map<String,Set<String>> roles;
+   private Map<String, Set<String>> roles;
    private String user;
    private final Set<Principal> principals = new HashSet<>();
    private boolean loginSucceeded;
+   private HashProcessor hashProcessor;
 
    @Override
    public void initialize(Subject subject,
@@ -72,11 +75,9 @@ public class PropertiesLoginModule extends PropertiesLoader implements LoginModu
       callbacks[1] = new PasswordCallback("Password: ", false);
       try {
          callbackHandler.handle(callbacks);
-      }
-      catch (IOException ioe) {
+      } catch (IOException ioe) {
          throw new LoginException(ioe.getMessage());
-      }
-      catch (UnsupportedCallbackException uce) {
+      } catch (UnsupportedCallbackException uce) {
          throw new LoginException(uce.getMessage() + " not available to obtain information from user");
       }
       user = ((NameCallback) callbacks[0]).getName();
@@ -85,15 +86,22 @@ public class PropertiesLoginModule extends PropertiesLoader implements LoginModu
          tmpPassword = new char[0];
       }
       if (user == null) {
-         throw new FailedLoginException("user name is null");
+         throw new FailedLoginException("User is null");
       }
       String password = users.getProperty(user);
 
       if (password == null) {
-         throw new FailedLoginException("User does exist");
+         throw new FailedLoginException("User does not exist: " + user);
       }
-      if (!password.equals(new String(tmpPassword))) {
-         throw new FailedLoginException("Password does not match");
+
+      try {
+         hashProcessor = PasswordMaskingUtil.getHashProcessor(password);
+      } catch (Exception e) {
+         throw new FailedLoginException("Failed to get hash processor");
+      }
+
+      if (!hashProcessor.compare(tmpPassword, password)) {
+         throw new FailedLoginException("Password does not match for user: " + user);
       }
       loginSucceeded = true;
 
@@ -106,18 +114,24 @@ public class PropertiesLoginModule extends PropertiesLoader implements LoginModu
    @Override
    public boolean commit() throws LoginException {
       boolean result = loginSucceeded;
+      Set<UserPrincipal> authenticatedUsers = subject.getPrincipals(UserPrincipal.class);
       if (result) {
-         principals.add(new UserPrincipal(user));
+         UserPrincipal userPrincipal = new UserPrincipal(user);
+         principals.add(userPrincipal);
+         authenticatedUsers.add(userPrincipal);
+      }
 
-         Set<String> matchedRoles = roles.get(user);
+      // populate roles for UserPrincipal from other login modules too
+      for (UserPrincipal userPrincipal : authenticatedUsers) {
+         Set<String> matchedRoles = roles.get(userPrincipal.getName());
          if (matchedRoles != null) {
             for (String entry : matchedRoles) {
                principals.add(new RolePrincipal(entry));
             }
          }
-
-         subject.getPrincipals().addAll(principals);
       }
+
+      subject.getPrincipals().addAll(principals);
 
       // will whack loginSucceeded
       clear();

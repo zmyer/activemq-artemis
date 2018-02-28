@@ -58,6 +58,10 @@ public final class SharedStoreLiveActivation extends LiveActivation {
                logger.debug("announcing backup to the former live" + this);
             }
             activeMQServer.getBackupManager().start();
+
+            if (!sharedStoreMasterPolicy.isWaitForActivation())
+               activeMQServer.setState(ActiveMQServerImpl.SERVER_STATE.STARTED);
+
             activeMQServer.getBackupManager().announceBackup();
          }
 
@@ -72,8 +76,7 @@ public final class SharedStoreLiveActivation extends LiveActivation {
          activeMQServer.completeActivation();
 
          ActiveMQServerLogger.LOGGER.serverIsLive();
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          ActiveMQServerLogger.LOGGER.initializationError(e);
          activeMQServer.callActivationFailureListeners(e);
       }
@@ -87,8 +90,7 @@ public final class SharedStoreLiveActivation extends LiveActivation {
       if (nodeManagerInUse != null) {
          if (sharedStoreMasterPolicy.isFailoverOnServerShutdown() || permanently) {
             nodeManagerInUse.crashLiveServer();
-         }
-         else {
+         } else {
             nodeManagerInUse.pauseLiveServer();
          }
       }

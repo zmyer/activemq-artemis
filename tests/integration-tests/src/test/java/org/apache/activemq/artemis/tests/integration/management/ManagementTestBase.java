@@ -16,22 +16,20 @@
  */
 package org.apache.activemq.artemis.tests.integration.management;
 
-import org.apache.activemq.artemis.api.core.management.QueueControl;
-import org.apache.activemq.artemis.api.jms.management.JMSQueueControl;
-import org.junit.Before;
-import org.junit.After;
-
 import javax.management.MBeanServer;
 import javax.management.MBeanServerFactory;
 import javax.management.ObjectName;
 
-import org.junit.Assert;
-
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.api.core.client.ClientConsumer;
 import org.apache.activemq.artemis.api.core.client.ClientMessage;
 import org.apache.activemq.artemis.api.core.client.ClientSession;
+import org.apache.activemq.artemis.api.core.management.QueueControl;
 import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
+import org.junit.After;
+import org.junit.Assert;
+import org.junit.Before;
 
 public abstract class ManagementTestBase extends ActiveMQTestBase {
 
@@ -58,8 +56,7 @@ public abstract class ManagementTestBase extends ActiveMQTestBase {
          session.commit();
          m = consumer.receiveImmediate();
          Assert.assertNull("received one more message than expected (" + expected + ")", m);
-      }
-      finally {
+      } finally {
          if (consumer != null) {
             consumer.close();
          }
@@ -79,6 +76,10 @@ public abstract class ManagementTestBase extends ActiveMQTestBase {
    public void setUp() throws Exception {
       super.setUp();
 
+      createMBeanServer();
+   }
+
+   protected void createMBeanServer() {
       mbeanServer = MBeanServerFactory.createMBeanServer();
    }
 
@@ -108,19 +109,32 @@ public abstract class ManagementTestBase extends ActiveMQTestBase {
       return queueControl;
    }
 
-   protected long getMessageCount(JMSQueueControl control) throws Exception {
-      control.flushExecutor();
-      return control.getMessageCount();
-   }
+   protected QueueControl createManagementControl(final SimpleString address,
+                                                  final SimpleString queue,
+                                                  final RoutingType routingType) throws Exception {
+      QueueControl queueControl = ManagementControlHelper.createQueueControl(address, queue, routingType, mbeanServer);
 
-   protected long getMessagesAdded(JMSQueueControl control) throws Exception {
-      control.flushExecutor();
-      return control.getMessagesAdded();
+      return queueControl;
    }
 
    protected long getMessageCount(QueueControl control) throws Exception {
       control.flushExecutor();
       return control.getMessageCount();
+   }
+
+   protected long getDurableMessageCount(QueueControl control) throws Exception {
+      control.flushExecutor();
+      return control.getDurableMessageCount();
+   }
+
+   protected long getMessageSize(QueueControl control) throws Exception {
+      control.flushExecutor();
+      return control.getPersistentSize();
+   }
+
+   protected long getDurableMessageSize(QueueControl control) throws Exception {
+      control.flushExecutor();
+      return control.getDurablePersistentSize();
    }
 
    protected long getMessagesAdded(QueueControl control) throws Exception {

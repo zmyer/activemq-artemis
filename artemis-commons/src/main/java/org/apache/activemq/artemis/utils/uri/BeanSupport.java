@@ -19,12 +19,14 @@ package org.apache.activemq.artemis.utils.uri;
 
 import java.beans.PropertyDescriptor;
 import java.io.UnsupportedEncodingException;
+import java.lang.reflect.InvocationTargetException;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 
 import org.apache.commons.beanutils.BeanUtilsBean;
@@ -62,11 +64,43 @@ public class BeanSupport {
       return obj;
    }
 
-   public static <P> P setData( P obj, Map<String, Object> data) throws Exception {
+   public static <P> P setData(P obj, Map<String, Object> data) throws Exception {
       synchronized (beanUtils) {
          beanUtils.populate(obj, data);
       }
       return obj;
+   }
+
+   public static <P> P setProperties(P bean, Properties properties)
+      throws IllegalAccessException, NoSuchMethodException, InvocationTargetException {
+      synchronized (beanUtils) {
+         PropertyDescriptor[] descriptors = beanUtils.getPropertyUtils().getPropertyDescriptors(bean);
+         for (PropertyDescriptor descriptor : descriptors) {
+            if (descriptor.getReadMethod() != null && isWriteable(descriptor, null)) {
+               String value = properties.getProperty(descriptor.getName());
+               if (value != null) {
+                  beanUtils.setProperty(bean, descriptor.getName(), value);
+               }
+            }
+         }
+      }
+      return bean;
+   }
+
+   public static <P> Properties getProperties(P bean, Properties properties)
+      throws IllegalAccessException, NoSuchMethodException, InvocationTargetException {
+      synchronized (beanUtils) {
+         PropertyDescriptor[] descriptors = beanUtils.getPropertyUtils().getPropertyDescriptors(bean);
+         for (PropertyDescriptor descriptor : descriptors) {
+            if (descriptor.getReadMethod() != null && isWriteable(descriptor, null)) {
+               String value = beanUtils.getProperty(bean, descriptor.getName());
+               if (value != null) {
+                  properties.put(descriptor.getName(), value);
+               }
+            }
+         }
+      }
+      return properties;
    }
 
    public static void setData(URI uri,
@@ -86,8 +120,7 @@ public class BeanSupport {
       for (Map.Entry<String, String> entry : query.entrySet()) {
          if (allowableProperties.contains(entry.getKey())) {
             properties.put(entry.getKey(), entry.getValue());
-         }
-         else {
+         } else {
             extraProps.put(entry.getKey(), entry.getValue());
          }
       }
@@ -135,7 +168,6 @@ public class BeanSupport {
          (type == boolean.class) ||
          (type == String.class);
    }
-
 
    public static String decodeURI(String value) throws UnsupportedEncodingException {
       return URLDecoder.decode(value, "UTF-8");

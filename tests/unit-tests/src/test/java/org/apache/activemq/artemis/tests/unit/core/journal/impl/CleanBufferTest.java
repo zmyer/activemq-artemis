@@ -50,7 +50,7 @@ public class CleanBufferTest extends ActiveMQTestBase {
    @Test
    public void testCleanOnAIO() {
       if (LibaioContext.isLoaded()) {
-         SequentialFileFactory factory = new AIOSequentialFileFactory(new File("Whatever"), 50);
+         SequentialFileFactory factory = new AIOSequentialFileFactory(new File("./target"), 50);
 
          testBuffer(factory);
       }
@@ -87,13 +87,11 @@ public class CleanBufferTest extends ActiveMQTestBase {
          for (byte b = 0; b < 100; b++) {
             if (b < 10) {
                Assert.assertEquals(0, buffer.get());
-            }
-            else {
+            } else {
                Assert.assertEquals(b, buffer.get());
             }
          }
-      }
-      finally {
+      } finally {
          factory.releaseBuffer(buffer);
          factory.stop();
       }

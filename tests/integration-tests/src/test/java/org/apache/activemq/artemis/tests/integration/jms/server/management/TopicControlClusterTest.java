@@ -16,31 +16,31 @@
  */
 package org.apache.activemq.artemis.tests.integration.jms.server.management;
 
-import org.apache.activemq.artemis.api.jms.management.TopicControl;
-import org.apache.activemq.artemis.tests.integration.management.ManagementControlHelper;
-import org.apache.activemq.artemis.tests.util.JMSClusteredTestBase;
-import org.junit.Test;
-
 import javax.jms.Connection;
 import javax.jms.Session;
 import javax.jms.Topic;
+
+import org.apache.activemq.artemis.api.core.SimpleString;
+import org.apache.activemq.artemis.api.core.management.AddressControl;
+import org.apache.activemq.artemis.tests.integration.management.ManagementControlHelper;
+import org.apache.activemq.artemis.tests.util.JMSClusteredTestBase;
+import org.apache.activemq.artemis.tests.util.Wait;
+import org.junit.Test;
 
 public class TopicControlClusterTest extends JMSClusteredTestBase {
 
    @Test
    public void testClusteredSubscriptionCount() throws Exception {
-      Connection conn1 = cf1.createConnection();
+      final String topicName = "t1";
+      final SimpleString simpleTopicName = SimpleString.toSimpleString(topicName);
 
-      conn1.setClientID("someClient1");
+      try (Connection conn1 = cf1.createConnection(); Connection conn2 = cf2.createConnection()) {
+         conn1.setClientID("someClient1");
+         conn2.setClientID("someClient2");
 
-      Connection conn2 = cf2.createConnection();
+         Topic topic1 = createTopic(topicName);
 
-      conn2.setClientID("someClient2");
-
-      try {
-         Topic topic1 = createTopic("t1");
-
-         Topic topic2 = (Topic) context2.lookup("/topic/t1");
+         Topic topic2 = (Topic) context2.lookup("/topic/" + topicName);
 
          Session session1 = conn1.createSession(false, Session.AUTO_ACKNOWLEDGE);
          session1.createDurableSubscriber(topic1, "sub1_1");
@@ -49,15 +49,14 @@ public class TopicControlClusterTest extends JMSClusteredTestBase {
          Session session2 = conn2.createSession(false, Session.AUTO_ACKNOWLEDGE);
          session2.createDurableSubscriber(topic2, "sub2");
 
-         TopicControl topicControl1 = ManagementControlHelper.createTopicControl(topic1, mBeanServer1);
-         TopicControl topicControl2 = ManagementControlHelper.createTopicControl(topic2, mBeanServer2);
+         AddressControl topicControl1 = ManagementControlHelper.createAddressControl(simpleTopicName, mBeanServer1);
+         AddressControl topicControl2 = ManagementControlHelper.createAddressControl(simpleTopicName, mBeanServer2);
 
-         assertEquals(2, topicControl1.getSubscriptionCount());
-         assertEquals(1, topicControl2.getSubscriptionCount());
-      }
-      finally {
-         conn1.close();
-         conn2.close();
+         assertTrue("There should be 3 subscriptions on the topic, 2 local and 1 remote.",
+                    Wait.waitFor(() -> topicControl1.getQueueNames().length == 3, 2000));
+
+         assertTrue("There should be 3 subscriptions on the topic, 1 local and 2 remote.",
+                    Wait.waitFor(() -> topicControl2.getQueueNames().length == 3, 2000));
       }
 
       jmsServer1.destroyTopic("t1");

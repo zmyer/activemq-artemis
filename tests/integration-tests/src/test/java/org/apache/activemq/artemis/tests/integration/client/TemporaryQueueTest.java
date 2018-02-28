@@ -16,6 +16,11 @@
  */
 package org.apache.activemq.artemis.tests.integration.client;
 
+import java.util.Arrays;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import org.apache.activemq.artemis.api.core.ActiveMQDisconnectedException;
 import org.apache.activemq.artemis.api.core.ActiveMQException;
 import org.apache.activemq.artemis.api.core.ActiveMQExceptionType;
@@ -37,6 +42,7 @@ import org.apache.activemq.artemis.core.protocol.core.Packet;
 import org.apache.activemq.artemis.core.protocol.core.impl.PacketImpl;
 import org.apache.activemq.artemis.core.protocol.core.impl.RemotingConnectionImpl;
 import org.apache.activemq.artemis.core.remoting.CloseListener;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.core.server.ServerSession;
 import org.apache.activemq.artemis.core.server.impl.ServerSessionImpl;
 import org.apache.activemq.artemis.core.settings.impl.AddressFullMessagePolicy;
@@ -47,11 +53,6 @@ import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.apache.activemq.artemis.tests.util.SingleServerTestBase;
 import org.apache.activemq.artemis.utils.RandomUtil;
 import org.junit.Test;
-
-import java.util.Arrays;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class TemporaryQueueTest extends SingleServerTestBase {
    // Constants -----------------------------------------------------
@@ -134,12 +135,13 @@ public class TemporaryQueueTest extends SingleServerTestBase {
       assertTrue(Arrays.asList(storeNames).contains(address));
 
       consumer.close();
+
       session.deleteQueue(queue);
+      session.close();
 
       storeNames = server.getPagingManager().getStoreNames();
       assertFalse(Arrays.asList(storeNames).contains(address));
 
-      session.close();
    }
 
    @Test
@@ -190,11 +192,9 @@ public class TemporaryQueueTest extends SingleServerTestBase {
       try {
          session.createConsumer(queue);
          fail("temp queue must not exist after the remoting connection is closed");
-      }
-      catch (ActiveMQNonExistentQueueException neqe) {
+      } catch (ActiveMQNonExistentQueueException neqe) {
          //ol
-      }
-      catch (ActiveMQException e) {
+      } catch (ActiveMQException e) {
          fail("Invalid Exception type:" + e.getType());
       }
 
@@ -203,9 +203,9 @@ public class TemporaryQueueTest extends SingleServerTestBase {
 
    @Test
    public void testQueueWithWildcard() throws Exception {
-      session.createQueue("a.b", "queue1");
-      session.createTemporaryQueue("a.#", "queue2");
-      session.createTemporaryQueue("a.#", "queue3");
+      session.createQueue("a.b", RoutingType.MULTICAST, "queue1");
+      session.createTemporaryQueue("a.#", RoutingType.MULTICAST, "queue2");
+      session.createTemporaryQueue("a.#", RoutingType.MULTICAST, "queue3");
 
       ClientProducer producer = session.createProducer("a.b");
       producer.send(session.createMessage(false));
@@ -242,9 +242,9 @@ public class TemporaryQueueTest extends SingleServerTestBase {
 
    @Test
    public void testQueueWithWildcard2() throws Exception {
-      session.createQueue("a.b", "queue1");
-      session.createTemporaryQueue("a.#", "queue2");
-      session.createTemporaryQueue("a.#", "queue3");
+      session.createQueue("a.b", RoutingType.MULTICAST, "queue1");
+      session.createTemporaryQueue("a.#", RoutingType.MULTICAST, "queue2");
+      session.createTemporaryQueue("a.#", RoutingType.MULTICAST, "queue3");
 
       ClientProducer producer = session.createProducer("a.b");
       producer.send(session.createMessage(false));
@@ -281,9 +281,9 @@ public class TemporaryQueueTest extends SingleServerTestBase {
 
    @Test
    public void testQueueWithWildcard3() throws Exception {
-      session.createQueue("a.b", "queue1");
-      session.createTemporaryQueue("a.#", "queue2");
-      session.createTemporaryQueue("a.#", "queue2.1");
+      session.createQueue("a.b", RoutingType.MULTICAST, "queue1");
+      session.createTemporaryQueue("a.#", RoutingType.MULTICAST, "queue2");
+      session.createTemporaryQueue("a.#", RoutingType.MULTICAST, "queue2.1");
 
       session.deleteQueue("queue2");
    }
@@ -314,7 +314,7 @@ public class TemporaryQueueTest extends SingleServerTestBase {
 
    @Test
    public void testRecreateConsumerOverServerFailure() throws Exception {
-      ServerLocator serverWithReattach = createInVMNonHALocator().setReconnectAttempts(-1).setRetryInterval(1000).setConfirmationWindowSize(-1).setConnectionTTL(TemporaryQueueTest.CONNECTION_TTL).setClientFailureCheckPeriod(TemporaryQueueTest.CONNECTION_TTL / 3);
+      ServerLocator serverWithReattach = createInVMNonHALocator().setReconnectAttempts(30).setRetryInterval(1000).setConfirmationWindowSize(-1).setConnectionTTL(TemporaryQueueTest.CONNECTION_TTL).setClientFailureCheckPeriod(TemporaryQueueTest.CONNECTION_TTL / 3);
       ClientSessionFactory reattachSF = createSessionFactory(serverWithReattach);
 
       ClientSession session = reattachSF.createSession(false, false);
@@ -378,8 +378,7 @@ public class TemporaryQueueTest extends SingleServerTestBase {
                   log.warn("Unexpected color " + message.getStringProperty("color") + " when we were expecting " + color);
                   errors.incrementAndGet();
                }
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                log.warn(e.getMessage(), e);
                errors.incrementAndGet();
             }
@@ -437,8 +436,7 @@ public class TemporaryQueueTest extends SingleServerTestBase {
 
             assertEquals(0, errors.get());
 
-         }
-         finally {
+         } finally {
             localSession.close();
             clientsConnecton.close();
          }
@@ -553,8 +551,7 @@ public class TemporaryQueueTest extends SingleServerTestBase {
                   prod.send(msg);
                   msgs.incrementAndGet();
                }
-            }
-            catch (Throwable e) {
+            } catch (Throwable e) {
                e.printStackTrace();
                errors.incrementAndGet();
             }
@@ -575,8 +572,7 @@ public class TemporaryQueueTest extends SingleServerTestBase {
       while (t.isAlive() && errors.get() == 0 && (!prod.getProducerCredits().isBlocked() || blockedTime < 60)) {
          if (prod.getProducerCredits().isBlocked()) {
             blockedTime++;
-         }
-         else {
+         } else {
             blockedTime = 0;
          }
          Thread.sleep(100);

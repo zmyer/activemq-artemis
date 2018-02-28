@@ -33,12 +33,14 @@ import org.apache.activemq.artemis.core.postoffice.impl.PostOfficeImpl;
 import org.apache.activemq.artemis.core.remoting.server.RemotingService;
 import org.apache.activemq.artemis.core.server.ActiveMQServerLogger;
 import org.apache.activemq.artemis.core.server.LiveNodeLocator;
+import org.apache.activemq.artemis.core.server.NodeManager;
 import org.apache.activemq.artemis.core.server.cluster.ActiveMQServerSideProtocolManagerFactory;
 import org.apache.activemq.artemis.core.server.cluster.ha.LiveOnlyPolicy;
 import org.apache.activemq.artemis.core.server.cluster.ha.ScaleDownPolicy;
 import org.jboss.logging.Logger;
 
 public class LiveOnlyActivation extends Activation {
+
    private static final Logger logger = Logger.getLogger(LiveOnlyActivation.class);
 
    //this is how we act when we initially start as live
@@ -60,18 +62,22 @@ public class LiveOnlyActivation extends Activation {
       try {
          activeMQServer.initialisePart1(false);
 
+         activeMQServer.registerActivateCallback(activeMQServer.getNodeManager().startLiveNode());
+
+         if (activeMQServer.getState() == ActiveMQServerImpl.SERVER_STATE.STOPPED || activeMQServer.getState() == ActiveMQServerImpl.SERVER_STATE.STOPPING) {
+            return;
+         }
+
          activeMQServer.initialisePart2(false);
 
          activeMQServer.completeActivation();
 
          if (activeMQServer.getIdentity() != null) {
             ActiveMQServerLogger.LOGGER.serverIsLive(activeMQServer.getIdentity());
-         }
-         else {
+         } else {
             ActiveMQServerLogger.LOGGER.serverIsLive();
          }
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          ActiveMQServerLogger.LOGGER.initializationError(e);
          activeMQServer.callActivationFailureListeners(e);
       }
@@ -82,6 +88,16 @@ public class LiveOnlyActivation extends Activation {
       if (scaleDownServerLocator != null) {
          scaleDownServerLocator.close();
          scaleDownServerLocator = null;
+      }
+
+      NodeManager nodeManagerInUse = activeMQServer.getNodeManager();
+
+      if (nodeManagerInUse != null) {
+         if (permanently) {
+            nodeManagerInUse.crashLiveServer();
+         } else {
+            nodeManagerInUse.pauseLiveServer();
+         }
       }
    }
 
@@ -105,11 +121,9 @@ public class LiveOnlyActivation extends Activation {
       if (liveOnlyPolicy.getScaleDownPolicy() != null && liveOnlyPolicy.getScaleDownPolicy().isEnabled() && scaleDownClientSessionFactory != null) {
          try {
             scaleDown();
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             ActiveMQServerLogger.LOGGER.failedToScaleDown(e);
-         }
-         finally {
+         } finally {
             scaleDownClientSessionFactory.close();
             scaleDownServerLocator.close();
          }
@@ -136,8 +150,7 @@ public class LiveOnlyActivation extends Activation {
                if (possibleLive == null)  // we've tried every connector
                   break;
                clientSessionFactory = (ClientSessionFactoryInternal) scaleDownServerLocator.createSessionFactory(possibleLive.getA(), 0, false);
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                logger.trace("Failed to connect to " + possibleLive.getA());
                nodeLocator.notifyRegistrationFailed(false);
                if (clientSessionFactory != null) {
@@ -149,12 +162,10 @@ public class LiveOnlyActivation extends Activation {
          }
          if (clientSessionFactory != null) {
             scaleDownClientSessionFactory = clientSessionFactory;
-         }
-         else {
+         } else {
             throw new ActiveMQException("Unable to connect to server for scale-down");
          }
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          ActiveMQServerLogger.LOGGER.failedToScaleDown(e);
       }
    }

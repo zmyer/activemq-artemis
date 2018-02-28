@@ -19,6 +19,7 @@ package org.apache.activemq.artemis.tests.unit.core.journal.impl;
 import java.io.File;
 import java.io.FilenameFilter;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
@@ -26,21 +27,24 @@ import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 
-import org.apache.activemq.artemis.cli.commands.tools.DecodeJournal;
-import org.apache.activemq.artemis.cli.commands.tools.EncodeJournal;
+import org.apache.activemq.artemis.cli.commands.tools.journal.DecodeJournal;
+import org.apache.activemq.artemis.cli.commands.tools.journal.EncodeJournal;
+import org.apache.activemq.artemis.core.io.SequentialFileFactory;
 import org.apache.activemq.artemis.core.journal.EncodingSupport;
 import org.apache.activemq.artemis.core.journal.PreparedTransactionInfo;
 import org.apache.activemq.artemis.core.journal.RecordInfo;
-import org.apache.activemq.artemis.core.io.SequentialFileFactory;
 import org.apache.activemq.artemis.core.journal.TestableJournal;
 import org.apache.activemq.artemis.core.journal.impl.JournalImpl;
 import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.apache.activemq.artemis.utils.ReusableLatch;
+import org.jboss.logging.Logger;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 
 public abstract class JournalImplTestBase extends ActiveMQTestBase {
+
+   private static final Logger logger = Logger.getLogger(JournalImplTestBase.class);
 
    protected List<RecordInfo> records = new LinkedList<>();
 
@@ -131,7 +135,11 @@ public abstract class JournalImplTestBase extends ActiveMQTestBase {
       this.maxAIO = maxAIO;
    }
 
-   protected void setup(final int minFreeFiles, final int poolSize, final int fileSize, final boolean sync, final int maxAIO) {
+   protected void setup(final int minFreeFiles,
+                        final int poolSize,
+                        final int fileSize,
+                        final boolean sync,
+                        final int maxAIO) {
       minFiles = minFreeFiles;
       this.poolSize = poolSize;
       this.fileSize = fileSize;
@@ -152,14 +160,11 @@ public abstract class JournalImplTestBase extends ActiveMQTestBase {
          @Override
          public void onCompactDone() {
             latchDone.countDown();
-            System.out.println("Waiting on Compact");
             try {
                latchWait.await();
-            }
-            catch (InterruptedException e) {
+            } catch (InterruptedException e) {
                e.printStackTrace();
             }
-            System.out.println("Waiting on Compact Done");
          }
       };
 
@@ -177,8 +182,7 @@ public abstract class JournalImplTestBase extends ActiveMQTestBase {
          public void run() {
             try {
                journal.testCompact();
-            }
-            catch (Throwable e) {
+            } catch (Throwable e) {
                e.printStackTrace();
             }
          }
@@ -518,19 +522,31 @@ public abstract class JournalImplTestBase extends ActiveMQTestBase {
     * @param actual
     */
    protected void printJournalLists(final List<RecordInfo> expected, final List<RecordInfo> actual) {
-      System.out.println("***********************************************");
-      System.out.println("Expected list:");
-      for (RecordInfo info : expected) {
-         System.out.println("Record " + info.id + " isUpdate = " + info.isUpdate);
+
+      HashSet<RecordInfo> expectedSet = new HashSet<>();
+      expectedSet.addAll(expected);
+
+
+      Assert.assertEquals("There are duplicated on the expected list", expectedSet.size(), expected.size());
+
+      HashSet<RecordInfo> actualSet = new HashSet<>();
+      actualSet.addAll(actual);
+
+      expectedSet.removeAll(actualSet);
+
+      for (RecordInfo info: expectedSet) {
+         logger.warn("The following record is missing:: " + info);
       }
-      if (actual != null) {
-         System.out.println("***********************************************");
-         System.out.println("Actual list:");
-         for (RecordInfo info : actual) {
-            System.out.println("Record " + info.id + " isUpdate = " + info.isUpdate);
-         }
-      }
-      System.out.println("***********************************************");
+
+
+      Assert.assertEquals("There are duplicates on the actual list", actualSet.size(), actualSet.size());
+
+
+
+      RecordInfo[] expectedArray = expected.toArray(new RecordInfo[expected.size()]);
+      RecordInfo[] actualArray = actual.toArray(new RecordInfo[actual.size()]);
+      Assert.assertArrayEquals(expectedArray, actualArray);
+
    }
 
    protected byte[] generateRecord(final int length) {

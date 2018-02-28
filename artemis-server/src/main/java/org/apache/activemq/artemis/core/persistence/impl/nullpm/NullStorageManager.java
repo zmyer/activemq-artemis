@@ -25,6 +25,7 @@ import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.apache.activemq.artemis.api.core.Message;
 import org.apache.activemq.artemis.api.core.Pair;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.core.io.IOCallback;
@@ -32,15 +33,16 @@ import org.apache.activemq.artemis.core.io.IOCriticalErrorListener;
 import org.apache.activemq.artemis.core.io.SequentialFile;
 import org.apache.activemq.artemis.core.journal.Journal;
 import org.apache.activemq.artemis.core.journal.JournalLoadInformation;
-import org.apache.activemq.artemis.core.message.impl.MessageInternal;
 import org.apache.activemq.artemis.core.paging.PageTransactionInfo;
 import org.apache.activemq.artemis.core.paging.PagedMessage;
 import org.apache.activemq.artemis.core.paging.PagingManager;
 import org.apache.activemq.artemis.core.paging.PagingStore;
 import org.apache.activemq.artemis.core.paging.cursor.PagePosition;
+import org.apache.activemq.artemis.core.persistence.AddressBindingInfo;
 import org.apache.activemq.artemis.core.persistence.GroupingInfo;
 import org.apache.activemq.artemis.core.persistence.OperationContext;
 import org.apache.activemq.artemis.core.persistence.QueueBindingInfo;
+import org.apache.activemq.artemis.core.persistence.QueueStatus;
 import org.apache.activemq.artemis.core.persistence.StorageManager;
 import org.apache.activemq.artemis.core.persistence.config.PersistedAddressSetting;
 import org.apache.activemq.artemis.core.persistence.config.PersistedRoles;
@@ -51,9 +53,9 @@ import org.apache.activemq.artemis.core.replication.ReplicationManager;
 import org.apache.activemq.artemis.core.server.LargeServerMessage;
 import org.apache.activemq.artemis.core.server.MessageReference;
 import org.apache.activemq.artemis.core.server.RouteContextList;
-import org.apache.activemq.artemis.core.server.ServerMessage;
 import org.apache.activemq.artemis.core.server.files.FileStoreMonitor;
 import org.apache.activemq.artemis.core.server.group.impl.GroupBinding;
+import org.apache.activemq.artemis.core.server.impl.AddressInfo;
 import org.apache.activemq.artemis.core.server.impl.JournalLoader;
 import org.apache.activemq.artemis.core.transaction.ResourceManager;
 import org.apache.activemq.artemis.core.transaction.Transaction;
@@ -81,6 +83,20 @@ public class NullStorageManager implements StorageManager {
 
    @Override
    public void criticalError(Throwable error) {
+
+   }
+
+   @Override
+   public long storeQueueStatus(long queueID, QueueStatus status) throws Exception {
+      return 0;
+   }
+
+   @Override
+   public void updateQueueBinding(long tx, Binding binding) throws Exception {
+   }
+
+   @Override
+   public void deleteQueueStatus(long recordID) throws Exception {
 
    }
 
@@ -144,12 +160,21 @@ public class NullStorageManager implements StorageManager {
    }
 
    @Override
+   public void addAddressBinding(long tx, AddressInfo addressInfo) throws Exception {
+   }
+
+   @Override
+   public void deleteAddressBinding(long tx, long addressBindingID) throws Exception {
+   }
+
+   @Override
    public void commit(final long txID) throws Exception {
    }
 
    @Override
    public JournalLoadInformation loadBindingJournal(final List<QueueBindingInfo> queueBindingInfos,
-                                                    final List<GroupingInfo> groupingInfos) throws Exception {
+                                                    final List<GroupingInfo> groupingInfos,
+                                                    final List<AddressBindingInfo> addressBindingInfos) throws Exception {
       return new JournalLoadInformation();
    }
 
@@ -192,11 +217,11 @@ public class NullStorageManager implements StorageManager {
    }
 
    @Override
-   public void storeMessage(final ServerMessage message) throws Exception {
+   public void storeMessage(final Message message) throws Exception {
    }
 
    @Override
-   public void storeMessageTransactional(final long txID, final ServerMessage message) throws Exception {
+   public void storeMessageTransactional(final long txID, final Message message) throws Exception {
    }
 
    @Override
@@ -252,7 +277,7 @@ public class NullStorageManager implements StorageManager {
    }
 
    @Override
-   public LargeServerMessage createLargeMessage(final long id, final MessageInternal message) {
+   public LargeServerMessage createLargeMessage(final long id, final Message message) {
       NullStorageLargeServerMessage largeMessage = new NullStorageLargeServerMessage();
 
       largeMessage.copyHeadersAndProperties(message);
@@ -442,16 +467,12 @@ public class NullStorageManager implements StorageManager {
    }
 
    @Override
-   public void updatePageTransaction(final PageTransactionInfo pageTransaction, final int depage) throws Exception {
-   }
-
-   @Override
-   public long storePageCounter(final long txID, final long queueID, final long value) throws Exception {
+   public long storePageCounter(final long txID, final long queueID, final long value, final long size) throws Exception {
       return 0;
    }
 
    @Override
-   public long storePendingCounter(long queueID, long pageID, int inc) throws Exception {
+   public long storePendingCounter(long queueID, long pageID) throws Exception {
       return -1;
    }
 
@@ -468,12 +489,12 @@ public class NullStorageManager implements StorageManager {
    }
 
    @Override
-   public long storePageCounterInc(final long txID, final long queueID, final int add) throws Exception {
+   public long storePageCounterInc(final long txID, final long queueID, final int add, final long size) throws Exception {
       return 0;
    }
 
    @Override
-   public long storePageCounterInc(final long queueID, final int add) throws Exception {
+   public long storePageCounterInc(final long queueID, final int add, final long size) throws Exception {
       return 0;
    }
 
@@ -496,7 +517,7 @@ public class NullStorageManager implements StorageManager {
    }
 
    @Override
-   public void stop(final boolean ioCriticalError) throws Exception {
+   public void stop(final boolean ioCriticalError, boolean sendFailover) throws Exception {
    }
 
    @Override
@@ -518,12 +539,23 @@ public class NullStorageManager implements StorageManager {
       // no-op
    }
 
+
    @Override
-   public boolean addToPage(PagingStore s,
-                            ServerMessage msg,
+   public boolean addToPage(PagingStore store,
+                            Message msg,
                             Transaction tx,
                             RouteContextList listCtx) throws Exception {
-      return false;
+      /**
+       * Exposing the read-lock here is an encapsulation violation done in order to keep the code
+       * simpler. The alternative would be to add a second method, say 'verifyPaging', to
+       * PagingStore.
+       * <p>
+       * Adding this second method would also be more surprise prone as it would require a certain
+       * calling order.
+       * <p>
+       * The reasoning is that exposing the lock is more explicit and therefore `less bad`.
+       */
+      return store.page(msg, tx, listCtx, null);
    }
 
    @Override

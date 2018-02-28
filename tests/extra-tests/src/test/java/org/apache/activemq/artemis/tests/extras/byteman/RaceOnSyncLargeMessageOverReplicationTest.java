@@ -94,7 +94,7 @@ public class RaceOnSyncLargeMessageOverReplicationTest extends ActiveMQTestBase 
       ReplicatedBackupUtils.configureReplicationPair(backupConfig, backupConnector, backupAcceptor, liveConfig, liveConnector, liveAcceptor);
 
       liveServer = createServer(liveConfig);
-      liveServer.getConfiguration().addQueueConfiguration(new CoreQueueConfiguration().setName("jms.queue.Queue").setAddress("jms.queue.Queue"));
+      liveServer.getConfiguration().addQueueConfiguration(new CoreQueueConfiguration().setName("Queue").setAddress("Queue"));
       liveServer.start();
 
       waitForServerToStart(liveServer);
@@ -126,8 +126,7 @@ public class RaceOnSyncLargeMessageOverReplicationTest extends ActiveMQTestBase 
       if (connection != null) {
          try {
             connection.close();
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
          }
       }
       if (backupServer != null) {
@@ -175,8 +174,7 @@ public class RaceOnSyncLargeMessageOverReplicationTest extends ActiveMQTestBase 
                try {
                   producer.send(message);
                   session.commit();
-               }
-               catch (JMSException expected) {
+               } catch (JMSException expected) {
                   expected.printStackTrace();
                }
             }
@@ -202,8 +200,7 @@ public class RaceOnSyncLargeMessageOverReplicationTest extends ActiveMQTestBase 
 
       Assert.assertFalse(t.isAlive());
 
-
-      liveServer.stop(true);
+      liveServer.fail(true);
 
       Assert.assertTrue(failedOver.await(10, TimeUnit.SECONDS));
 
@@ -228,8 +225,7 @@ public class RaceOnSyncLargeMessageOverReplicationTest extends ActiveMQTestBase 
       try {
          flagArrived.countDown();
          flagWait.await(10, TimeUnit.SECONDS);
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          e.printStackTrace();
       }
 

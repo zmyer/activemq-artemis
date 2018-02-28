@@ -63,22 +63,20 @@ public class URIParserTest {
       myFruit.setFluentName("apples&bananas with &host=3344");
       URI uri = parser.createSchema("fruit", myFruit);
 
-      Fruit newFruit = (Fruit)parser.newObject(uri, "something");
+      Fruit newFruit = (Fruit) parser.newObject(uri, "something");
 
       Assert.assertEquals(myFruit.getHost(), newFruit.getHost());
       Assert.assertEquals(myFruit.getFluentName(), newFruit.getFluentName());
 
-
-
    }
 
    /**
-    * Even thought there's no host Poperty on FruitBase.. this should still work fine without throwing any exceptions
+    * Even thought there's no host Property on FruitBase.. this should still work fine without throwing any exceptions
     *
     * @throws Throwable
     */
    @Test
-   public void testSchemaNoHosPropertyt() throws Throwable {
+   public void testSchemaNoHosProperty() throws Throwable {
       FruitParser parser = new FruitParser();
       FruitBase fruit = parser.newObject(new URI("base://some:guy@fair-market:3030?color=green&fluentName=something"), null);
       Assert.assertEquals("base", fruit.getName());
@@ -87,7 +85,7 @@ public class URIParserTest {
    }
 
    /**
-    * Even thought there's no host Poperty on FruitBase.. this should still work fine without throwing any exceptions
+    * Even thought there's no host Property on FruitBase.. this should still work fine without throwing any exceptions
     *
     * @throws Throwable
     */

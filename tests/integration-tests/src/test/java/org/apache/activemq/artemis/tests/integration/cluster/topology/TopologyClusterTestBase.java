@@ -16,6 +16,12 @@
  */
 package org.apache.activemq.artemis.tests.integration.cluster.topology;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+
 import org.apache.activemq.artemis.api.core.ActiveMQException;
 import org.apache.activemq.artemis.api.core.ActiveMQExceptionType;
 import org.apache.activemq.artemis.api.core.ActiveMQObjectClosedException;
@@ -29,21 +35,17 @@ import org.apache.activemq.artemis.api.core.client.ServerLocator;
 import org.apache.activemq.artemis.api.core.client.TopologyMember;
 import org.apache.activemq.artemis.core.config.Configuration;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.core.server.cluster.ClusterConnection;
 import org.apache.activemq.artemis.core.server.cluster.ClusterManager;
 import org.apache.activemq.artemis.tests.integration.IntegrationTestLogger;
 import org.apache.activemq.artemis.tests.integration.cluster.distribution.ClusterTestBase;
 import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
+import org.apache.activemq.artemis.tests.util.Wait;
 import org.apache.activemq.artemis.utils.RandomUtil;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.CountDownLatch;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 
@@ -133,7 +135,8 @@ public abstract class TopologyClusterTestBase extends ClusterTestBase {
          if (ok) {
             return;
          }
-      } while (System.currentTimeMillis() - start < 5000);
+      }
+      while (System.currentTimeMillis() - start < 5000);
       Assert.fail("did not contain all expected node ID: " + actual);
    }
 
@@ -148,15 +151,13 @@ public abstract class TopologyClusterTestBase extends ClusterTestBase {
    protected ClientSession checkSessionOrReconnect(ClientSession session, ServerLocator locator) throws Exception {
       try {
          String rand = RandomUtil.randomString();
-         session.createQueue(rand, rand);
+         session.createQueue(rand, RoutingType.MULTICAST, rand);
          session.deleteQueue(rand);
          return session;
-      }
-      catch (ActiveMQObjectClosedException oce) {
+      } catch (ActiveMQObjectClosedException oce) {
          ClientSessionFactory sf = createSessionFactory(locator);
          return sf.createSession();
-      }
-      catch (ActiveMQUnBlockedException obe) {
+      } catch (ActiveMQUnBlockedException obe) {
          ClientSessionFactory sf = createSessionFactory(locator);
          return sf.createSession();
       }
@@ -191,7 +192,8 @@ public abstract class TopologyClusterTestBase extends ClusterTestBase {
          }
 
          Thread.sleep(10);
-      } while (System.currentTimeMillis() - start < ActiveMQTestBase.WAIT_TIMEOUT);
+      }
+      while (System.currentTimeMillis() - start < ActiveMQTestBase.WAIT_TIMEOUT);
 
       log.error(clusterDescription(servers[node]));
       Assert.assertEquals("Timed out waiting for cluster connections for server " + node, expected, nodesCount);
@@ -338,8 +340,7 @@ public abstract class TopologyClusterTestBase extends ClusterTestBase {
       try {
          session = checkSessionOrReconnect(session, locator);
          Assert.fail();
-      }
-      catch (ActiveMQException expected) {
+      } catch (ActiveMQException expected) {
          Assert.assertEquals(ActiveMQExceptionType.NOT_CONNECTED, expected.getType());
       }
    }
@@ -354,15 +355,8 @@ public abstract class TopologyClusterTestBase extends ClusterTestBase {
       }
       Assert.assertEquals(ActiveMQTestBase.CLUSTER_PASSWORD, config.getClusterPassword());
       config.setClusterPassword(config.getClusterPassword() + "-1-2-3-");
-      startServers(0, 1, 2, 4, 3);
-      int n = 0;
-      while (n++ < 10) {
-         if (!servers[4].getClusterManager().isStarted()) {
-            break;
-         }
-         Thread.sleep(100);
-      }
-      Assert.assertFalse("cluster manager should stop", servers[4].getClusterManager().isStarted());
+      startServers(0, 4);
+      Assert.assertTrue("one or the other cluster managers should stop", Wait.waitFor(() -> !servers[4].getClusterManager().isStarted() || !servers[0].getClusterManager().isStarted(), 5000));
       final String address = "foo1235";
       ServerLocator locator = createNonHALocator(isNetty());
       ClientSessionFactory sf = createSessionFactory(locator);

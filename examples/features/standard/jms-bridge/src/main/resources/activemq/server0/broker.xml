@@ -1,4 +1,4 @@
-<?xml version='1.0'?>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!--
 Licensed to the Apache Software Foundation (ASF) under one
 or more contributor license agreements.  See the NOTICE file
@@ -17,15 +17,7 @@ KIND, either express or implied.  See the License for the
 specific language governing permissions and limitations
 under the License.
 -->
-
-<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-               xmlns="urn:activemq"
-               xsi:schemaLocation="urn:activemq /schema/artemis-server.xsd">
-
-   <jms xmlns="urn:activemq:jms">
-      <topic name="topic"/>
-   </jms>
-
+<configuration xmlns="urn:activemq" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="urn:activemq /schema/artemis-configuration.xsd">
    <core xmlns="urn:activemq:core">
 
       <bindings-directory>./data/bindings</bindings-directory>
@@ -41,13 +33,17 @@ under the License.
       </acceptors>
 
       <security-settings>
-         <security-setting match="jms.#">
-            <permission type="consume" roles="guest"/>
-            <permission type="send" roles="guest"/>
-            <permission type="createNonDurableQueue" roles="guest"/>
-            <permission type="deleteNonDurableQueue" roles="guest"/>
+         <security-setting match="#">
+            <permission roles="guest" type="consume"/>
+            <permission roles="guest" type="send"/>
+            <permission roles="guest" type="createNonDurableQueue"/>
+            <permission roles="guest" type="deleteNonDurableQueue"/>
          </security-setting>
       </security-settings>
+      <addresses>
+         <address name="source">
+            <multicast/>
+         </address>
+      </addresses>
    </core>
 </configuration>
-

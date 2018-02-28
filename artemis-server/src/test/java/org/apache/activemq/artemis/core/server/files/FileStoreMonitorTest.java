@@ -96,13 +96,12 @@ public class FileStoreMonitorTest extends ActiveMQTestBase {
       };
 
       final AtomicBoolean fakeReturn = new AtomicBoolean(false);
-      FileStoreMonitor storeMonitor = new FileStoreMonitor(scheduledExecutorService, executorService, 100, TimeUnit.MILLISECONDS, 0.999) {
+      FileStoreMonitor storeMonitor = new FileStoreMonitor(scheduledExecutorService, executorService, 100, TimeUnit.MILLISECONDS, 0.999, null) {
          @Override
          protected double calculateUsage(FileStore store) throws IOException {
             if (fakeReturn.get()) {
                return 1f;
-            }
-            else {
+            } else {
                return super.calculateUsage(store);
             }
          }
@@ -128,7 +127,7 @@ public class FileStoreMonitorTest extends ActiveMQTestBase {
    @Test
    public void testScheduler() throws Exception {
 
-      FileStoreMonitor storeMonitor = new FileStoreMonitor(scheduledExecutorService, executorService, 20, TimeUnit.MILLISECONDS, 0.9);
+      FileStoreMonitor storeMonitor = new FileStoreMonitor(scheduledExecutorService, executorService, 20, TimeUnit.MILLISECONDS, 0.9, null);
 
       final ReusableLatch latch = new ReusableLatch(5);
       storeMonitor.addStore(getTestDirfile());
@@ -151,7 +150,6 @@ public class FileStoreMonitorTest extends ActiveMQTestBase {
       });
       storeMonitor.start();
 
-
       Assert.assertTrue(latch.await(1, TimeUnit.SECONDS));
 
       storeMonitor.stop();
@@ -160,7 +158,7 @@ public class FileStoreMonitorTest extends ActiveMQTestBase {
 
       Assert.assertFalse(latch.await(100, TimeUnit.MILLISECONDS));
 
-//      FileStoreMonitor monitor = new FileStoreMonitor()
+      //      FileStoreMonitor monitor = new FileStoreMonitor()
 
    }
 }

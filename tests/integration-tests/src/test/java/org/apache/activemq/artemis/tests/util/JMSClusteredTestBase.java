@@ -16,6 +16,13 @@
  */
 package org.apache.activemq.artemis.tests.util;
 
+import javax.jms.ConnectionFactory;
+import javax.jms.Queue;
+import javax.jms.Topic;
+import javax.management.MBeanServer;
+import javax.management.MBeanServerFactory;
+import java.util.ArrayList;
+
 import org.apache.activemq.artemis.api.core.TransportConfiguration;
 import org.apache.activemq.artemis.api.jms.ActiveMQJMSClient;
 import org.apache.activemq.artemis.api.jms.JMSFactoryType;
@@ -32,13 +39,6 @@ import org.apache.activemq.artemis.jms.server.impl.JMSServerManagerImpl;
 import org.apache.activemq.artemis.tests.integration.IntegrationTestLogger;
 import org.apache.activemq.artemis.tests.unit.util.InVMNamingContext;
 import org.junit.Before;
-
-import javax.jms.ConnectionFactory;
-import javax.jms.Queue;
-import javax.jms.Topic;
-import javax.management.MBeanServer;
-import javax.management.MBeanServerFactory;
-import java.util.ArrayList;
 
 public class JMSClusteredTestBase extends ActiveMQTestBase {
 
@@ -87,8 +87,8 @@ public class JMSClusteredTestBase extends ActiveMQTestBase {
       jmsServer2.createQueue(false, name, null, true, "/queue/" + name);
       jmsServer1.createQueue(false, name, null, true, "/queue/" + name);
 
-      assertTrue(waitForBindings(server1, "jms.queue." + name, false, 1, 0, 10000));
-      assertTrue(waitForBindings(server2, "jms.queue." + name, false, 1, 0, 10000));
+      assertTrue(waitForBindings(server1, name, false, 1, 0, 10000));
+      assertTrue(waitForBindings(server2, name, false, 1, 0, 10000));
 
       return (Queue) context1.lookup("/queue/" + name);
    }
@@ -169,11 +169,22 @@ public class JMSClusteredTestBase extends ActiveMQTestBase {
       final String destinationLabel = "toServer" + destination;
       final String sourceLabel = "server" + source;
 
-      Configuration configuration = createDefaultInVMConfig(source).setSecurityEnabled(false).setJMXManagementEnabled(true).setPersistenceEnabled(false).addConnectorConfiguration(destinationLabel, new TransportConfiguration(InVMConnectorFactory.class.getName(), generateInVMParams(destination))).addConnectorConfiguration(sourceLabel, new TransportConfiguration(InVMConnectorFactory.class.getName(), generateInVMParams(source))).addClusterConfiguration(new ClusterConnectionConfiguration().setName(destinationLabel).setAddress("jms").setConnectorName(sourceLabel).setRetryInterval(250).setMaxHops(MAX_HOPS).setConfirmationWindowSize(1024).setMessageLoadBalancingType(MessageLoadBalancingType.ON_DEMAND).setStaticConnectors(new ArrayList<String>() {
-         {
-            add(destinationLabel);
-         }
-      }));
+      Configuration configuration = createDefaultInVMConfig(source).setSecurityEnabled(false)
+                                                                   .setJMXManagementEnabled(true)
+                                                                   .setPersistenceEnabled(false)
+                                                                   .addConnectorConfiguration(destinationLabel, new TransportConfiguration(InVMConnectorFactory.class.getName(), generateInVMParams(destination)))
+                                                                   .addConnectorConfiguration(sourceLabel, new TransportConfiguration(InVMConnectorFactory.class.getName(), generateInVMParams(source)))
+                                                                   .addClusterConfiguration(new ClusterConnectionConfiguration().setName(destinationLabel)
+                                                                                                                                .setConnectorName(sourceLabel)
+                                                                                                                                .setRetryInterval(250)
+                                                                                                                                .setMaxHops(MAX_HOPS)
+                                                                                                                                .setConfirmationWindowSize(1024)
+                                                                                                                                .setMessageLoadBalancingType(MessageLoadBalancingType.ON_DEMAND)
+                                                                                                                                .setStaticConnectors(new ArrayList<String>() {
+                                                                                                                                   {
+                                                                                                                                      add(destinationLabel);
+                                                                                                                                   }
+                                                                                                                                }));
 
       configuration.getAddressesSettings().put("#", new AddressSettings().setRedistributionDelay(0));
 

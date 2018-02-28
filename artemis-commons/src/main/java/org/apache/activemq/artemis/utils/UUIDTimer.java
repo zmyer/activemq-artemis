@@ -25,7 +25,7 @@ import java.util.Random;
  * <li>Java classes can only product time stamps with maximum resolution of one
  * millisecond (at least before JDK 1.5). To compensate, an additional counter
  * is used, so that more than one UUID can be generated between java clock
- * updates. Counter may be used to generate up to 10000 UUIDs for each distrinct
+ * updates. Counter may be used to generate up to 10000 UUIDs for each distinct
  * java clock value.
  * <li>Due to even lower clock resolution on some platforms (older Windows
  * versions use 55 msec resolution), timestamp value can also advanced ahead of
@@ -179,8 +179,7 @@ public class UUIDTimer {
           */
          if (mClockCounter < UUIDTimer.kClockMultiplier) { // yup, still have room
             systime = mLastUsedTimestamp;
-         }
-         else { // nope, have to roll over to next value and maybe wait
+         } else { // nope, have to roll over to next value and maybe wait
             long actDiff = mLastUsedTimestamp - systime;
             long origTime = systime;
             systime = mLastUsedTimestamp + 1L;
@@ -205,8 +204,7 @@ public class UUIDTimer {
                UUIDTimer.slowDown(origTime, actDiff);
             }
          }
-      }
-      else {
+      } else {
          /*
           * Clock has advanced normally; just need to make sure counter is reset
           * to a low value (need not be 0; good to leave a small residual to
@@ -271,14 +269,11 @@ public class UUIDTimer {
 
       if (ratio < 2L) { // 200 msecs or less
          delay = 1L;
-      }
-      else if (ratio < 10L) { // 1 second or less
+      } else if (ratio < 10L) { // 1 second or less
          delay = 2L;
-      }
-      else if (ratio < 600L) { // 1 minute or less
+      } else if (ratio < 600L) { // 1 minute or less
          delay = 3L;
-      }
-      else {
+      } else {
          delay = 5L;
       }
       // Logger.logWarning("Need to wait for "+delay+" milliseconds; virtual
@@ -288,8 +283,7 @@ public class UUIDTimer {
       do {
          try {
             Thread.sleep(delay);
-         }
-         catch (InterruptedException ie) {
+         } catch (InterruptedException ie) {
          }
          delay = 1L;
          /*
@@ -299,6 +293,7 @@ public class UUIDTimer {
          if (++counter > UUIDTimer.MAX_WAIT_COUNT) {
             break;
          }
-      } while (System.currentTimeMillis() < waitUntil);
+      }
+      while (System.currentTimeMillis() < waitUntil);
    }
 }

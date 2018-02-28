@@ -6,7 +6,7 @@
  * (the "License"); you may not use this file except in compliance with
  * the License. You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -26,6 +26,7 @@ import javax.jms.TextMessage;
 
 import org.apache.activemq.ActiveMQConnectionFactory;
 import org.apache.activemq.artemis.api.core.SimpleString;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.command.ActiveMQQueue;
 import org.junit.Test;
 
@@ -41,8 +42,8 @@ public class VerySimpleOenwireTest extends OpenWireTestBase {
    public void testOpenWireExample() throws Exception {
       Connection exConn = null;
 
-      SimpleString durableQueue = new SimpleString("jms.queue.exampleQueue");
-      this.server.createQueue(durableQueue, durableQueue, null, true, false);
+      SimpleString durableQueue = new SimpleString("exampleQueue");
+      this.server.createQueue(durableQueue, RoutingType.ANYCAST, durableQueue, null, true, false, -1, false, true);
 
       try {
          ActiveMQConnectionFactory exFact = new ActiveMQConnectionFactory();
@@ -66,8 +67,7 @@ public class VerySimpleOenwireTest extends OpenWireTestBase {
          TextMessage messageReceived = (TextMessage) messageConsumer.receive(5000);
 
          assertEquals("This is a text message", messageReceived.getText());
-      }
-      finally {
+      } finally {
          if (exConn != null) {
             exConn.close();
          }
@@ -79,8 +79,8 @@ public class VerySimpleOenwireTest extends OpenWireTestBase {
    public void testMixedOpenWireExample() throws Exception {
       Connection openConn = null;
 
-      SimpleString durableQueue = new SimpleString("jms.queue.exampleQueue");
-      this.server.createQueue(durableQueue, durableQueue, null, true, false);
+      SimpleString durableQueue = new SimpleString("exampleQueue");
+      this.server.createQueue(durableQueue, RoutingType.ANYCAST, durableQueue, null, true, false, -1, false, true);
 
       ActiveMQConnectionFactory openCF = new ActiveMQConnectionFactory();
 
@@ -113,6 +113,5 @@ public class VerySimpleOenwireTest extends OpenWireTestBase {
       artemisConn.close();
 
    }
-
 
 }

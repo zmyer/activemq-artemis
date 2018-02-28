@@ -1,5 +1,4 @@
 /**
- *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
  * this work for additional information regarding copyright ownership.
@@ -28,7 +27,8 @@ public interface CompositeDataConstants {
    String PRIORITY = "priority";
    String REDELIVERED = "redelivered";
    String TIMESTAMP = "timestamp";
-   String BODY = "body";
+   String BODY = "BodyPreview";
+   String TEXT_BODY = "text";
    String PROPERTIES = "PropertiesText";
 
    String ADDRESS_DESCRIPTION = "The Address";
@@ -42,7 +42,6 @@ public interface CompositeDataConstants {
    String TIMESTAMP_DESCRIPTION = "The message timestamp";
    String BODY_DESCRIPTION = "The message body";
    String PROPERTIES_DESCRIPTION = "The properties text";
-
 
    // User properties
    String STRING_PROPERTIES = "StringProperties";

@@ -16,7 +16,8 @@
  */
 package org.apache.activemq.artemis.core.server.impl;
 
-import java.util.concurrent.TimeUnit;
+import java.util.LinkedList;
+import java.util.Queue;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -27,6 +28,7 @@ import org.apache.activemq.artemis.api.core.TransportConfiguration;
 import org.apache.activemq.artemis.api.core.client.TopologyMember;
 import org.apache.activemq.artemis.core.server.LiveNodeLocator;
 import org.apache.activemq.artemis.core.server.cluster.qourum.SharedNothingBackupQuorum;
+import org.apache.activemq.artemis.utils.ConcurrentUtil;
 
 /**
  * NamedLiveNodeLocatorForReplication looks for a live server in the cluster with a specific backupGroupName
@@ -38,7 +40,7 @@ public class NamedLiveNodeLocatorForReplication extends LiveNodeLocator {
    private final Lock lock = new ReentrantLock();
    private final Condition condition = lock.newCondition();
    private final String backupGroupName;
-   private Pair<TransportConfiguration, TransportConfiguration> liveConfiguration;
+   private Queue<Pair<TransportConfiguration, TransportConfiguration>> liveConfigurations = new LinkedList<>();
 
    private String nodeID;
 
@@ -56,21 +58,20 @@ public class NamedLiveNodeLocatorForReplication extends LiveNodeLocator {
    public void locateNode(long timeout) throws ActiveMQException {
       try {
          lock.lock();
-         if (liveConfiguration == null) {
+         if (liveConfigurations.size() == 0) {
             try {
                if (timeout != -1L) {
-                  condition.await(timeout, TimeUnit.MILLISECONDS);
+                  ConcurrentUtil.await(condition, timeout);
+               } else {
+                  while (liveConfigurations.size() == 0) {
+                     condition.await();
+                  }
                }
-               else {
-                  condition.await();
-               }
-            }
-            catch (InterruptedException e) {
+            } catch (InterruptedException e) {
                //ignore
             }
          }
-      }
-      finally {
+      } finally {
          lock.unlock();
       }
    }
@@ -80,12 +81,14 @@ public class NamedLiveNodeLocatorForReplication extends LiveNodeLocator {
       try {
          lock.lock();
          if (backupGroupName.equals(topologyMember.getBackupGroupName()) && topologyMember.getLive() != null) {
-            liveConfiguration = new Pair<>(topologyMember.getLive(), topologyMember.getBackup());
+            Pair<TransportConfiguration, TransportConfiguration> liveConfiguration = new Pair<>(topologyMember.getLive(), topologyMember.getBackup());
+            if (!liveConfigurations.contains(liveConfiguration)) {
+               liveConfigurations.add(liveConfiguration);
+            }
             nodeID = topologyMember.getNodeId();
             condition.signal();
          }
-      }
-      finally {
+      } finally {
          lock.unlock();
       }
    }
@@ -102,19 +105,17 @@ public class NamedLiveNodeLocatorForReplication extends LiveNodeLocator {
 
    @Override
    public Pair<TransportConfiguration, TransportConfiguration> getLiveConfiguration() {
-      return liveConfiguration;
+      return liveConfigurations.peek();
    }
 
    @Override
    public void notifyRegistrationFailed(boolean alreadyReplicating) {
       try {
          lock.lock();
-         liveConfiguration = null;
+         liveConfigurations.poll();
          super.notifyRegistrationFailed(alreadyReplicating);
-      }
-      finally {
+      } finally {
          lock.unlock();
       }
    }
 }
-

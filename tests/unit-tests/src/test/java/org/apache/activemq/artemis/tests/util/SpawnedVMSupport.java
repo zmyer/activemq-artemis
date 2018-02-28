@@ -57,14 +57,16 @@ public final class SpawnedVMSupport {
                                  final String[] vmargs,
                                  final boolean logOutput,
                                  final String... args) throws Exception {
-      return SpawnedVMSupport.spawnVM(className, "-Xms512m", "-Xmx512m", vmargs, logOutput, true, args);
+      return SpawnedVMSupport.spawnVM(className, "-Xms512m", "-Xmx512m", vmargs, logOutput, true, true, args);
    }
 
-   public static Process spawnVMWithLogMacher(String wordMatch, Runnable runnable, final String className,
-                                 final String[] vmargs,
-                                 final boolean logOutput,
-                                 final String... args) throws Exception {
-      return SpawnedVMSupport.spawnVM(wordMatch, runnable, className, "-Xms512m", "-Xmx512m", vmargs, logOutput, true, args);
+   public static Process spawnVMWithLogMacher(String wordMatch,
+                                              Runnable runnable,
+                                              final String className,
+                                              final String[] vmargs,
+                                              final boolean logOutput,
+                                              final String... args) throws Exception {
+      return SpawnedVMSupport.spawnVM(wordMatch, runnable, className, "-Xms512m", "-Xmx512m", vmargs, logOutput, true, true, args);
    }
 
    public static Process spawnVM(final String className,
@@ -73,8 +75,9 @@ public final class SpawnedVMSupport {
                                  final String[] vmargs,
                                  final boolean logOutput,
                                  final boolean logErrorOutput,
+                                 final boolean useLogging,
                                  final String... args) throws Exception {
-      return spawnVM(null, null, className, memoryArg1, memoryArg2, vmargs, logOutput, logErrorOutput, args);
+      return spawnVM(null, null, className, memoryArg1, memoryArg2, vmargs, logOutput, logErrorOutput, useLogging, args);
    }
 
    public static Process spawnVM(final String wordMatch,
@@ -85,10 +88,70 @@ public final class SpawnedVMSupport {
                                  final String[] vmargs,
                                  final boolean logOutput,
                                  final boolean logErrorOutput,
+                                 final boolean useLogging,
                                  final String... args) throws Exception {
-      ProcessBuilder builder = new ProcessBuilder();
+      return spawnVM(System.getProperty("java.class.path"), wordMatch, wordRunning, className, memoryArg1, memoryArg2, vmargs, logOutput, logErrorOutput, useLogging, args);
+
+   }
+
+
+   public static Process spawnVM(String classPath,
+                                 String wordMatch,
+                                 Runnable wordRunning,
+                                 String className,
+                                 String memoryArg1,
+                                 String memoryArg2,
+                                 String[] vmargs,
+                                 boolean logOutput,
+                                 boolean logErrorOutput,
+                                 boolean useLogging,
+                                 String... args) throws IOException, ClassNotFoundException {
+      return spawnVM(classPath, wordMatch, wordRunning, className, memoryArg1,memoryArg2, vmargs, logOutput, logErrorOutput, useLogging, -1, args);
+   }
+
+   /**
+    *
+    * @param classPath
+    * @param wordMatch
+    * @param wordRunning
+    * @param className
+    * @param memoryArg1
+    * @param memoryArg2
+    * @param vmargs
+    * @param logOutput
+    * @param logErrorOutput
+    * @param useLogging
+    * @param debugPort if <=0 it means no debug
+    * @param args
+    * @return
+    * @throws IOException
+    * @throws ClassNotFoundException
+    */
+   public static Process spawnVM(String classPath,
+                                 String wordMatch,
+                                 Runnable wordRunning,
+                                 String className,
+                                 String memoryArg1,
+                                 String memoryArg2,
+                                 String[] vmargs,
+                                 boolean logOutput,
+                                 boolean logErrorOutput,
+                                 boolean useLogging,
+                                 long debugPort,
+                                 String... args) throws IOException, ClassNotFoundException {
       final String javaPath = Paths.get(System.getProperty("java.home"), "bin", "java").toAbsolutePath().toString();
-      builder.command(javaPath, memoryArg1, memoryArg2, "-cp", System.getProperty("java.class.path"));
+      ProcessBuilder builder = new ProcessBuilder();
+      if (memoryArg1 == null) {
+         memoryArg1 = "-Xms128m";
+      }
+      if (memoryArg2 == null) {
+         memoryArg2 = "-Xmx128m";
+      }
+      builder.command(javaPath, memoryArg1, memoryArg2);
+      if (debugPort > 0) {
+         builder.command().add("-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=" + debugPort);
+      }
+      builder.environment().put("CLASSPATH", classPath);
 
       List<String> commandList = builder.command();
 
@@ -98,6 +161,12 @@ public final class SpawnedVMSupport {
          }
       }
 
+      // The logs will be huge if you don't set this
+      if (useLogging) {
+         commandList.add("-Djava.util.logging.manager=org.jboss.logmanager.LogManager");
+         commandList.add("-Dlogging.configuration=file:../config/logging.properties");
+      }
+
       commandList.add("-Djava.io.tmpdir=" + System.getProperty("java.io.tmpdir", "./tmp"));
       commandList.add("-Djava.library.path=" + System.getProperty("java.library.path", "./native/bin"));
 
@@ -105,6 +174,11 @@ public final class SpawnedVMSupport {
 
       if (loggingConfigFile != null) {
          commandList.add("-Djava.util.logging.config.file=" + loggingConfigFile + " ");
+      }
+
+      String jacocoAgent = System.getProperty("jacoco.agent");
+      if (jacocoAgent != null && !jacocoAgent.isEmpty()) {
+         commandList.add(jacocoAgent);
       }
 
       String loggingPlugin = System.getProperty("org.jboss.logging.Logger.pluginClass");
@@ -127,7 +201,6 @@ public final class SpawnedVMSupport {
       errorLogger.start();
 
       return process;
-
    }
 
    /**
@@ -135,7 +208,11 @@ public final class SpawnedVMSupport {
     * @param process
     * @throws ClassNotFoundException
     */
-   public static void startLogger(final boolean print, final String wordMatch, final Runnable wordRunanble, final String className, final Process process) throws ClassNotFoundException {
+   public static void startLogger(final boolean print,
+                                  final String wordMatch,
+                                  final Runnable wordRunanble,
+                                  final String className,
+                                  final Process process) throws ClassNotFoundException {
       ProcessLogger outputLogger = new ProcessLogger(print, process.getInputStream(), className, wordMatch, wordRunanble);
       outputLogger.start();
    }
@@ -171,12 +248,10 @@ public final class SpawnedVMSupport {
          int exitValue = future.get(10, SECONDS);
          if (sameValue) {
             Assert.assertSame(value, exitValue);
-         }
-         else {
+         } else {
             Assert.assertNotSame(value, exitValue);
          }
-      }
-      finally {
+      } finally {
          p.destroy();
       }
    }
@@ -195,10 +270,15 @@ public final class SpawnedVMSupport {
       private final String wordMatch;
       /**
        * This will be executed when wordMatch is within any line on the log *
-       * * */
+       * *
+       */
       private final Runnable wordRunner;
 
-      ProcessLogger(final boolean print, final InputStream is, final String className, String wordMatch, Runnable wordRunner) throws ClassNotFoundException {
+      ProcessLogger(final boolean print,
+                    final InputStream is,
+                    final String className,
+                    String wordMatch,
+                    Runnable wordRunner) throws ClassNotFoundException {
          this.is = is;
          this.print = print;
          this.className = className;
@@ -223,8 +303,7 @@ public final class SpawnedVMSupport {
                   System.out.println(className + ":" + line);
                }
             }
-         }
-         catch (IOException ioe) {
+         } catch (IOException ioe) {
             ioe.printStackTrace();
          }
       }

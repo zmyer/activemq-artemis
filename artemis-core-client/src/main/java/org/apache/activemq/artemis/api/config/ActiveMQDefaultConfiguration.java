@@ -16,8 +16,13 @@
  */
 package org.apache.activemq.artemis.api.config;
 
+import java.util.concurrent.TimeUnit;
+
 import org.apache.activemq.artemis.ArtemisConstants;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.api.core.SimpleString;
+import org.apache.activemq.artemis.core.server.DivertConfigurationRoutingType;
+import org.apache.activemq.artemis.utils.critical.CriticalAnalyzerPolicy;
 
 /**
  * Default values of ActiveMQ Artemis configuration parameters.
@@ -98,7 +103,7 @@ public final class ActiveMQDefaultConfiguration {
 
    // These defaults are applied depending on whether the journal type
    // is NIO or AIO.
-   private static int DEFAULT_JOURNAL_MAX_IO_AIO = 500;
+   private static int DEFAULT_JOURNAL_MAX_IO_AIO = 4096;
    private static int DEFAULT_JOURNAL_POOL_FILES = -1;
    private static int DEFAULT_JOURNAL_BUFFER_TIMEOUT_AIO = ArtemisConstants.DEFAULT_JOURNAL_BUFFER_TIMEOUT_AIO;
    private static int DEFAULT_JOURNAL_BUFFER_SIZE_AIO = ArtemisConstants.DEFAULT_JOURNAL_BUFFER_SIZE_AIO;
@@ -130,6 +135,9 @@ public final class ActiveMQDefaultConfiguration {
    // true means that the server will use the file based journal for persistence.
    private static boolean DEFAULT_PERSISTENCE_ENABLED = true;
 
+   // true means that the server will sync data files
+   private static boolean DEFAULT_JOURNAL_DATASYNC = true;
+
    // Maximum number of threads to use for the scheduled thread pool
    private static int DEFAULT_SCHEDULED_THREAD_POOL_MAX_SIZE = 5;
 
@@ -154,14 +162,15 @@ public final class ActiveMQDefaultConfiguration {
    // true means that the server supports wild card routing
    private static boolean DEFAULT_WILDCARD_ROUTING_ENABLED = true;
 
-   // the name of the management address to send management messages to. It is prefixed with "jms.queue" so that JMS clients can send messages to it.
-   private static SimpleString DEFAULT_MANAGEMENT_ADDRESS = new SimpleString("jms.queue.activemq.management");
+   private static String DEFAULT_ADDRESS_PATH_SEPARATOR = ".";
+
+   private static SimpleString DEFAULT_MANAGEMENT_ADDRESS = new SimpleString("activemq.management");
 
    // the name of the address that consumers bind to receive management notifications
    private static SimpleString DEFAULT_MANAGEMENT_NOTIFICATION_ADDRESS = new SimpleString("activemq.notifications");
 
-   // The default address used for clustering
-   private static String DEFAULT_CLUSTER_ADDRESS = "jms";
+   // The default address used for clustering, empty string means all addresses
+   private static String DEFAULT_CLUSTER_ADDRESS = "";
 
    // Cluster username. It applies to all cluster configurations.
    private static String DEFAULT_CLUSTER_USER = "ACTIVEMQ.CLUSTER.ADMIN.USER";
@@ -170,7 +179,7 @@ public final class ActiveMQDefaultConfiguration {
    private static String DEFAULT_CLUSTER_PASSWORD = "CHANGE ME!!";
 
    // This option controls whether passwords in server configuration need be masked. If set to "true" the passwords are masked.
-   private static boolean DEFAULT_MASK_PASSWORD = false;
+   private static Boolean DEFAULT_MASK_PASSWORD = null;
 
    // true means that the management API is available via JMX
    private static boolean DEFAULT_JMX_MANAGEMENT_ENABLED = true;
@@ -253,14 +262,11 @@ public final class ActiveMQDefaultConfiguration {
    // The percentage of live data on which we consider compacting the journal
    private static int DEFAULT_JOURNAL_COMPACT_PERCENTAGE = 30;
 
+   // The time to wait when opening a new journal file before failing
+   private static int DEFAULT_JOURNAL_FILE_OPEN_TIMEOUT = 5;
+
    // The minimal number of data files before we can start compacting
    private static int DEFAULT_JOURNAL_COMPACT_MIN_FILES = 10;
-
-   // XXX Only meant to be used by project developers
-   private static int DEFAULT_JOURNAL_PERF_BLAST_PAGES = -1;
-
-   // XXX Only meant to be used by project developers
-   private static boolean DEFAULT_RUN_SYNC_SPEED_TEST = false;
 
    // Interval to log server specific information (e.g. memory usage etc)
    private static long DEFAULT_SERVER_DUMP_INTERVAL = -1;
@@ -299,12 +305,12 @@ public final class ActiveMQDefaultConfiguration {
    private static boolean DEFAULT_BRIDGE_DUPLICATE_DETECTION = true;
 
    // Once the bridge has received this many bytes, it sends a confirmation
-   private static int DEFAULT_BRIDGE_CONFIRMATION_WINDOW_SIZE = 1048576;
+   private static int DEFAULT_BRIDGE_CONFIRMATION_WINDOW_SIZE = 1024 * 1024 * 10;
 
    // Producer flow control
    private static int DEFAULT_BRIDGE_PRODUCER_WINDOW_SIZE = -1;
 
-   // Upon reconnection this configures the number of time the same node on the topology will be retried before reseting the server locator and using the initial connectors
+   // Upon reconnection this configures the number of time the same node on the topology will be retried before resetting the server locator and using the initial connectors
    private static int DEFAULT_BRIDGE_CONNECT_SAME_NODE = 10;
 
    // The period (in milliseconds) used to check if the cluster connection has failed to receive pings from another server
@@ -343,7 +349,7 @@ public final class ActiveMQDefaultConfiguration {
    private static int DEFAULT_CLUSTER_MAX_HOPS = 1;
 
    // The size (in bytes) of the window used for confirming data from the server connected to.
-   private static int DEFAULT_CLUSTER_CONFIRMATION_WINDOW_SIZE = 1048576;
+   private static int DEFAULT_CLUSTER_CONFIRMATION_WINDOW_SIZE = 1024 * 1024 * 10;
 
    // How long to wait for a reply if in the middle of a fail-over. -1 means wait forever.
    private static long DEFAULT_CLUSTER_CALL_FAILOVER_TIMEOUT = -1;
@@ -356,6 +362,9 @@ public final class ActiveMQDefaultConfiguration {
 
    // whether this is an exclusive divert
    private static boolean DEFAULT_DIVERT_EXCLUSIVE = false;
+
+   // how the divert should handle the message's routing type
+   private static String DEFAULT_DIVERT_ROUTING_TYPE = DivertConfigurationRoutingType.STRIP.toString();
 
    // If true then the server will request a backup on another node
    private static boolean DEFAULT_HAPOLICY_REQUEST_BACKUP = false;
@@ -390,6 +399,9 @@ public final class ActiveMQDefaultConfiguration {
    // Will this backup server come live on a normal server shutdown
    private static boolean DEFAULT_FAILOVER_ON_SERVER_SHUTDOWN = false;
 
+   // Will a shared-store master startup wait for activation
+   private static boolean  DEFAULT_WAIT_FOR_ACTIVATION = true;
+
    // Will the broker populate the message with the name of the validated user
    private static boolean DEFAULT_POPULATE_VALIDATED_USER = false;
 
@@ -411,8 +423,8 @@ public final class ActiveMQDefaultConfiguration {
    // Default database url.  Derby database is used by default.
    private static String DEFAULT_DATABASE_URL = null;
 
-   // Default JDBC Driver class name
-   private static String DEFAULT_JDBC_DRIVER_CLASS_NAME = null;
+   // Default JDBC Driver class name, derby by default just for demo purposes
+   private static String DEFAULT_JDBC_DRIVER_CLASS_NAME = "org.apache.derby.jdbc.EmbeddedDriver";
 
    // Default message table name, used with Database storage type
    private static String DEFAULT_MESSAGE_TABLE_NAME = "MESSAGES";
@@ -423,17 +435,73 @@ public final class ActiveMQDefaultConfiguration {
    // Default large messages table name, used with Database storage type
    private static final String DEFAULT_LARGE_MESSAGES_TABLE_NAME = "LARGE_MESSAGES";
 
+   // Default large messages table name, used with Database storage type
+   private static final String DEFAULT_PAGE_STORE_TABLE_NAME = "PAGE_STORE";
+
+   // Default node manager store table name, used with Database storage type
+   private static final String DEFAULT_NODE_MANAGER_STORE_TABLE_NAME = "NODE_MANAGER_STORE";
+
+   private static final int DEFAULT_JDBC_NETWORK_TIMEOUT = (int) TimeUnit.SECONDS.toMillis(20);
+
+   private static final long DEFAULT_JDBC_LOCK_RENEW_PERIOD_MILLIS = TimeUnit.SECONDS.toMillis(4);
+
+   private static final long DEFAULT_JDBC_LOCK_EXPIRATION_MILLIS = TimeUnit.SECONDS.toMillis(20);
+
+   private static final long DEFAULT_JDBC_LOCK_ACQUISITION_TIMEOUT_MILLIS = TimeUnit.SECONDS.toMillis(60);
+
    // Default period to wait between connection TTL checks
    public static final long DEFAULT_CONNECTION_TTL_CHECK_INTERVAL = 2000;
 
    // Default period to wait between configuration file checks
    public static final long DEFAULT_CONFIGURATION_FILE_REFRESH_PERIOD = 5000;
 
-   public static final long DEFAULT_GLOBAL_MAX_SIZE = -1;
+   public static final boolean DEFAULT_AMQP_USE_CORE_SUBSCRIPTION_NAMING = false;
+
+   public static final long DEFAULT_GLOBAL_MAX_SIZE = Runtime.getRuntime().maxMemory() / 2;
 
    public static final int DEFAULT_MAX_DISK_USAGE = 100;
 
    public static final int DEFAULT_DISK_SCAN = 5000;
+
+   public static final int DEFAULT_MAX_QUEUE_CONSUMERS = -1;
+
+   public static final boolean DEFAULT_EXCLUSIVE = false;
+
+   public static final boolean DEFAULT_LAST_VALUE = false;
+
+   public static final boolean DEFAULT_PURGE_ON_NO_CONSUMERS = false;
+
+   public static final RoutingType DEFAULT_ROUTING_TYPE = RoutingType.MULTICAST;
+
+   public static final String DEFAULT_SYSTEM_PROPERTY_PREFIX = "brokerconfig.";
+
+   public static String DEFAULT_NETWORK_CHECK_LIST = null;
+
+   public static String DEFAULT_NETWORK_CHECK_URL_LIST = null;
+
+   public static long DEFAULT_NETWORK_CHECK_PERIOD = 5000;
+
+   public static int DEFAULT_NETWORK_CHECK_TIMEOUT = 1000;
+
+   public static String DEFAULT_NETWORK_CHECK_NIC = null;
+
+   public static final String DEFAULT_INTERNAL_NAMING_PREFIX = "$.artemis.internal.";
+
+   public static boolean DEFAULT_VOTE_ON_REPLICATION_FAILURE = false;
+
+   //how many times we retry a vote before restarting as a backup
+   private static int DEFAULT_VOTE_RETRIES = 12;
+
+   //how long we wait between votes, 5 secs
+   private static long DEFAULT_VOTE_RETRY_WAIT = 5000;
+
+   public static int DEFAULT_QUORUM_SIZE = -1;
+
+   public static final boolean DEFAULT_ANALYZE_CRITICAL = true;
+
+   public static final long DEFAULT_ANALYZE_CRITICAL_TIMEOUT = 120000;
+
+   public static final CriticalAnalyzerPolicy DEFAULT_ANALYZE_CRITICAL_POLICY = CriticalAnalyzerPolicy.LOG;
 
    /**
     * If true then the ActiveMQ Artemis Server will make use of any Protocol Managers that are in available on the classpath. If false then only the core protocol will be available, unless in Embedded mode where users can inject their own Protocol Managers.
@@ -454,6 +522,10 @@ public final class ActiveMQDefaultConfiguration {
     */
    public static boolean isDefaultPersistenceEnabled() {
       return DEFAULT_PERSISTENCE_ENABLED;
+   }
+
+   public static boolean isDefaultJournalDatasync() {
+      return DEFAULT_JOURNAL_DATASYNC;
    }
 
    /**
@@ -512,6 +584,10 @@ public final class ActiveMQDefaultConfiguration {
       return DEFAULT_WILDCARD_ROUTING_ENABLED;
    }
 
+   public static String getDefaultAddressPathSeparator() {
+      return DEFAULT_ADDRESS_PATH_SEPARATOR;
+   }
+
    /**
     * the name of the management address to send management messages to. It is prefixed with "jms.queue" so that JMS clients can send messages to it.
     */
@@ -526,7 +602,9 @@ public final class ActiveMQDefaultConfiguration {
       return DEFAULT_MANAGEMENT_NOTIFICATION_ADDRESS;
    }
 
-   /** The default Cluster address for the Cluster connection*/
+   /**
+    * The default Cluster address for the Cluster connection
+    */
    public static String getDefaultClusterAddress() {
       return DEFAULT_CLUSTER_ADDRESS;
    }
@@ -548,7 +626,7 @@ public final class ActiveMQDefaultConfiguration {
    /**
     * This option controls whether passwords in server configuration need be masked. If set to "true" the passwords are masked.
     */
-   public static boolean isDefaultMaskPassword() {
+   public static Boolean isDefaultMaskPassword() {
       return DEFAULT_MASK_PASSWORD;
    }
 
@@ -733,6 +811,7 @@ public final class ActiveMQDefaultConfiguration {
 
    /**
     * How many journal files can be resued
+    *
     * @return
     */
    public static int getDefaultJournalPoolFiles() {
@@ -746,25 +825,15 @@ public final class ActiveMQDefaultConfiguration {
       return DEFAULT_JOURNAL_COMPACT_PERCENTAGE;
    }
 
+   public static int getDefaultJournalFileOpenTimeout() {
+      return DEFAULT_JOURNAL_FILE_OPEN_TIMEOUT;
+   }
+
    /**
     * The minimal number of data files before we can start compacting
     */
    public static int getDefaultJournalCompactMinFiles() {
       return DEFAULT_JOURNAL_COMPACT_MIN_FILES;
-   }
-
-   /**
-    * XXX Only meant to be used by project developers
-    */
-   public static int getDefaultJournalPerfBlastPages() {
-      return DEFAULT_JOURNAL_PERF_BLAST_PAGES;
-   }
-
-   /**
-    * XXX Only meant to be used by project developers
-    */
-   public static boolean isDefaultRunSyncSpeedTest() {
-      return DEFAULT_RUN_SYNC_SPEED_TEST;
    }
 
    /**
@@ -989,6 +1058,13 @@ public final class ActiveMQDefaultConfiguration {
    }
 
    /**
+    * how the divert should handle the message's routing type
+    */
+   public static String getDefaultDivertRoutingType() {
+      return DEFAULT_DIVERT_ROUTING_TYPE;
+   }
+
+   /**
     * If true then the server will request a backup on another node
     */
    public static boolean isDefaultHapolicyRequestBackup() {
@@ -1060,19 +1136,26 @@ public final class ActiveMQDefaultConfiguration {
 
    /**
     * if we have to start as a replicated server this is the delay to wait before fail-back occurs
-    * @deprecated  use getDefaultInitialReplicationSyncTimeout()
+    *
+    * @deprecated use getDefaultInitialReplicationSyncTimeout()
     */
    @Deprecated
    public static long getDefaultFailbackDelay() {
       return 5000;
    }
 
-
    /**
     * Will this backup server come live on a normal server shutdown
     */
    public static boolean isDefaultFailoverOnServerShutdown() {
       return DEFAULT_FAILOVER_ON_SERVER_SHUTDOWN;
+   }
+
+   /**
+    * Will a shared-store master startup wait for activation
+    */
+   public static boolean isDefaultWaitForActivation() {
+      return DEFAULT_WAIT_FOR_ACTIVATION;
    }
 
    /**
@@ -1143,6 +1226,30 @@ public final class ActiveMQDefaultConfiguration {
       return DEFAULT_LARGE_MESSAGES_TABLE_NAME;
    }
 
+   public static String getDefaultPageStoreTableName() {
+      return DEFAULT_PAGE_STORE_TABLE_NAME;
+   }
+
+   public static String getDefaultNodeManagerStoreTableName() {
+      return DEFAULT_NODE_MANAGER_STORE_TABLE_NAME;
+   }
+
+   public static int getDefaultJdbcNetworkTimeout() {
+      return DEFAULT_JDBC_NETWORK_TIMEOUT;
+   }
+
+   public static long getDefaultJdbcLockRenewPeriodMillis() {
+      return DEFAULT_JDBC_LOCK_RENEW_PERIOD_MILLIS;
+   }
+
+   public static long getDefaultJdbcLockExpirationMillis() {
+      return DEFAULT_JDBC_LOCK_EXPIRATION_MILLIS;
+   }
+
+   public static long getDefaultJdbcLockAcquisitionTimeoutMillis() {
+      return DEFAULT_JDBC_LOCK_ACQUISITION_TIMEOUT_MILLIS;
+   }
+
    public static long getDefaultConnectionTtlCheckInterval() {
       return DEFAULT_CONNECTION_TTL_CHECK_INTERVAL;
    }
@@ -1151,7 +1258,13 @@ public final class ActiveMQDefaultConfiguration {
       return DEFAULT_CONFIGURATION_FILE_REFRESH_PERIOD;
    }
 
-   /** The default global max size. -1 = no global max size. */
+   public static boolean getDefaultAmqpUseCoreSubscriptionNaming() {
+      return DEFAULT_AMQP_USE_CORE_SUBSCRIPTION_NAMING;
+   }
+
+   /**
+    * The default global max size. -1 = no global max size.
+    */
    public static long getDefaultMaxGlobalSize() {
       return DEFAULT_GLOBAL_MAX_SIZE;
    }
@@ -1162,5 +1275,88 @@ public final class ActiveMQDefaultConfiguration {
 
    public static int getDefaultDiskScanPeriod() {
       return DEFAULT_DISK_SCAN;
+   }
+
+   public static int getDefaultMaxQueueConsumers() {
+      return DEFAULT_MAX_QUEUE_CONSUMERS;
+   }
+
+   public static boolean getDefaultExclusive() {
+      return DEFAULT_EXCLUSIVE;
+   }
+
+   public static boolean getDefaultLastValue() {
+      return DEFAULT_EXCLUSIVE;
+   }
+
+   public static boolean getDefaultPurgeOnNoConsumers() {
+      return DEFAULT_PURGE_ON_NO_CONSUMERS;
+   }
+
+   public static String getInternalNamingPrefix() {
+      return DEFAULT_INTERNAL_NAMING_PREFIX;
+   }
+
+   public static RoutingType getDefaultRoutingType() {
+      return DEFAULT_ROUTING_TYPE;
+   }
+
+   public static String getDefaultSystemPropertyPrefix() {
+      return DEFAULT_SYSTEM_PROPERTY_PREFIX;
+   }
+
+   public static String getDefaultNetworkCheckList() {
+      return DEFAULT_NETWORK_CHECK_LIST;
+   }
+
+   public static String getDefaultNetworkCheckURLList() {
+      return DEFAULT_NETWORK_CHECK_URL_LIST;
+   }
+
+   public static long getDefaultNetworkCheckPeriod() {
+      return DEFAULT_NETWORK_CHECK_PERIOD;
+   }
+
+   public static int getDefaultNetworkCheckTimeout() {
+      return DEFAULT_NETWORK_CHECK_TIMEOUT;
+   }
+
+   public static String getDefaultNetworkCheckNic() {
+      return DEFAULT_NETWORK_CHECK_NIC;
+   }
+
+   public static boolean getDefaultVoteOnReplicationFailure() {
+      return DEFAULT_VOTE_ON_REPLICATION_FAILURE;
+   }
+
+   public static int getDefaultQuorumSize() {
+      return DEFAULT_QUORUM_SIZE;
+   }
+
+
+   public static boolean getCriticalAnalyzer() {
+      return DEFAULT_ANALYZE_CRITICAL;
+   }
+
+   public static long getCriticalAnalyzerTimeout() {
+      return DEFAULT_ANALYZE_CRITICAL_TIMEOUT;
+   }
+
+   public static long getCriticalAnalyzerCheckPeriod(long timeout) {
+      // this will be 0, the implementation should return 1/2 of the configured critical timeout
+      return timeout / 2;
+   }
+
+   public static CriticalAnalyzerPolicy getCriticalAnalyzerPolicy() {
+      return DEFAULT_ANALYZE_CRITICAL_POLICY;
+   }
+
+
+   public static int getDefaultVoteRetries() {
+      return DEFAULT_VOTE_RETRIES;
+   }
+
+   public static long getDefaultVoteRetryWait() {
+      return DEFAULT_VOTE_RETRY_WAIT;
    }
 }

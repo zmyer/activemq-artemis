@@ -21,32 +21,30 @@ Each acceptor defines a way in which connections can be made to the
 Apache ActiveMQ Artemis server.
 
 In the above example we're defining an acceptor that uses
-[Netty](http://netty.io/) to listen for connections at port
+[Netty](https://netty.io/) to listen for connections at port
 `61617`.
 
-The `acceptor` element contains a `URI` that defines the kind of Acceptor
-to create along with its configuration. The `schema` part of the `URI`
+The `acceptor` element contains a `URL` that defines the kind of Acceptor
+to create along with its configuration. The `schema` part of the `URL`
 defines the Acceptor type which can either be `tcp` or `vm` which is
 `Netty` or an In VM Acceptor respectively. For `Netty` the host and the
-port of the `URI` define what host and port the Acceptor will bind to. For
-In VM the `Authority` part of the `URI` defines a unique server id.
+port of the `URL` define what host and port the `acceptor` will bind to. For
+In VM the `Authority` part of the `URL` defines a unique server id.
 
-The `acceptor` can also be configured with a set of key, value pairs
+The `acceptor` can also be configured with a set of key=value pairs
 used to configure the specific transport, the set of
-valid key-value pairs depends on the specific transport be used and are
+valid key=value pairs depends on the specific transport be used and are
 passed straight through to the underlying transport. These are set on the
-`URI` as part of the query, like so:
+`URL` as part of the query, like so:
 
     <acceptor name="netty">tcp://localhost:61617?sslEnabled=true&keyStorePath=/path</acceptor>
 
 ## Understanding Connectors
 
 Whereas acceptors are used on the server to define how we accept
-connections, connectors are used by a client to define how it connects
-to a server.
+connections, connectors are used to define how to connect to a server.
 
-Let's look at a connector defined in our `broker.xml`
-file:
+Let's look at a connector defined in our `broker.xml` file:
 
     <connectors>
        <connector name="netty">tcp://localhost:61617</connector>
@@ -56,40 +54,23 @@ Connectors can be defined inside a `connectors` element. There can be
 one or more connectors defined in the `connectors` element. There's no
 upper limit to the number of connectors per server.
 
-You make ask yourself, if connectors are used by the *client* to make
-connections then why are they defined on the *server*? There are a
-couple of reasons for this:
+A `connector` is used when the server acts as a client itself, e.g.:
 
--   Sometimes the server acts as a client itself when it connects to
-    another server, for example when one server is bridged to another,
-    or when a server takes part in a cluster. In this cases the server
-    needs to know how to connect to other servers. That's defined by
-    *connectors*.
+-   When one server is bridged to another
+-   When a server takes part in a cluster
 
--   If you're using JMS and you're using JNDI on the client to look up
-    your JMS connection factory instances then when creating the
-    `ActiveMQConnectionFactory` it needs to know what server that
-    connection factory will create connections to.
-
-    That's defined by the `java.naming.provider.url` element in the JNDI
-    context environment, e.g. `jndi.properties`. Behind the scenes, the
-    `ActiveMQInitialContextFactory` uses the
-    `java.naming.provider.url` to construct the transport. Here's a
-    simple example:
-
-        java.naming.factory.initial=org.apache.activemq.artemis.jndi.ActiveMQInitialContextFactory
-        connectionFactory.MyConnectionFactory=tcp://myhost:61616
+In these cases the server needs to know how to connect to other servers.
+That's defined by `connectors`.
 
 ## Configuring the transport directly from the client side.
 
 How do we configure a core `ClientSessionFactory` with the information
 that it needs to connect with a server?
 
-Connectors are also used indirectly when directly configuring a core
+Connectors are also used indirectly when configuring a core
 `ClientSessionFactory` to directly talk to a server. Although in this
 case there's no need to define such a connector in the server side
-configuration, instead we just create the parameters and tell the
-`ClientSessionFactory` which connector factory to use.
+configuration, instead we just specify the appropriate URI.
 
 Here's an example of creating a `ClientSessionFactory` which will
 connect directly to the acceptor we defined earlier in this chapter, it
@@ -97,54 +78,29 @@ uses the standard Netty TCP transport and will try and connect on port
 61617 to localhost (default):
 
 ``` java
-Map<String, Object> connectionParams = new HashMap<String, Object>();
-
-connectionParams.put(org.apache.activemq.artemis.core.remoting.impl.netty.TransportConstants.PORT_PROP_NAME,
-                    61617);
-
-TransportConfiguration transportConfiguration =
-    new TransportConfiguration(
-    "org.apache.activemq.artemis.core.remoting.impl.netty.NettyConnectorFactory",
-    connectionParams);
-
-ServerLocator locator = ActiveMQClient.createServerLocatorWithoutHA(transportConfiguration);
+ServerLocator locator = ActiveMQClient.createServerLocator("tcp://localhost:61617");
 
 ClientSessionFactory sessionFactory = locator.createClientSessionFactory();
 
 ClientSession session = sessionFactory.createSession(...);
-
-etc
 ```
 
 Similarly, if you're using JMS, you can configure the JMS connection
-factory directly on the client side without having to define a connector
-on the server side or define a connection factory in `activemq-jms.xml`:
+factory directly on the client side:
 
 ``` java
-Map<String, Object> connectionParams = new HashMap<String, Object>();
-
-connectionParams.put(org.apache.activemq.artemis.core.remoting.impl.netty.TransportConstants.PORT_PROP_NAME, 61617);
-
-TransportConfiguration transportConfiguration =
-    new TransportConfiguration(
-    "org.apache.activemq.artemis.core.remoting.impl.netty.NettyConnectorFactory",
-    connectionParams);
-
-ConnectionFactory connectionFactory = ActiveMQJMSClient.createConnectionFactoryWithoutHA(JMSFactoryType.CF, transportConfiguration);
+ConnectionFactory connectionFactory = new ActiveMQConnectionFactory("tcp://localhost:61617");
 
 Connection jmsConnection = connectionFactory.createConnection();
-
-etc
 ```
 
 ## Configuring the Netty transport
 
 Out of the box, Apache ActiveMQ Artemis currently uses
-[Netty](http://netty.io/), a high performance low level
+[Netty](https://netty.io/), a high performance low level
 network library.
 
 Our Netty transport can be configured in several different ways; to use
-old (blocking) Java IO, or NIO (non-blocking), also to use
 straightforward TCP sockets, SSL, or to tunnel over HTTP or HTTPS..
 
 We believe this caters for the vast majority of transport requirements.
@@ -160,29 +116,23 @@ Sockets are being used and also use the appropriate decoders
 It is possible to limit which protocols are supported by using the
 `protocols` parameter on the Acceptor like so:
 
-        <connector name="netty">tcp://localhost:61617?protocols=CORE,AMQP</connector>
+        <acceptor name="netty">tcp://localhost:61617?protocols=CORE,AMQP</acceptor>
 
 ## Configuring Netty TCP
 
-Netty TCP is a simple unencrypted TCP sockets based transport. Netty TCP
-can be configured to use old blocking Java IO or non blocking Java NIO.
-We recommend you use the Java NIO on the server side for better
-scalability with many concurrent connections. However using Java old IO
-can sometimes give you better latency than NIO when you're not so
-worried about supporting many thousands of concurrent connections.
-
-If you're running connections across an untrusted network please bear in
+Netty TCP is a simple unencrypted TCP sockets based transport. If you're
+running connections across an untrusted network please bear in
 mind this transport is unencrypted. You may want to look at the SSL or
 HTTPS configurations.
 
 With the Netty TCP transport all connections are initiated from the
-client side. I.e. the server does not initiate any connections to the
-client. This works well with firewall policies that typically only allow
+client side (i.e. the server does not initiate any connections to the
+client). This works well with firewall policies that typically only allow
 connections to be initiated in one direction.
 
-All the valid Netty transport keys are defined in the class
-`org.apache.activemq.artemis.core.remoting.impl.netty.TransportConstants`. Most
-parameters can be used either with acceptors or connectors, some only
+All the valid keys for the `tcp` URL scheme used for Netty are defined in the
+class `org.apache.activemq.artemis.core.remoting.impl.netty.TransportConstants`.
+Most parameters can be used either with acceptors or connectors, some only
 work with acceptors. The following parameters can be used to configure
 Netty for simple TCP:
 
@@ -214,9 +164,9 @@ Netty for simple TCP:
     default value for this property is `61616`.
 
 -   `tcpNoDelay`. If this is `true` then [Nagle's
-    algorithm](http://en.wikipedia.org/wiki/Nagle%27s_algorithm) will be
+    algorithm](https://en.wikipedia.org/wiki/Nagle%27s_algorithm) will be
     disabled. This is a [Java (client) socket
-    option](http://docs.oracle.com/javase/7/docs/technotes/guides/net/socketOpt.html).
+    option](https://docs.oracle.com/javase/8/docs/technotes/guides/net/socketOpt.html).
     The default value for this property is `true`.
 
 -   `tcpSendBufferSize`. This parameter determines the size of the
@@ -241,6 +191,17 @@ Netty for simple TCP:
 -   `tcpReceiveBufferSize`. This parameter determines the size of the
     TCP receive buffer in bytes. The default value for this property is
     `32768` bytes (32KiB).
+    
+-   `writeBufferLowWaterMark`. This parameter determines the low water mark of 
+    the Netty write buffer. Once the number of bytes queued in the write buffer exceeded 
+    the high water mark and then dropped down below this value, Netty's channel 
+    will start to be writable again. The default value for this property is 
+    `32768` bytes (32KiB).
+ 
+-   `writeBufferHighWaterMark`. This parameter determines the high water mark of 
+    the Netty write buffer. If the number of bytes queued in the write buffer exceeds 
+    this value, Netty's channel will start to be not writable. The default value for 
+    this property is `131072` bytes (128KiB).
 
 -   `batchDelay`. Before writing packets to the transport, Apache ActiveMQ Artemis can
     be configured to batch up writes for a maximum of `batchDelay`
@@ -260,7 +221,10 @@ Netty for simple TCP:
     willing to take some small extra hit on latency but want the highest
     throughput set `directDeliver` to `false`.
 
--   `nioRemotingThreads`. When configured to use NIO, Apache ActiveMQ Artemis will,
+-   `nioRemotingThreads` This is deprecated. It is replaced by `remotingThreads`, 
+    if you are using this please update your configuration
+
+-   `remotingThreads`. Apache ActiveMQ Artemis will,
     by default, use a number of threads equal to three times the number
     of cores (or hyper-threads) as reported by
     `Runtime.getRuntime().availableProcessors()` for processing incoming
@@ -291,7 +255,52 @@ Netty for simple TCP:
     the connection is refused. In the case of a `core` client, it will
     result in a `org.apache.activemq.artemis.api.core.ActiveMQConnectionTimedOutException`.
 
+-   `handshake-timeout`. Prevents an unauthorised client opening a large 
+    number of connections and just keeping them open. As connections each
+    require a file handle this consumes resources that are then unavailable 
+    to other clients. Once the connection is authenticated, the usual rules 
+    can be enforced regarding resource consumption. Default value is set to
+    10 seconds. Each integer is valid value. When set value to zero or
+    negative integer this feature is turned off. Changing value needs
+    to restart server to take effect.
 
+## Configuring Netty Native Transport
+
+Netty Native Transport support exists for selected OS platforms.
+This allows Apache ActiveMQ Artemis to use native sockets/io instead of Java NIO.
+
+These Native transports add features specific to a particular platform, 
+generate less garbage, and generally improve performance when compared to Java NIO based transport.
+
+Both Clients and Server can benefit from this.
+ 
+Current Supported Platforms.
+-    Linux running 64bit JVM
+-    MacOS running 64bit JVM
+
+Apache ActiveMQ Artemis will by default enable the corresponding native transport if a supported platform is detected.
+
+If running on an unsupported platform or any issues loading native libs, Apache ActiveMQ Artemis will fallback onto Java NIO.
+
+#### Linux Native Transport
+
+On supported Linux platforms Epoll is used, @see https://en.wikipedia.org/wiki/Epoll. 
+
+The following properties are specific to this native transport:
+
+-  `useEpoll` enables the use of epoll if a supported linux platform is running a 64bit JVM is detected. 
+    Setting this to `false` will force the use of Java NIO instead of epoll. Default is `true`
+
+#### MacOS Native Transport
+
+On supported MacOS platforms KQueue is used, @see https://en.wikipedia.org/wiki/Kqueue. 
+
+The following properties are specific to this native transport:
+
+-  `useKQueue` enables the use of kqueue if a supported MacOS platform running a 64bit JVM is detected. 
+    Setting this to `false` will force the use of Java NIO instead of kqueue. Default is `true`
+
+    
 ## Configuring Netty SSL
 
 Netty SSL is similar to the Netty TCP transport but it provides
@@ -406,7 +415,34 @@ following additional properties:
     and 2-way SSL.
 
     Valid values are `true` or `false`. Default is `false`.
+    
+-   `trustAll`
 
+    When used on a `connector` the client will trust the provided server certificate
+    implicitly, regardless of any configured trust store.  **Warning:** This setting is
+    primarily for testing purposes only and should not be used in production.
+
+    Valid values are `true` or `false`. Default is `false`.    
+
+-   `useDefaultSslContext`
+
+    Only valid on a `connector`. Allows the `connector` to use the "default" SSL
+    context (via `SSLContext.getDefault()`) which can be set programmatically by
+    the client (via `SSLContext.setDefault(SSLContext)`). If set to `true` all
+    other SSL related parameters except for `sslEnabled` are ignored.
+
+    Valid values are `true` or `false`. Default is `false`.
+
+-   `sslProvider`
+    
+    Used to change the SSL Provider between `JDK` and `OPENSSL`. The default is `JDK`. 
+    If used with `OPENSSL` you can add `netty-tcnative` to your classpath to use the native 
+    installed openssl. This can be useful if you want to use special ciphersuite - elliptic curve combinations
+    which are support through openssl but not through the JDK provider. See https://en.wikipedia.org/wiki/Comparison_of_TLS_implementations
+    for more information's.
+    
+    
+    
 ## Configuring Netty HTTP
 
 Netty HTTP tunnels packets over the HTTP protocol. It can be useful in
@@ -417,9 +453,9 @@ Please see the examples for a full working example of using Netty HTTP.
 Netty HTTP uses the same properties as Netty TCP but adds the following
 additional properties:
 
--   `httpEnabled`. This is now no longer needed as of version 2.4. With
-    single port support Apache ActiveMQ Artemis will now automatically detect if http
-    is being used and configure itself.
+-   `httpEnabled`. This is now no longer needed. With single port support
+    Apache ActiveMQ Artemis will now automatically detect if http is being
+    used and configure itself.
 
 -   `httpClientIdleTime`. How long a client can be idle before
     sending an empty http request to keep the connection alive

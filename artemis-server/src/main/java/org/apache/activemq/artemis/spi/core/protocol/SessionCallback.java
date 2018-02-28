@@ -16,26 +16,40 @@
  */
 package org.apache.activemq.artemis.spi.core.protocol;
 
+import org.apache.activemq.artemis.api.core.Message;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.core.server.MessageReference;
 import org.apache.activemq.artemis.core.server.ServerConsumer;
-import org.apache.activemq.artemis.core.server.ServerMessage;
 import org.apache.activemq.artemis.spi.core.remoting.ReadyListener;
 
 public interface SessionCallback {
+
+   /** A requirement to do direct delivery is:
+    *  no extra locking required at the protocol layer.
+    *  which cannot be guaranteed at AMQP as proton will need the locking.
+    *  So, disable this on AMQP or any other protocol requiring extra lock.
+    * @return
+    */
+   default boolean supportsDirectDelivery() {
+      return true;
+   }
+
 
    /**
     * This one gives a chance for Proton to have its own flow control.
     */
    boolean hasCredits(ServerConsumer consumerID);
 
-   /** This can be used to complete certain operations outside of the lock,
-    *  like acks or other operations. */
+   /**
+    * This can be used to complete certain operations outside of the lock,
+    * like acks or other operations.
+    */
    void afterDelivery() throws Exception;
 
    /**
     * Use this to updates specifics on the message after a redelivery happened.
     * Return true if there was specific logic applied on the protocol, so the ServerConsumer won't make any adjustments.
+    *
     * @param consumer
     * @param ref
     * @param failed
@@ -52,9 +66,13 @@ public interface SessionCallback {
    //       and I wanted to avoid re-fetching paged data in case of GCs on this specific case.
    //
    //       Future developments may change this, but beware why I have chosen to keep the parameter separated here
-   int sendMessage(MessageReference ref, ServerMessage message, ServerConsumer consumerID, int deliveryCount);
+   int sendMessage(MessageReference ref, Message message, ServerConsumer consumerID, int deliveryCount);
 
-   int sendLargeMessage(MessageReference reference, ServerMessage message, ServerConsumer consumerID, long bodySize, int deliveryCount);
+   int sendLargeMessage(MessageReference reference,
+                        Message message,
+                        ServerConsumer consumerID,
+                        long bodySize,
+                        int deliveryCount);
 
    int sendLargeMessageContinuation(ServerConsumer consumerID,
                                     byte[] body,
@@ -63,10 +81,16 @@ public interface SessionCallback {
 
    void closed();
 
-   void disconnect(ServerConsumer consumerId, String queueName);
+   void disconnect(ServerConsumer consumerId, SimpleString queueName);
 
-   boolean isWritable(ReadyListener callback);
+   boolean isWritable(ReadyListener callback, Object protocolContext);
 
-   /** Some protocols (Openwire) needs a special message with the browser is finished. */
+   /**
+    * Some protocols (Openwire) needs a special message with the browser is finished.
+    */
    void browserFinished(ServerConsumer consumer);
+
+   default void close(boolean failed) {
+
+   }
 }

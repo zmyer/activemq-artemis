@@ -75,8 +75,7 @@ public class SecurityNotificationTest extends ActiveMQTestBase {
       try {
          sf.createSession(unknownUser, RandomUtil.randomString(), false, true, true, false, 1);
          Assert.fail("authentication must fail and a notification of security violation must be sent");
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
       }
 
       ClientMessage[] notifications = SecurityNotificationTest.consumeMessages(1, notifConsumer);
@@ -89,7 +88,7 @@ public class SecurityNotificationTest extends ActiveMQTestBase {
       SimpleString address = RandomUtil.randomSimpleString();
 
       // guest can not create queue
-      Role role = new Role("roleCanNotCreateQueue", true, true, false, true, false, true, true, true);
+      Role role = new Role("roleCanNotCreateQueue", true, true, false, true, false, true, true, true, true, true);
       Set<Role> roles = new HashSet<>();
       roles.add(role);
       server.getSecurityRepository().addMatch(address.toString(), roles);
@@ -105,8 +104,7 @@ public class SecurityNotificationTest extends ActiveMQTestBase {
       try {
          guestSession.createQueue(address, queue, true);
          Assert.fail("session creation must fail and a notification of security violation must be sent");
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
       }
 
       ClientMessage[] notifications = SecurityNotificationTest.consumeMessages(1, notifConsumer);
@@ -138,7 +136,7 @@ public class SecurityNotificationTest extends ActiveMQTestBase {
       securityManager.getConfiguration().addUser("guest", "guest");
       securityManager.getConfiguration().setDefaultUser("guest");
 
-      Role role = new Role("notif", true, true, true, true, true, true, true, true);
+      Role role = new Role("notif", true, true, true, true, true, true, true, true, true, true);
       Set<Role> roles = new HashSet<>();
       roles.add(role);
       server.getSecurityRepository().addMatch(ActiveMQDefaultConfiguration.getDefaultManagementNotificationAddress().toString(), roles);
@@ -161,7 +159,8 @@ public class SecurityNotificationTest extends ActiveMQTestBase {
       ClientMessage message = null;
       do {
          message = notifConsumer.receive(500);
-      } while (message != null);
+      }
+      while (message != null);
    }
 
    protected static ClientMessage[] consumeMessages(final int expected,

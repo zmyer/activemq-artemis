@@ -30,4 +30,5 @@ public interface Action {
 
    String getBrokerHome();
 
+   void checkOptions(String[] options) throws InvalidOptionsError;
 }

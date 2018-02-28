@@ -16,6 +16,22 @@
  */
 package org.apache.activemq.artemis.tests.integration.jms.cluster;
 
+import javax.jms.BytesMessage;
+import javax.jms.Connection;
+import javax.jms.DeliveryMode;
+import javax.jms.ExceptionListener;
+import javax.jms.JMSException;
+import javax.jms.MessageConsumer;
+import javax.jms.MessageProducer;
+import javax.jms.Queue;
+import javax.jms.Session;
+import javax.jms.TextMessage;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import org.apache.activemq.artemis.api.core.ActiveMQException;
 import org.apache.activemq.artemis.api.core.Interceptor;
 import org.apache.activemq.artemis.api.core.SimpleString;
@@ -35,9 +51,9 @@ import org.apache.activemq.artemis.core.registry.JndiBindingRegistry;
 import org.apache.activemq.artemis.core.remoting.impl.invm.TransportConstants;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.core.server.NodeManager;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.core.server.impl.InVMNodeManager;
 import org.apache.activemq.artemis.jms.client.ActiveMQConnectionFactory;
-import org.apache.activemq.artemis.jms.client.ActiveMQDestination;
 import org.apache.activemq.artemis.jms.client.ActiveMQSession;
 import org.apache.activemq.artemis.jms.server.JMSServerManager;
 import org.apache.activemq.artemis.jms.server.impl.JMSServerManagerImpl;
@@ -51,22 +67,6 @@ import org.apache.activemq.artemis.utils.RandomUtil;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
-
-import javax.jms.BytesMessage;
-import javax.jms.Connection;
-import javax.jms.DeliveryMode;
-import javax.jms.ExceptionListener;
-import javax.jms.JMSException;
-import javax.jms.MessageConsumer;
-import javax.jms.MessageProducer;
-import javax.jms.Queue;
-import javax.jms.Session;
-import javax.jms.TextMessage;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * A JMSFailoverTest
@@ -135,8 +135,7 @@ public class JMSFailoverTest extends ActiveMQTestBase {
          JMSUtil.crash(liveServer, coreSession);
 
          assertNotNull(ctx2.lookup("/queue/queue1"));
-      }
-      finally {
+      } finally {
          if (conn != null) {
             conn.close();
          }
@@ -164,8 +163,7 @@ public class JMSFailoverTest extends ActiveMQTestBase {
          JMSUtil.crash(liveServer, coreSession);
 
          assertNotNull(ctx2.lookup("/topic/t1"));
-      }
-      finally {
+      } finally {
          if (conn != null) {
             conn.close();
          }
@@ -199,9 +197,9 @@ public class JMSFailoverTest extends ActiveMQTestBase {
 
       ClientSession coreSession = ((ActiveMQSession) sess).getCoreSession();
 
-      SimpleString jmsQueueName = new SimpleString(ActiveMQDestination.JMS_QUEUE_ADDRESS_PREFIX + "myqueue");
+      SimpleString jmsQueueName = new SimpleString("myqueue");
 
-      coreSession.createQueue(jmsQueueName, jmsQueueName, null, true);
+      coreSession.createQueue(jmsQueueName, RoutingType.ANYCAST, jmsQueueName, null, true);
 
       Queue queue = sess.createQueue("myqueue");
 
@@ -272,9 +270,9 @@ public class JMSFailoverTest extends ActiveMQTestBase {
 
       RemotingConnection coreConnLive = ((ClientSessionInternal) coreSessionLive).getConnection();
 
-      SimpleString jmsQueueName = new SimpleString(ActiveMQDestination.JMS_QUEUE_ADDRESS_PREFIX + "myqueue");
+      SimpleString jmsQueueName = new SimpleString("myqueue");
 
-      coreSessionLive.createQueue(jmsQueueName, jmsQueueName, null, true);
+      coreSessionLive.createQueue(jmsQueueName, RoutingType.ANYCAST, jmsQueueName, null, true);
 
       Queue queue = sessLive.createQueue("myqueue");
 
@@ -321,7 +319,7 @@ public class JMSFailoverTest extends ActiveMQTestBase {
 
    @Test
    public void testSendReceiveLargeMessages() throws Exception {
-      SimpleString QUEUE = new SimpleString("jms.queue.somequeue");
+      SimpleString QUEUE = new SimpleString("somequeue");
 
       ActiveMQConnectionFactory jbcf = ActiveMQJMSClient.createConnectionFactoryWithHA(JMSFactoryType.CF, livetc, backuptc);
       jbcf.setReconnectAttempts(-1);
@@ -366,8 +364,7 @@ public class JMSFailoverTest extends ActiveMQTestBase {
             // a large timeout just to help in case of debugging
             try {
                waitToKill.await(120, TimeUnit.SECONDS);
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                e.printStackTrace();
             }
 
@@ -375,14 +372,13 @@ public class JMSFailoverTest extends ActiveMQTestBase {
                System.out.println("Killing server...");
 
                JMSUtil.crash(liveServer, coreSession);
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                e.printStackTrace();
             }
          }
       };
 
-      coreSession.createQueue(QUEUE, QUEUE, true);
+      coreSession.createQueue(QUEUE, RoutingType.ANYCAST, QUEUE, true);
 
       Queue queue = sess.createQueue("somequeue");
 
@@ -420,18 +416,17 @@ public class JMSFailoverTest extends ActiveMQTestBase {
                message = (TextMessage) consumer.receive(5000);
                assertNotNull(message);
                break;
-            }
-            catch (JMSException e) {
+            } catch (JMSException e) {
                new Exception("Exception on receive message", e).printStackTrace();
             }
-         } while (retryNrs < 10);
+         }
+         while (retryNrs < 10);
 
          assertNotNull(message);
 
          try {
             sess.commit();
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             new Exception("Exception during commit", e);
             sess.rollback();
          }

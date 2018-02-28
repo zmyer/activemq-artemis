@@ -16,14 +16,13 @@
  */
 package org.apache.activemq.artemis.core.paging.cursor;
 
-import java.util.concurrent.Executor;
-
 import org.apache.activemq.artemis.core.paging.PagedMessage;
 import org.apache.activemq.artemis.core.paging.PagingStore;
 import org.apache.activemq.artemis.core.paging.impl.Page;
 import org.apache.activemq.artemis.core.server.Queue;
 import org.apache.activemq.artemis.core.transaction.Transaction;
-import org.apache.activemq.artemis.utils.LinkedListIterator;
+import org.apache.activemq.artemis.utils.actors.ArtemisExecutor;
+import org.apache.activemq.artemis.utils.collections.LinkedListIterator;
 
 public interface PageSubscription {
 
@@ -45,6 +44,8 @@ public interface PageSubscription {
 
    long getMessageCount();
 
+   long getPersistentSize();
+
    long getId();
 
    boolean isPersistent();
@@ -56,12 +57,15 @@ public interface PageSubscription {
 
    LinkedListIterator<PagedReference> iterator();
 
-   // To be called when the cursor is closed for good. Most likely when the queue is deleted
+   LinkedListIterator<PagedReference> iterator(boolean jumpRemoves);
+
+
+      // To be called when the cursor is closed for good. Most likely when the queue is deleted
    void destroy() throws Exception;
 
    void scheduleCleanupCheck();
 
-   void cleanupEntries(final boolean completeDelete) throws Exception;
+   void cleanupEntries(boolean completeDelete) throws Exception;
 
    void onPageModeCleared(Transaction tx) throws Exception;
 
@@ -93,7 +97,7 @@ public interface PageSubscription {
     */
    void reloadACK(PagePosition position);
 
-   void reloadPageCompletion(PagePosition position) throws Exception;
+   boolean reloadPageCompletion(PagePosition position) throws Exception;
 
    void reloadPageInfo(long pageNr);
 
@@ -115,7 +119,7 @@ public interface PageSubscription {
 
    void processReload() throws Exception;
 
-   void addPendingDelivery(final PagePosition position);
+   void addPendingDelivery(PagePosition position);
 
    /**
     * To be used on redeliveries
@@ -152,11 +156,18 @@ public interface PageSubscription {
    /**
     * @return executor used by the PageSubscription
     */
-   Executor getExecutor();
+   ArtemisExecutor getExecutor();
 
    /**
     * @param deletedPage
     * @throws Exception
     */
    void onDeletePage(Page deletedPage) throws Exception;
+
+   long getDeliveredCount();
+
+   long getDeliveredSize();
+
+   void incrementDeliveredSize(long size);
+
 }

@@ -25,6 +25,7 @@ import org.apache.activemq.artemis.api.core.client.ServerLocator;
 import org.apache.activemq.artemis.core.config.Configuration;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.core.server.ActiveMQServers;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.junit.Test;
 
@@ -49,8 +50,7 @@ public class GracefulShutdownTest extends ActiveMQTestBase {
          public void run() {
             try {
                server.stop();
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                e.printStackTrace();
             }
          }
@@ -65,7 +65,7 @@ public class GracefulShutdownTest extends ActiveMQTestBase {
       }
 
       // confirm we can still do work on the original connection even though the server is stopping
-      session.createQueue("testAddress", "testQueue");
+      session.createQueue("testAddress", RoutingType.ANYCAST, "testQueue");
       ClientProducer producer = session.createProducer("testAddress");
       producer.send(session.createMessage(true));
       session.start();
@@ -74,8 +74,7 @@ public class GracefulShutdownTest extends ActiveMQTestBase {
       try {
          sf.createSession();
          fail("Creating a session here should fail because the acceptors should be paused");
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          assertTrue(e instanceof ActiveMQSessionCreationException);
          ActiveMQSessionCreationException activeMQSessionCreationException = (ActiveMQSessionCreationException) e;
          assertEquals(activeMQSessionCreationException.getType(), ActiveMQExceptionType.SESSION_CREATION_REJECTED);
@@ -118,8 +117,7 @@ public class GracefulShutdownTest extends ActiveMQTestBase {
          public void run() {
             try {
                server.stop();
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                e.printStackTrace();
             }
          }
@@ -137,8 +135,7 @@ public class GracefulShutdownTest extends ActiveMQTestBase {
       try {
          sf.createSession();
          fail("Creating a session here should fail because the acceptors should be paused");
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          assertTrue(e instanceof ActiveMQSessionCreationException);
          ActiveMQSessionCreationException activeMQSessionCreationException = (ActiveMQSessionCreationException) e;
          assertEquals(activeMQSessionCreationException.getType(), ActiveMQExceptionType.SESSION_CREATION_REJECTED);

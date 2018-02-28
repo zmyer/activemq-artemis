@@ -35,6 +35,7 @@ import org.apache.activemq.artemis.api.jms.ActiveMQJMSClient;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.core.server.JournalType;
 import org.apache.activemq.artemis.core.server.Queue;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.jms.client.ActiveMQConnectionFactory;
 import org.apache.activemq.artemis.jms.client.DefaultConnectionProperties;
 import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
@@ -78,9 +79,9 @@ public class SendReceiveMultiThreadTest extends ActiveMQTestBase {
 
       server.start();
 
-      Queue queue = server.createQueue(SimpleString.toSimpleString("jms.queue.performanceQueue"), SimpleString.toSimpleString("jms.queue.performanceQueue"), null, true, false);
+      Queue queue = server.createQueue(SimpleString.toSimpleString("performanceQueue"), RoutingType.ANYCAST, SimpleString.toSimpleString("performanceQueue"), null, true, false);
 
-      Queue queue2 = server.createQueue(SimpleString.toSimpleString("jms.queue.stationaryQueue"), SimpleString.toSimpleString("jms.queue.stationaryQueue"), null, true, false);
+      Queue queue2 = server.createQueue(SimpleString.toSimpleString("stationaryQueue"), RoutingType.ANYCAST, SimpleString.toSimpleString("stationaryQueue"), null, true, false);
 
       MyThread[] threads = new MyThread[NUMBER_OF_THREADS];
 
@@ -120,15 +121,12 @@ public class SendReceiveMultiThreadTest extends ActiveMQTestBase {
                      Thread.sleep(1000);
                   }
                }
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                e.printStackTrace();
-            }
-            finally {
+            } finally {
                try {
                   conn.close();
-               }
-               catch (Exception ignored) {
+               } catch (Exception ignored) {
 
                }
             }
@@ -234,8 +232,7 @@ public class SendReceiveMultiThreadTest extends ActiveMQTestBase {
             }
             session.commit();
             connection.close();
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             e.printStackTrace();
             errors++;
          }
@@ -287,12 +284,10 @@ public class SendReceiveMultiThreadTest extends ActiveMQTestBase {
 
             connection.close();
             System.out.println("Send " + numberOfMessages + " messages on thread " + Thread.currentThread().getName());
-         }
-         catch (Exception e) {
+         } catch (Exception e) {
             e.printStackTrace();
             errors.incrementAndGet();
-         }
-         finally {
+         } finally {
             finish.countDown();
          }
       }

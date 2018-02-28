@@ -16,15 +16,15 @@
  */
 package org.apache.activemq.artemis.tests.integration.cluster.util;
 
-import org.apache.activemq.artemis.api.core.Interceptor;
-import org.apache.activemq.artemis.api.core.client.ClientSession;
-import org.apache.activemq.artemis.tests.util.CountDownSessionFailureListener;
-import org.apache.activemq.artemis.core.server.ActiveMQServer;
-import org.apache.activemq.artemis.core.server.cluster.ClusterManager;
-import org.junit.Assert;
-
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+
+import org.apache.activemq.artemis.api.core.Interceptor;
+import org.apache.activemq.artemis.api.core.client.ClientSession;
+import org.apache.activemq.artemis.core.server.ActiveMQServer;
+import org.apache.activemq.artemis.core.server.cluster.ClusterManager;
+import org.apache.activemq.artemis.tests.util.CountDownSessionFailureListener;
+import org.junit.Assert;
 
 public class SameProcessActiveMQServer implements TestableServer {
 
@@ -76,6 +76,11 @@ public class SameProcessActiveMQServer implements TestableServer {
 
    @Override
    public CountDownLatch crash(boolean waitFailure, ClientSession... sessions) throws Exception {
+      return crash(true, waitFailure, sessions);
+   }
+
+   @Override
+   public CountDownLatch crash(boolean failover, boolean waitFailure, ClientSession... sessions) throws Exception {
       CountDownLatch latch = new CountDownLatch(sessions.length);
       CountDownSessionFailureListener[] listeners = new CountDownSessionFailureListener[sessions.length];
       for (int i = 0; i < sessions.length; i++) {
@@ -87,7 +92,7 @@ public class SameProcessActiveMQServer implements TestableServer {
       clusterManager.flushExecutor();
       clusterManager.clear();
       Assert.assertTrue("server should be running!", server.isStarted());
-      server.stop(true);
+      server.fail(failover);
 
       if (waitFailure) {
          // Wait to be informed of failure

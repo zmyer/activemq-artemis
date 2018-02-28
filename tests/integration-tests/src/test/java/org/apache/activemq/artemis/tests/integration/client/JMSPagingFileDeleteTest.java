@@ -16,14 +16,6 @@
  */
 package org.apache.activemq.artemis.tests.integration.client;
 
-import org.apache.activemq.artemis.api.core.SimpleString;
-import org.apache.activemq.artemis.core.paging.PagingStore;
-import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
-import org.apache.activemq.artemis.tests.integration.IntegrationTestLogger;
-import org.apache.activemq.artemis.tests.util.JMSTestBase;
-import org.junit.Before;
-import org.junit.Test;
-
 import javax.jms.BytesMessage;
 import javax.jms.Connection;
 import javax.jms.Message;
@@ -31,6 +23,15 @@ import javax.jms.MessageConsumer;
 import javax.jms.MessageProducer;
 import javax.jms.Session;
 import javax.jms.Topic;
+
+import org.apache.activemq.artemis.api.core.SimpleString;
+import org.apache.activemq.artemis.core.paging.PagingStore;
+import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
+import org.apache.activemq.artemis.tests.integration.IntegrationTestLogger;
+import org.apache.activemq.artemis.tests.util.JMSTestBase;
+import org.apache.activemq.artemis.tests.util.Wait;
+import org.junit.Before;
+import org.junit.Test;
 
 /**
  * This will perform cleanup tests on paging while using JMS topics
@@ -107,7 +108,7 @@ public class JMSPagingFileDeleteTest extends JMSTestBase {
             }
             System.out.println("Sent " + JMSPagingFileDeleteTest.MESSAGE_NUM + " messages.");
 
-            pagingStore = server.getPagingManager().getPageStore(new SimpleString("jms.topic.topic1"));
+            pagingStore = server.getPagingManager().getPageStore(new SimpleString("topic1"));
             printPageStoreInfo(pagingStore);
 
             assertTrue(pagingStore.isPaging());
@@ -121,16 +122,11 @@ public class JMSPagingFileDeleteTest extends JMSTestBase {
             //subscriber1.close(); // << you can't call this on this test
             //session.close(); // << can't call this on this test
 
-            long timeout = System.currentTimeMillis() + 5000;
-            while (timeout > System.currentTimeMillis() && pagingStore.isPaging()) {
-               Thread.sleep(100);
-            }
+            Wait.assertFalse(pagingStore::isPaging);
             printPageStoreInfo(pagingStore);
-            assertFalse(pagingStore.isPaging());
          }
 
-      }
-      finally {
+      } finally {
          if (connection != null) {
             connection.close();
          }
@@ -160,7 +156,7 @@ public class JMSPagingFileDeleteTest extends JMSTestBase {
          }
          System.out.println("Sent " + JMSPagingFileDeleteTest.MESSAGE_NUM + " messages.");
 
-         pagingStore = server.getPagingManager().getPageStore(new SimpleString("jms.topic.topic1"));
+         pagingStore = server.getPagingManager().getPageStore(new SimpleString("topic1"));
          printPageStoreInfo(pagingStore);
 
          assertTrue(pagingStore.isPaging());
@@ -179,7 +175,7 @@ public class JMSPagingFileDeleteTest extends JMSTestBase {
             assertNotNull(message2);
          }
 
-         pagingStore = server.getPagingManager().getPageStore(new SimpleString("jms.topic.topic1"));
+         pagingStore = server.getPagingManager().getPageStore(new SimpleString("topic1"));
          long timeout = System.currentTimeMillis() + 5000;
          while (timeout > System.currentTimeMillis() && pagingStore.isPaging()) {
             Thread.sleep(100);
@@ -208,8 +204,7 @@ public class JMSPagingFileDeleteTest extends JMSTestBase {
          }
 
          assertEquals(1, pagingStore.getNumberOfPages()); //I expected number of the page is 1, but It was not.
-      }
-      finally {
+      } finally {
          if (connection != null) {
             connection.close();
          }

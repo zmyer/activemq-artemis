@@ -18,21 +18,20 @@ package org.apache.activemq.artemis.core.journal.impl;
 
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.activemq.artemis.api.core.ActiveMQException;
 import org.apache.activemq.artemis.api.core.ActiveMQUnsupportedPacketException;
+import org.apache.activemq.artemis.core.io.SequentialFileFactory;
 import org.apache.activemq.artemis.core.journal.EncodingSupport;
 import org.apache.activemq.artemis.core.journal.IOCompletion;
 import org.apache.activemq.artemis.core.journal.Journal;
 import org.apache.activemq.artemis.core.journal.JournalLoadInformation;
 import org.apache.activemq.artemis.core.journal.LoaderCallback;
+import org.apache.activemq.artemis.core.persistence.Persister;
 import org.apache.activemq.artemis.core.journal.PreparedTransactionInfo;
 import org.apache.activemq.artemis.core.journal.RecordInfo;
-import org.apache.activemq.artemis.core.io.SequentialFileFactory;
 import org.apache.activemq.artemis.core.journal.TransactionFailureCallback;
 import org.apache.activemq.artemis.core.journal.impl.dataformat.JournalAddRecord;
 import org.apache.activemq.artemis.core.journal.impl.dataformat.JournalAddRecordTX;
@@ -42,6 +41,7 @@ import org.apache.activemq.artemis.core.journal.impl.dataformat.JournalDeleteRec
 import org.apache.activemq.artemis.core.journal.impl.dataformat.JournalDeleteRecordTX;
 import org.apache.activemq.artemis.core.journal.impl.dataformat.JournalInternalRecord;
 import org.apache.activemq.artemis.core.journal.impl.dataformat.JournalRollbackRecordTX;
+import org.apache.activemq.artemis.utils.collections.ConcurrentLongHashMap;
 
 /**
  * Journal used at a replicating backup server during the synchronization of data with the 'live'
@@ -53,7 +53,7 @@ public final class FileWrapperJournal extends JournalBase {
 
    private final ReentrantLock lockAppend = new ReentrantLock();
 
-   private final ConcurrentMap<Long, AtomicInteger> transactions = new ConcurrentHashMap<>();
+   private final ConcurrentLongHashMap<AtomicInteger> transactions = new ConcurrentLongHashMap<>();
    private final JournalImpl journal;
    protected volatile JournalFile currentFile;
 
@@ -90,19 +90,36 @@ public final class FileWrapperJournal extends JournalBase {
    @Override
    public void appendAddRecord(long id,
                                byte recordType,
-                               EncodingSupport record,
+                               Persister persister,
+                               Object record,
                                boolean sync,
                                IOCompletion callback) throws Exception {
-      JournalInternalRecord addRecord = new JournalAddRecord(true, id, recordType, record);
+      JournalInternalRecord addRecord = new JournalAddRecord(true, id, recordType, persister, record);
 
-      writeRecord(addRecord, sync, callback);
+      writeRecord(addRecord, false, -1, false, callback);
+   }
+
+   @Override
+   public void flush() throws Exception {
+   }
+
+   /**
+    * The max size record that can be stored in the journal
+    *
+    * @return
+    */
+   @Override
+   public long getMaxRecordSize() {
+      return journal.getMaxRecordSize();
    }
 
    /**
     * Write the record to the current file.
     */
    private void writeRecord(JournalInternalRecord encoder,
-                            final boolean sync,
+                            final boolean tx,
+                            final long txID,
+                            final boolean removeTX,
                             final IOCompletion callback) throws Exception {
 
       lockAppend.lock();
@@ -110,62 +127,85 @@ public final class FileWrapperJournal extends JournalBase {
          if (callback != null) {
             callback.storeLineUp();
          }
-         currentFile = journal.switchFileIfNecessary(encoder.getEncodeSize());
+         testSwitchFiles(encoder);
+         if (txID >= 0) {
+            if (tx) {
+               AtomicInteger value;
+               if (removeTX) {
+                  value = transactions.remove(txID);
+               } else {
+                  value = transactions.get(txID);
+               }
+               if (value != null) {
+                  encoder.setNumberOfRecords(value.get());
+               }
+            } else {
+               count(txID);
+            }
+         }
          encoder.setFileID(currentFile.getRecordID());
 
          if (callback != null) {
-            currentFile.getFile().write(encoder, sync, callback);
+            currentFile.getFile().write(encoder, false, callback);
+         } else {
+            currentFile.getFile().write(encoder, false);
          }
-         else {
-            currentFile.getFile().write(encoder, sync);
-         }
-      }
-      finally {
+      } finally {
          lockAppend.unlock();
+      }
+   }
+
+   private void testSwitchFiles(JournalInternalRecord encoder) throws Exception {
+      JournalFile oldFile = currentFile;
+      currentFile = journal.switchFileIfNecessary(encoder.getEncodeSize());
+      if (oldFile != currentFile) {
+         for (AtomicInteger value : transactions.values()) {
+            value.set(0);
+         }
       }
    }
 
    @Override
    public void appendDeleteRecord(long id, boolean sync, IOCompletion callback) throws Exception {
       JournalInternalRecord deleteRecord = new JournalDeleteRecord(id);
-      writeRecord(deleteRecord, sync, callback);
+      writeRecord(deleteRecord, false, -1, false, callback);
    }
 
    @Override
    public void appendDeleteRecordTransactional(long txID, long id, EncodingSupport record) throws Exception {
-      count(txID);
       JournalInternalRecord deleteRecordTX = new JournalDeleteRecordTX(txID, id, record);
-      writeRecord(deleteRecordTX, false, null);
+      writeRecord(deleteRecordTX, false, txID, false, null);
    }
 
    @Override
    public void appendAddRecordTransactional(long txID,
                                             long id,
                                             byte recordType,
-                                            EncodingSupport record) throws Exception {
-      count(txID);
-      JournalInternalRecord addRecord = new JournalAddRecordTX(true, txID, id, recordType, record);
-      writeRecord(addRecord, false, null);
+                                            Persister persister,
+                                            Object record) throws Exception {
+      JournalInternalRecord addRecord = new JournalAddRecordTX(true, txID, id, recordType, persister, record);
+      writeRecord(addRecord, false, txID, false, null);
    }
 
    @Override
    public void appendUpdateRecord(long id,
                                   byte recordType,
-                                  EncodingSupport record,
+                                  Persister persister,
+                                  Object record,
                                   boolean sync,
                                   IOCompletion callback) throws Exception {
-      JournalInternalRecord updateRecord = new JournalAddRecord(false, id, recordType, record);
-      writeRecord(updateRecord, sync, callback);
+      JournalInternalRecord updateRecord = new JournalAddRecord(false, id, recordType, persister, record);
+      writeRecord(updateRecord, false, -1, false, callback);
    }
 
    @Override
    public void appendUpdateRecordTransactional(long txID,
                                                long id,
                                                byte recordType,
-                                               EncodingSupport record) throws Exception {
-      count(txID);
-      JournalInternalRecord updateRecordTX = new JournalAddRecordTX(false, txID, id, recordType, record);
-      writeRecord(updateRecordTX, false, null);
+                                               Persister persister,
+                                               Object record) throws Exception {
+      JournalInternalRecord updateRecordTX = new JournalAddRecordTX(false, txID, id, recordType, persister, record);
+      writeRecord(updateRecordTX, false, txID, false, null);
    }
 
    @Override
@@ -174,12 +214,8 @@ public final class FileWrapperJournal extends JournalBase {
                                   IOCompletion callback,
                                   boolean lineUpContext) throws Exception {
       JournalInternalRecord commitRecord = new JournalCompleteRecordTX(TX_RECORD_TYPE.COMMIT, txID, null);
-      AtomicInteger value = transactions.remove(Long.valueOf(txID));
-      if (value != null) {
-         commitRecord.setNumberOfRecords(value.get());
-      }
 
-      writeRecord(commitRecord, true, callback);
+      writeRecord(commitRecord, true, txID, true, callback);
    }
 
    @Override
@@ -188,20 +224,18 @@ public final class FileWrapperJournal extends JournalBase {
                                    boolean sync,
                                    IOCompletion callback) throws Exception {
       JournalInternalRecord prepareRecord = new JournalCompleteRecordTX(TX_RECORD_TYPE.PREPARE, txID, transactionData);
-      AtomicInteger value = transactions.get(Long.valueOf(txID));
-      if (value != null) {
-         prepareRecord.setNumberOfRecords(value.get());
-      }
-      writeRecord(prepareRecord, sync, callback);
+      writeRecord(prepareRecord, true, txID, false, callback);
    }
 
    private int count(long txID) throws ActiveMQException {
       AtomicInteger defaultValue = new AtomicInteger(1);
-      AtomicInteger count = transactions.putIfAbsent(Long.valueOf(txID), defaultValue);
+      AtomicInteger count = transactions.putIfAbsent(txID, defaultValue);
       if (count != null) {
-         return count.incrementAndGet();
+         count.incrementAndGet();
+      } else {
+         count = defaultValue;
       }
-      return defaultValue.get();
+      return count.intValue();
    }
 
    @Override
@@ -212,11 +246,7 @@ public final class FileWrapperJournal extends JournalBase {
    @Override
    public void appendRollbackRecord(long txID, boolean sync, IOCompletion callback) throws Exception {
       JournalInternalRecord rollbackRecord = new JournalRollbackRecordTX(txID);
-      AtomicInteger value = transactions.remove(Long.valueOf(txID));
-      if (value != null) {
-         rollbackRecord.setNumberOfRecords(value.get());
-      }
-      writeRecord(rollbackRecord, sync, callback);
+      writeRecord(rollbackRecord, true, txID, true, callback);
    }
 
    // UNSUPPORTED STUFF
@@ -239,7 +269,8 @@ public final class FileWrapperJournal extends JournalBase {
    @Override
    public JournalLoadInformation load(List<RecordInfo> committedRecords,
                                       List<PreparedTransactionInfo> preparedTransactions,
-                                      TransactionFailureCallback transactionFailure) throws Exception {
+                                      TransactionFailureCallback transactionFailure,
+                                      boolean fixbadtx) throws Exception {
       throw new ActiveMQUnsupportedPacketException();
    }
 
@@ -255,11 +286,6 @@ public final class FileWrapperJournal extends JournalBase {
 
    @Override
    public int getUserVersion() {
-      throw new UnsupportedOperationException();
-   }
-
-   @Override
-   public void perfBlast(int pages) {
       throw new UnsupportedOperationException();
    }
 

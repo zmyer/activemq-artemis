@@ -202,7 +202,7 @@ public class CreateSessionMessage extends PacketImpl {
       buff.append(", defaultAddress=" + defaultAddress);
       buff.append(", minLargeMessageSize=" + minLargeMessageSize);
       buff.append(", name=" + name);
-      buff.append(", password=" + password);
+      buff.append(", password=****");
       buff.append(", preAcknowledge=" + preAcknowledge);
       buff.append(", sessionChannelID=" + sessionChannelID);
       buff.append(", username=" + username);
@@ -229,22 +229,19 @@ public class CreateSessionMessage extends PacketImpl {
       if (defaultAddress == null) {
          if (other.defaultAddress != null)
             return false;
-      }
-      else if (!defaultAddress.equals(other.defaultAddress))
+      } else if (!defaultAddress.equals(other.defaultAddress))
          return false;
       if (minLargeMessageSize != other.minLargeMessageSize)
          return false;
       if (name == null) {
          if (other.name != null)
             return false;
-      }
-      else if (!name.equals(other.name))
+      } else if (!name.equals(other.name))
          return false;
       if (password == null) {
          if (other.password != null)
             return false;
-      }
-      else if (!password.equals(other.password))
+      } else if (!password.equals(other.password))
          return false;
       if (preAcknowledge != other.preAcknowledge)
          return false;
@@ -253,8 +250,7 @@ public class CreateSessionMessage extends PacketImpl {
       if (username == null) {
          if (other.username != null)
             return false;
-      }
-      else if (!username.equals(other.username))
+      } else if (!username.equals(other.username))
          return false;
       if (version != other.version)
          return false;

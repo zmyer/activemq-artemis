@@ -16,16 +16,15 @@
  */
 package org.apache.activemq.artemis.tests.integration.cluster.failover;
 
-import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
-import org.apache.activemq.artemis.core.server.cluster.qourum.BooleanVote;
+import java.util.Arrays;
+import java.util.Collection;
+
 import org.apache.activemq.artemis.core.server.cluster.qourum.QuorumVoteServerConnect;
-import org.apache.activemq.artemis.tests.integration.server.FakeStorageManager;
+import org.apache.activemq.artemis.core.server.cluster.qourum.ServerConnectVote;
+import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
-
-import java.util.Arrays;
-import java.util.Collection;
 
 @RunWith(Parameterized.class)
 public class QuorumVoteServerConnectTest extends ActiveMQTestBase {
@@ -46,39 +45,38 @@ public class QuorumVoteServerConnectTest extends ActiveMQTestBase {
 
    @Test
    public void testSuccessfulVote() {
-      QuorumVoteServerConnect quorum = new QuorumVoteServerConnect(size, new FakeStorageManager());
+      QuorumVoteServerConnect quorum = new QuorumVoteServerConnect(size, "foo");
       for (int i = 0; i < trueVotes - 1; i++) {
-         quorum.vote(new BooleanVote(true));
+         quorum.vote(new ServerConnectVote("foo", true));
       }
 
       if (size > 1) {
          assertFalse(quorum.getDecision());
       }
-      quorum = new QuorumVoteServerConnect(size, new FakeStorageManager());
+      quorum = new QuorumVoteServerConnect(size, "foo");
       for (int i = 0; i < trueVotes; i++) {
-         quorum.vote(new BooleanVote(true));
+         quorum.vote(new ServerConnectVote("foo", true));
       }
       assertTrue(quorum.getDecision());
    }
 
    @Test
    public void testUnSuccessfulVote() {
-      QuorumVoteServerConnect quorum = new QuorumVoteServerConnect(size, new FakeStorageManager());
+      QuorumVoteServerConnect quorum = new QuorumVoteServerConnect(size, "foo");
       for (int i = 0; i < trueVotes - 1; i++) {
-         quorum.vote(new BooleanVote(true));
+         quorum.vote(new ServerConnectVote("foo", true));
       }
 
       if (size > 1) {
          assertFalse(quorum.getDecision());
       }
-      quorum = new QuorumVoteServerConnect(size, new FakeStorageManager());
+      quorum = new QuorumVoteServerConnect(size, "foo");
       for (int i = 0; i < trueVotes - 1; i++) {
-         quorum.vote(new BooleanVote(true));
+         quorum.vote(new ServerConnectVote("foo", true));
       }
       if (size == 1) {
          assertTrue(quorum.getDecision());
-      }
-      else {
+      } else {
          assertFalse(quorum.getDecision());
       }
    }

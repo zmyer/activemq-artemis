@@ -16,9 +16,12 @@
  */
 package org.apache.activemq.artemis.tests.unit.core.server.impl.fakes;
 
+import java.util.EnumSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.apache.activemq.artemis.api.core.Message;
 import org.apache.activemq.artemis.api.core.Pair;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.core.persistence.impl.nullpm.NullStorageManager;
@@ -26,17 +29,34 @@ import org.apache.activemq.artemis.core.postoffice.Binding;
 import org.apache.activemq.artemis.core.postoffice.Bindings;
 import org.apache.activemq.artemis.core.postoffice.DuplicateIDCache;
 import org.apache.activemq.artemis.core.postoffice.PostOffice;
+import org.apache.activemq.artemis.core.postoffice.QueueBinding;
 import org.apache.activemq.artemis.core.postoffice.RoutingStatus;
 import org.apache.activemq.artemis.core.postoffice.impl.DuplicateIDCacheImpl;
 import org.apache.activemq.artemis.core.server.MessageReference;
 import org.apache.activemq.artemis.core.server.Queue;
-import org.apache.activemq.artemis.core.server.QueueCreator;
 import org.apache.activemq.artemis.core.server.RoutingContext;
-import org.apache.activemq.artemis.core.server.ServerMessage;
+import org.apache.activemq.artemis.api.core.RoutingType;
+import org.apache.activemq.artemis.core.server.cluster.impl.MessageLoadBalancingType;
+import org.apache.activemq.artemis.core.server.impl.AddressInfo;
 import org.apache.activemq.artemis.core.server.impl.MessageReferenceImpl;
 import org.apache.activemq.artemis.core.transaction.Transaction;
 
 public class FakePostOffice implements PostOffice {
+
+   @Override
+   public QueueBinding updateQueue(SimpleString name,
+                                   RoutingType routingType,
+                                   Integer maxConsumers,
+                                   Boolean purgeOnNoConsumers,
+                                   Boolean exclusive) throws Exception {
+      return null;
+   }
+
+   @Override
+   public AddressInfo updateAddressInfo(SimpleString addressName,
+                                        EnumSet<RoutingType> routingTypes) throws Exception {
+      return null;
+   }
 
    @Override
    public boolean isStarted() {
@@ -50,6 +70,22 @@ public class FakePostOffice implements PostOffice {
    }
 
    @Override
+   public void updateMessageLoadBalancingTypeForAddress(SimpleString  address, MessageLoadBalancingType messageLoadBalancingType) throws Exception {
+
+   }
+
+   @Override
+   public SimpleString getMatchingQueue(SimpleString address, RoutingType routingType) {
+
+      return null;
+   }
+
+   @Override
+   public SimpleString getMatchingQueue(SimpleString address, SimpleString queueName, RoutingType routingType) {
+      return null;
+   }
+
+   @Override
    public void start() throws Exception {
 
    }
@@ -57,6 +93,31 @@ public class FakePostOffice implements PostOffice {
    @Override
    public void stop() throws Exception {
 
+   }
+
+   @Override
+   public AddressInfo removeAddressInfo(SimpleString address, boolean force) throws Exception {
+      return null;
+   }
+
+   @Override
+   public boolean addAddressInfo(AddressInfo addressInfo) {
+      return false;
+   }
+
+   @Override
+   public AddressInfo removeAddressInfo(SimpleString address) {
+      return null;
+   }
+
+   @Override
+   public AddressInfo getAddressInfo(SimpleString addressName) {
+      return null;
+   }
+
+   @Override
+   public List<Queue> listQueuesForAddress(SimpleString address) throws Exception {
+      return null;
    }
 
    @Override
@@ -99,6 +160,12 @@ public class FakePostOffice implements PostOffice {
    }
 
    @Override
+   public Bindings getDirectBindings(final SimpleString address) {
+
+      return null;
+   }
+
+   @Override
    public Object getNotificationLock() {
 
       return null;
@@ -124,14 +191,14 @@ public class FakePostOffice implements PostOffice {
    }
 
    @Override
-   public Pair<RoutingContext, ServerMessage> redistribute(final ServerMessage message,
-                                                           final Queue originatingQueue,
-                                                           final Transaction tx) throws Exception {
+   public Pair<RoutingContext, Message> redistribute(final Message message,
+                                                     final Queue originatingQueue,
+                                                     final Transaction tx) throws Exception {
       return null;
    }
 
    @Override
-   public MessageReference reroute(final ServerMessage message,
+   public MessageReference reroute(final Message message,
                                    final Queue queue,
                                    final Transaction tx) throws Exception {
       message.incrementRefCount();
@@ -139,44 +206,41 @@ public class FakePostOffice implements PostOffice {
    }
 
    @Override
-   public RoutingStatus route(ServerMessage message,
-                              QueueCreator creator,
-                              RoutingContext context,
+   public RoutingStatus route(Message message,
+                              Transaction tx,
                               boolean direct) throws Exception {
       return RoutingStatus.OK;
-
    }
 
    @Override
-   public RoutingStatus route(ServerMessage message, QueueCreator creator, Transaction tx, boolean direct) throws Exception {
+   public RoutingStatus route(Message message,
+                              Transaction tx,
+                              boolean direct,
+                              boolean rejectDuplicates) throws Exception {
       return RoutingStatus.OK;
    }
 
    @Override
-   public RoutingStatus route(ServerMessage message,
-                           QueueCreator creator,
-                           RoutingContext context,
-                           boolean direct,
-                           boolean rejectDuplicates) throws Exception {
-      return RoutingStatus.OK;
-
+   public RoutingStatus route(Message message, Transaction tx, boolean direct, boolean rejectDuplicates, Binding binding) throws Exception {
+      return null;
    }
 
    @Override
-   public RoutingStatus route(ServerMessage message,
-                     QueueCreator creator,
-                     Transaction tx,
-                     boolean direct,
-                     boolean rejectDuplicates) throws Exception {
-      return RoutingStatus.OK;
+   public RoutingStatus route(Message message, RoutingContext context, boolean direct) throws Exception {
+      return null;
    }
 
    @Override
-   public void processRoute(ServerMessage message, RoutingContext context, boolean direct) throws Exception {
+   public RoutingStatus route(Message message, RoutingContext context, boolean direct, boolean rejectDuplicates, Binding binding) throws Exception {
+      return null;
    }
 
    @Override
-   public RoutingStatus route(ServerMessage message, QueueCreator queueCreator, boolean direct) throws Exception {
+   public void processRoute(Message message, RoutingContext context, boolean direct) throws Exception {
+   }
+
+   @Override
+   public RoutingStatus route(Message message, boolean direct) throws Exception {
       return RoutingStatus.OK;
    }
 }

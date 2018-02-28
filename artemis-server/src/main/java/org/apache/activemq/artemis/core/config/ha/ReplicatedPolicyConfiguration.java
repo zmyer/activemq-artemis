@@ -29,6 +29,14 @@ public class ReplicatedPolicyConfiguration implements HAPolicyConfiguration {
 
    private long initialReplicationSyncTimeout = ActiveMQDefaultConfiguration.getDefaultInitialReplicationSyncTimeout();
 
+   private boolean voteOnReplicationFailure = ActiveMQDefaultConfiguration.getDefaultVoteOnReplicationFailure();
+
+   private int quorumSize = ActiveMQDefaultConfiguration.getDefaultQuorumSize();
+
+   private int voteRetries = ActiveMQDefaultConfiguration.getDefaultVoteRetries();
+
+   private long voteRetryWait = ActiveMQDefaultConfiguration.getDefaultVoteRetryWait();
+
    public ReplicatedPolicyConfiguration() {
    }
 
@@ -70,5 +78,38 @@ public class ReplicatedPolicyConfiguration implements HAPolicyConfiguration {
 
    public void setInitialReplicationSyncTimeout(long initialReplicationSyncTimeout) {
       this.initialReplicationSyncTimeout = initialReplicationSyncTimeout;
+   }
+
+   public boolean getVoteOnReplicationFailure() {
+      return voteOnReplicationFailure;
+   }
+
+   public void setVoteOnReplicationFailure(boolean voteOnReplicationFailure) {
+      this.voteOnReplicationFailure = voteOnReplicationFailure;
+   }
+
+   public int getQuorumSize() {
+      return quorumSize;
+   }
+
+   public void setQuorumSize(int quorumSize) {
+      this.quorumSize = quorumSize;
+   }
+
+
+   public int getVoteRetries() {
+      return voteRetries;
+   }
+
+   public void setVoteRetries(int voteRetries) {
+      this.voteRetries = voteRetries;
+   }
+
+   public void setVoteRetryWait(long voteRetryWait) {
+      this.voteRetryWait = voteRetryWait;
+   }
+
+   public long getVoteRetryWait() {
+      return voteRetryWait;
    }
 }

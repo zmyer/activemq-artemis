@@ -1,6 +1,6 @@
 # IDE Integration
 
-There a few files useful for IDE integration under ./etc/ide-settings on a checked out folder. This folder is not part of the source distribution can it can be easily obtained:
+There a few files useful for IDE integration under ./etc/ide-settings on a checked out folder. This folder is not part of the source distribution, but it can be easily obtained:
 
 - https://github.com/apache/activemq-artemis/tree/master/etc/ide-settings
 
@@ -9,13 +9,13 @@ There a few files useful for IDE integration under ./etc/ide-settings on a check
 ### Importing the Project
 
 The following steps show how to import ActiveMQ Artemis source into IntelliJ IDEA and setup the correct maven profile to allow
-running of JUnit tests from within the IDE.  (Steps are based on version: 13.1.4)
+running of JUnit tests from within the IDE.  (Steps are based on version: 2017.1.2)
 
 * File --> Import Project --> Select the root directory of the ActiveMQ Artemis source folder. --> Click OK
 
 This should open the import project wizard.  From here:
 
-* Select "Import from existing model" toggle box, then select Maven from the list box below.  Click Next.
+* Select "Import project from external model" toggle box, then select Maven from the list box below.  Click Next.
 * Leave the defaults set on this page and click next.
 * On the "Select profiles page", select the checkbox next to "dev" and click next.
 * From here the default settings should suffice.  Continue through the wizard, clicking next until the wizard is complete.
@@ -34,21 +34,23 @@ After you add the JDK to the IDE, add also the vm.jar specific to your platform 
 (e.g: JAVA_HOME/jre/lib/amd64/default/jclSC180/vm.jar
 ```
 
-There's a [SOF Question](http://stackoverflow.com/questions/27906481/can-intellij-14-be-used-to-work-with-ibm-jdk-1-7/32852361#32852361) about this that could be useful in case you are running into this issue.
+There's a [SOF Question](https://stackoverflow.com/questions/27906481/can-intellij-14-be-used-to-work-with-ibm-jdk-1-7/32852361#32852361) about this that could be useful in case you are running into this issue.
 
 ### Style Templates and Inspection Settings for Idea
 
 We have shared the style templates that are good for this project. If you want to apply them use these steps:
 
 * File->Import Settings
-* Select the file under ./artemis-cloned-folder/etc/ide-settings/IDEA-style.jar
+* Select the file under ./artemis-cloned-folder/etc/ide-settings/idea/IDEA-style.jar
 * Select both Code Style Templates and File templates (it's the default option)
 * Select OK and restart Idea
 
-Similarly, to import inspection settings:
+Alternatively you can copy artemis-codestyle.xml under your home settings at ``IntelliJIdea15/codestyles``.
+
+#### To import inspection settings:
 
 * File->Settings->Editor->Inspections->Manage->Import
-* Select the file ./artemis-cloned-folder/etc/ide-settings/IDEA-artemis-inspections.xml
+* Select the file ./artemis-cloned-folder/etc/ide-settings/idea/artemis-inspections.xml
 * Select OK
 
 ### Issue: My JUnit tests are not runnable with in the IDE.
@@ -68,7 +70,7 @@ blue arrow.
 We recommend using Eclipse Kepler (4.3), due to the built-in support for Maven and Git. Note that there are still some
 Maven plugins used by sub-projects (e.g. documentation) which are not supported even in Eclipse Kepler (4.3).
 
-Eclipse [m2e](http://eclipse.org/m2e/) is already included in "Eclipse IDE for Java Developers", or it can be installed
+Eclipse [m2e](https://eclipse.org/m2e/) is already included in "Eclipse IDE for Java Developers", or it can be installed
 from [Eclipse Kepler release repository](http://download.eclipse.org/releases/kepler).
 
 ### Git setup
@@ -76,8 +78,15 @@ It is strongly recommended to turn off the auto-updating of .gitignore files by 
 generates new .gitignore files in many directories that are not needed due to the top level .gitignore file.  To turn
 it off, go to Preferences->Team->Git->Projects and deselect the "Automatically ignore derived resources" checkbox.
 
+### Schema setup
+For proper schema validation you can add the Artemis schemas to your Eclipse XML Catalog
+
+* Open: Window -> Preferences -> XML -> XML Catalog
+* Select Add -> Workspace -> Navigate to artemis-server and select src/main/resources/schema/artemis-server.xsd -> click OK
+* Repeat the above steps and add src/main/resources/schema/artemis-configuration.xsd
+
 ### Checkstyle setup
-You can import the Artemis Checkstyle template into eclipse to do Checkstyle validation. As a prerequisite you need to make sure the Checkstyle plugin is installed into Eclipse which you can get form the Eclipse Marketplace. You also will need to configure Sevntu-Checkstyle. See http://sevntu-checkstyle.github.io/sevntu.checkstyle/ for instructions. Then to configure the template:
+You can import the Artemis Checkstyle template into eclipse to do Checkstyle validation. As a prerequisite you need to make sure the Checkstyle plugin is installed into Eclipse which you can get form the Eclipse Marketplace. You also will need to configure Sevntu-Checkstyle. See https://sevntu-checkstyle.github.io/sevntu.checkstyle/ for instructions. Then to configure the template:
 
 * Open: Window -> Preferences -> Checkstyle
 * Select New -> "Project Relative Configuration" in the "Type" dropdown
@@ -86,7 +95,7 @@ You can import the Artemis Checkstyle template into eclipse to do Checkstyle val
 
 ### Annotation Pre-Processing
 
-ActiveMQ Artemis uses [JBoss Logging](https://community.jboss.org/wiki/JBossLoggingTooling) and that requires source
+ActiveMQ Artemis uses [JBoss Logging](https://developer.jboss.org/wiki/JBossLoggingTooling) and that requires source
 code generation from Java annotations. In order for it to 'just work' in Eclipse you need to install the
 _Maven Integration for Eclipse JDT Annotation Processor Toolkit_ [m2e-apt](https://github.com/jbosstools/m2e-apt). See
 this [JBoss blog post](https://community.jboss.org/en/tools/blog/2012/05/20/annotation-processing-support-in-m2e-or-m2e-apt-100-is-out)
@@ -107,7 +116,7 @@ Eclipse Indigo (3.7) has out-of-the-box support for it.
 As of this writing, Eclipse Kepler (4.3) still lacks support for Maven's javacc plugin. The available [m2e connector for
 javacc-maven-plugin](https://github.com/objectledge/maven-extensions) requires a downgrade of Maven components to be
 installed. manual installation instructions (as of this writing you need to use the development update site). See
-[this post](http://dev.eclipse.org/mhonarc/lists/m2e-users/msg02725.html) for how to do this with Eclipse Juno (4.2).
+[this post](https://dev.eclipse.org/mhonarc/lists/m2e-users/msg02725.html) for how to do this with Eclipse Juno (4.2).
 
 The current recommended solution for Eclipse Kepler is to mark `javacc-maven-plugin` as ignored by Eclipse, run Maven
 from the command line and then modify the project `activemq-core-client` adding the folder
@@ -117,6 +126,6 @@ from the command line and then modify the project `activemq-core-client` adding 
 
 Importing all ActiveMQ Artemis subprojects will create _too many_ projects in Eclipse, cluttering your _Package Explorer_
 and _Project Explorer_ views. One way to address that is to use
-[Eclipse's Working Sets](http://help.eclipse.org/juno/index.jsp?topic=%2Forg.eclipse.platform.doc.user%2Fconcepts%2Fcworkset.htm)
+[Eclipse's Working Sets](https://help.eclipse.org/juno/index.jsp?topic=%2Forg.eclipse.platform.doc.user%2Fconcepts%2Fcworkset.htm)
 feature. A good introduction to it can be found at a
-[Dzone article on Eclipse Working Sets](http://eclipse.dzone.com/articles/categorise-projects-package).
+[Dzone article on Eclipse Working Sets](https://dzone.com/articles/categorise-projects-package).

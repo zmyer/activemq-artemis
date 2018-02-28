@@ -20,20 +20,21 @@ under the License.
 
 <configuration xmlns="urn:activemq"
                xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+               xmlns:xi="http://www.w3.org/2001/XInclude"
                xsi:schemaLocation="urn:activemq /schema/artemis-configuration.xsd">
 
-   <jms xmlns="urn:activemq:jms">
-      <queue name="DLQ"/>
-      <queue name="ExpiryQueue"/>${jms-list.settings}
-   </jms>
-
-   <core xmlns="urn:activemq:core">
+   <core xmlns="urn:activemq:core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="urn:activemq:core ">
 
       <name>${name}</name>
 
+${jdbc}
       <persistence-enabled>${persistence-enabled}</persistence-enabled>
 
-      <!-- this could be ASYNCIO or NIO
+      <!-- this could be ASYNCIO, MAPPED, NIO
+           ASYNCIO: Linux Libaio
+           MAPPED: mmap files
+           NIO: Plain Java Files
        -->
       <journal-type>${journal.settings}</journal-type>
 
@@ -45,11 +46,15 @@ under the License.
 
       <large-messages-directory>${data.dir}/large-messages</large-messages-directory>
 
+      <journal-datasync>${fsync}</journal-datasync>
+
       <journal-min-files>2</journal-min-files>
 
-      <journal-pool-files>-1</journal-pool-files>
-${journal-buffer.settings}
-${connector-config.settings}
+      <journal-pool-files>10</journal-pool-files>
+
+      <journal-file-size>10M</journal-file-size>
+      ${journal-buffer.settings}${ping-config.settings}${connector-config.settings}
+
       <!-- how often we are looking for how many bytes are being used on the disk in ms -->
       <disk-scan-period>5000</disk-scan-period>
 
@@ -57,14 +62,28 @@ ${connector-config.settings}
            that won't support flow control. -->
       <max-disk-usage>90</max-disk-usage>
 
-      <!-- the system will enter into page mode once you hit this limit.
-           This is an estimate in bytes of how much the messages are using in memory -->
-      <global-max-size>104857600</global-max-size>
+      <!-- should the broker detect dead locks and other issues -->
+      <critical-analyzer>true</critical-analyzer>
 
+      <critical-analyzer-timeout>120000</critical-analyzer-timeout>
+
+      <critical-analyzer-check-period>60000</critical-analyzer-check-period>
+
+      <critical-analyzer-policy>HALT</critical-analyzer-policy>
+
+${global-max-section}
       <acceptors>
-         <!-- Default ActiveMQ Artemis Acceptor.  Multi-protocol adapter.  Currently supports ActiveMQ Artemis Core, OpenWire, STOMP, AMQP, MQTT, and HornetQ Core. -->
-         <!-- performance tests have shown that openWire performs best with these buffer sizes -->
-         <acceptor name="artemis">tcp://${host}:${default.port}?tcpSendBufferSize=1048576;tcpReceiveBufferSize=1048576</acceptor>
+
+         <!-- useEpoll means: it will use Netty epoll if you are on a system (Linux) that supports it -->
+         <!-- amqpCredits: The number of credits sent to AMQP producers -->
+         <!-- amqpLowCredits: The server will send the # credits specified at amqpCredits at this low mark -->
+
+         <!-- Note: If an acceptor needs to be compatible with HornetQ and/or Artemis 1.x clients add
+                    "anycastPrefix=jms.queue.;multicastPrefix=jms.topic." to the acceptor url.
+                    See https://issues.apache.org/jira/browse/ARTEMIS-1644 for more information. -->
+
+         <!-- Acceptor for every supported protocol -->
+         <acceptor name="artemis">tcp://${host}:${default.port}?tcpSendBufferSize=1048576;tcpReceiveBufferSize=1048576;protocols=CORE,AMQP,STOMP,HORNETQ,MQTT,OPENWIRE;useEpoll=true;amqpCredits=1000;amqpLowCredits=300</acceptor>
 ${amqp-acceptor}${stomp-acceptor}${hornetq-acceptor}${mqtt-acceptor}
       </acceptors>
 
@@ -75,6 +94,8 @@ ${cluster-security.settings}${cluster.settings}${replicated.settings}${shared-st
             <permission type="deleteNonDurableQueue" roles="${role}"/>
             <permission type="createDurableQueue" roles="${role}"/>
             <permission type="deleteDurableQueue" roles="${role}"/>
+            <permission type="createAddress" roles="${role}"/>
+            <permission type="deleteAddress" roles="${role}"/>
             <permission type="consume" roles="${role}"/>
             <permission type="browse" roles="${role}"/>
             <permission type="send" roles="${role}"/>
@@ -84,16 +105,63 @@ ${cluster-security.settings}${cluster.settings}${replicated.settings}${shared-st
       </security-settings>
 
       <address-settings>
-         <!--default for catch all-->
-         <address-setting match="#">
-            <dead-letter-address>jms.queue.DLQ</dead-letter-address>
-            <expiry-address>jms.queue.ExpiryQueue</expiry-address>
+         <!-- if you define auto-create on certain queues, management has to be auto-create -->
+         <address-setting match="activemq.management#">
+            <dead-letter-address>DLQ</dead-letter-address>
+            <expiry-address>ExpiryQueue</expiry-address>
             <redelivery-delay>0</redelivery-delay>
             <!-- with -1 only the global-max-size is in use for limiting -->
             <max-size-bytes>-1</max-size-bytes>
             <message-counter-history-day-limit>10</message-counter-history-day-limit>
-            <address-full-policy>PAGE</address-full-policy>
+            <address-full-policy>${full-policy}</address-full-policy>
+            <auto-create-queues>true</auto-create-queues>
+            <auto-create-addresses>true</auto-create-addresses>
+            <auto-create-jms-queues>true</auto-create-jms-queues>
+            <auto-create-jms-topics>true</auto-create-jms-topics>
+         </address-setting>
+         <!--default for catch all-->
+         <address-setting match="#">
+            <dead-letter-address>DLQ</dead-letter-address>
+            <expiry-address>ExpiryQueue</expiry-address>
+            <redelivery-delay>0</redelivery-delay>
+            <!-- with -1 only the global-max-size is in use for limiting -->
+            <max-size-bytes>-1</max-size-bytes>
+            <message-counter-history-day-limit>10</message-counter-history-day-limit>
+            <address-full-policy>${full-policy}</address-full-policy>
+            <auto-create-queues>${auto-create}</auto-create-queues>
+            <auto-create-addresses>${auto-create}</auto-create-addresses>
+            <auto-create-jms-queues>${auto-create}</auto-create-jms-queues>
+            <auto-create-jms-topics>${auto-create}</auto-create-jms-topics>
          </address-setting>
       </address-settings>
+
+      <addresses>
+         <address name="DLQ">
+            <anycast>
+               <queue name="DLQ" />
+            </anycast>
+         </address>
+         <address name="ExpiryQueue">
+            <anycast>
+               <queue name="ExpiryQueue" />
+            </anycast>
+         </address>${address-queue.settings}
+      </addresses>
+
+
+      <!-- Uncomment the following if you want to use the Standard LoggingActiveMQServerPlugin pluging to log in events
+      <broker-plugins>
+         <broker-plugin class-name="org.apache.activemq.artemis.core.server.plugin.impl.LoggingActiveMQServerPlugin">
+            <property key="LOG_ALL_EVENTS" value="true"/>
+            <property key="LOG_CONNECTION_EVENTS" value="true"/>
+            <property key="LOG_SESSION_EVENTS" value="true"/>
+            <property key="LOG_CONSUMER_EVENTS" value="true"/>
+            <property key="LOG_DELIVERING_EVENTS" value="true"/>
+            <property key="LOG_SENDING_EVENTS" value="true"/>
+            <property key="LOG_INTERNAL_EVENTS" value="true"/>
+         </broker-plugin>
+      </broker-plugins>
+      -->
+
    </core>
 </configuration>

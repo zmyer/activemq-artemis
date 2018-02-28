@@ -40,7 +40,7 @@ public final class BridgeConfiguration implements Serializable {
 
    private boolean ha = false;
 
-   private String transformerClassName = null;
+   private TransformerConfiguration transformerConfiguration = null;
 
    private long retryInterval = ActiveMQClient.DEFAULT_RETRY_INTERVAL;
 
@@ -150,15 +150,15 @@ public final class BridgeConfiguration implements Serializable {
       return this;
    }
 
-   public String getTransformerClassName() {
-      return transformerClassName;
+   public TransformerConfiguration getTransformerConfiguration() {
+      return transformerConfiguration;
    }
 
    /**
-    * @param transformerClassName the transformerClassName to set
+    * @param transformerConfiguration the transformerConfiguration to set
     */
-   public BridgeConfiguration setTransformerClassName(final String transformerClassName) {
-      this.transformerClassName = transformerClassName;
+   public BridgeConfiguration setTransformerConfiguration(final TransformerConfiguration transformerConfiguration) {
+      this.transformerConfiguration = transformerConfiguration;
       return this;
    }
 
@@ -373,7 +373,7 @@ public final class BridgeConfiguration implements Serializable {
       temp = Double.doubleToLongBits(retryIntervalMultiplier);
       result = prime * result + (int) (temp ^ (temp >>> 32));
       result = prime * result + ((staticConnectors == null) ? 0 : staticConnectors.hashCode());
-      result = prime * result + ((transformerClassName == null) ? 0 : transformerClassName.hashCode());
+      result = prime * result + ((transformerConfiguration == null) ? 0 : transformerConfiguration.hashCode());
       result = prime * result + (useDuplicateDetection ? 1231 : 1237);
       result = prime * result + ((user == null) ? 0 : user.hashCode());
       return result;
@@ -401,20 +401,17 @@ public final class BridgeConfiguration implements Serializable {
       if (discoveryGroupName == null) {
          if (other.discoveryGroupName != null)
             return false;
-      }
-      else if (!discoveryGroupName.equals(other.discoveryGroupName))
+      } else if (!discoveryGroupName.equals(other.discoveryGroupName))
          return false;
       if (filterString == null) {
          if (other.filterString != null)
             return false;
-      }
-      else if (!filterString.equals(other.filterString))
+      } else if (!filterString.equals(other.filterString))
          return false;
       if (forwardingAddress == null) {
          if (other.forwardingAddress != null)
             return false;
-      }
-      else if (!forwardingAddress.equals(other.forwardingAddress))
+      } else if (!forwardingAddress.equals(other.forwardingAddress))
          return false;
       if (ha != other.ha)
          return false;
@@ -425,20 +422,17 @@ public final class BridgeConfiguration implements Serializable {
       if (name == null) {
          if (other.name != null)
             return false;
-      }
-      else if (!name.equals(other.name))
+      } else if (!name.equals(other.name))
          return false;
       if (password == null) {
          if (other.password != null)
             return false;
-      }
-      else if (!password.equals(other.password))
+      } else if (!password.equals(other.password))
          return false;
       if (queueName == null) {
          if (other.queueName != null)
             return false;
-      }
-      else if (!queueName.equals(other.queueName))
+      } else if (!queueName.equals(other.queueName))
          return false;
       if (initialConnectAttempts != other.initialConnectAttempts)
          return false;
@@ -451,22 +445,19 @@ public final class BridgeConfiguration implements Serializable {
       if (staticConnectors == null) {
          if (other.staticConnectors != null)
             return false;
-      }
-      else if (!staticConnectors.equals(other.staticConnectors))
+      } else if (!staticConnectors.equals(other.staticConnectors))
          return false;
-      if (transformerClassName == null) {
-         if (other.transformerClassName != null)
+      if (transformerConfiguration == null) {
+         if (other.transformerConfiguration != null)
             return false;
-      }
-      else if (!transformerClassName.equals(other.transformerClassName))
+      } else if (!transformerConfiguration.equals(other.transformerConfiguration))
          return false;
       if (useDuplicateDetection != other.useDuplicateDetection)
          return false;
       if (user == null) {
          if (other.user != null)
             return false;
-      }
-      else if (!user.equals(other.user))
+      } else if (!user.equals(other.user))
          return false;
       return true;
    }

@@ -30,7 +30,7 @@ import org.apache.activemq.artemis.core.server.group.GroupingHandler;
 import org.apache.activemq.artemis.core.server.group.UnproposalListener;
 import org.apache.activemq.artemis.core.server.management.ManagementService;
 import org.apache.activemq.artemis.core.server.management.Notification;
-import org.apache.activemq.artemis.utils.TypedProperties;
+import org.apache.activemq.artemis.utils.collections.TypedProperties;
 
 public abstract class GroupHandlingAbstract implements GroupingHandler {
 
@@ -55,8 +55,7 @@ public abstract class GroupHandlingAbstract implements GroupingHandler {
    public void addListener(final UnproposalListener listener) {
       if (executor == null) {
          listeners.add(listener);
-      }
-      else {
+      } else {
          executor.execute(new Runnable() {
             @Override
             public void run() {
@@ -78,8 +77,7 @@ public abstract class GroupHandlingAbstract implements GroupingHandler {
       };
       if (executor != null) {
          executor.execute(runnable);
-      }
-      else {
+      } else {
          // for tests only, where we don't need an executor
          runnable.run();
       }
@@ -101,8 +99,7 @@ public abstract class GroupHandlingAbstract implements GroupingHandler {
       Notification notification = new Notification(null, CoreNotificationType.UNPROPOSAL, props);
       try {
          managementService.sendNotification(notification);
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          ActiveMQServerLogger.LOGGER.errorHandlingMessage(e);
       }
    }

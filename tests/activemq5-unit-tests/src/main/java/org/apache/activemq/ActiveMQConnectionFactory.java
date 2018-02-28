@@ -6,7 +6,7 @@
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,16 +15,6 @@
  * limitations under the License.
  */
 package org.apache.activemq;
-
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Properties;
-import java.util.concurrent.RejectedExecutionHandler;
 
 import javax.jms.Connection;
 import javax.jms.ConnectionFactory;
@@ -35,6 +25,17 @@ import javax.jms.QueueConnectionFactory;
 import javax.jms.TopicConnection;
 import javax.jms.TopicConnectionFactory;
 import javax.naming.Context;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.concurrent.RejectedExecutionHandler;
 
 import org.apache.activemq.blob.BlobTransferPolicy;
 import org.apache.activemq.broker.region.policy.RedeliveryPolicyMap;
@@ -46,6 +47,7 @@ import org.apache.activemq.thread.TaskRunnerFactory;
 import org.apache.activemq.transport.Transport;
 import org.apache.activemq.transport.TransportFactory;
 import org.apache.activemq.transport.TransportListener;
+import org.apache.activemq.util.ClassLoadingAwareObjectInputStream;
 import org.apache.activemq.util.IdGenerator;
 import org.apache.activemq.util.IntrospectionSupport;
 import org.apache.activemq.util.JMSExceptionSupport;
@@ -81,8 +83,7 @@ public class ActiveMQConnectionFactory extends JNDIBaseStorable implements Conne
                return result;
             }
          });
-      }
-      catch (Throwable e) {
+      } catch (Throwable e) {
          LOG.debug("Failed to look up System properties for host and port", e);
       }
       host = (host == null || host.isEmpty()) ? "localhost" : host;
@@ -106,16 +107,14 @@ public class ActiveMQConnectionFactory extends JNDIBaseStorable implements Conne
                return result;
             }
          });
-      }
-      catch (Throwable e) {
+      } catch (Throwable e) {
          LOG.debug("Failed to look up System properties for host and port", e);
       }
       bindURL = (bindURL == null || bindURL.isEmpty()) ? defaultURL : bindURL;
       DEFAULT_BROKER_BIND_URL = bindURL;
       try {
          defaultTcpUri = new URI(defaultURL);
-      }
-      catch (URISyntaxException e) {
+      } catch (URISyntaxException e) {
          LOG.debug("Failed to build default tcp url", e);
       }
 
@@ -188,6 +187,8 @@ public class ActiveMQConnectionFactory extends JNDIBaseStorable implements Conne
    protected int xaAckMode = -1; // ensure default init before setting via brokerUrl introspection in sub class
    private boolean rmIdFromConnectionId = false;
    private boolean consumerExpiryCheckEnabled = true;
+   private List<String> trustedPackages = Arrays.asList(ClassLoadingAwareObjectInputStream.serializablePackages);
+   private boolean trustAllPackages = false;
 
    // /////////////////////////////////////////////
    //
@@ -210,8 +211,7 @@ public class ActiveMQConnectionFactory extends JNDIBaseStorable implements Conne
 
             this.vmBrokerUri = URISupport.createRemainingURI(uri, params);
          }
-      }
-      catch (URISyntaxException e) {
+      } catch (URISyntaxException e) {
       }
 
    }
@@ -235,8 +235,7 @@ public class ActiveMQConnectionFactory extends JNDIBaseStorable implements Conne
    public ActiveMQConnectionFactory copy() {
       try {
          return (ActiveMQConnectionFactory) super.clone();
-      }
-      catch (CloneNotSupportedException e) {
+      } catch (CloneNotSupportedException e) {
          throw new RuntimeException("This should never happen: " + e, e);
       }
    }
@@ -256,8 +255,7 @@ public class ActiveMQConnectionFactory extends JNDIBaseStorable implements Conne
             return defaultTcpUri;
          }
          return uri;
-      }
-      catch (URISyntaxException e) {
+      } catch (URISyntaxException e) {
          throw (IllegalArgumentException) new IllegalArgumentException("Invalid broker URI: " + brokerURL).initCause(e);
       }
    }
@@ -313,8 +311,7 @@ public class ActiveMQConnectionFactory extends JNDIBaseStorable implements Conne
          Transport t = TransportFactory.connect(brokerURL);
          System.out.println("xxxxxxxxxxxx created transport" + t);
          return t;
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          throw JMSExceptionSupport.create("Could not create Transport. Reason: " + e, e);
       }
    }
@@ -340,22 +337,18 @@ public class ActiveMQConnectionFactory extends JNDIBaseStorable implements Conne
          }
 
          return connection;
-      }
-      catch (JMSException e) {
+      } catch (JMSException e) {
          // Clean up!
          try {
             connection.close();
-         }
-         catch (Throwable ignore) {
+         } catch (Throwable ignore) {
          }
          throw e;
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          // Clean up!
          try {
             connection.close();
-         }
-         catch (Throwable ignore) {
+         } catch (Throwable ignore) {
          }
          throw JMSExceptionSupport.create("Could not connect to broker URL: " + brokerURL + ". Reason: " + e, e);
       }
@@ -405,6 +398,8 @@ public class ActiveMQConnectionFactory extends JNDIBaseStorable implements Conne
       connection.setNestedMapAndListEnabled(isNestedMapAndListEnabled());
       connection.setRmIdFromConnectionId(isRmIdFromConnectionId());
       connection.setConsumerExpiryCheckEnabled(isConsumerExpiryCheckEnabled());
+      connection.setTrustedPackages(getTrustedPackages());
+      connection.setTrustAllPackages(isTrustAllPackages());
       if (transportListener != null) {
          connection.addTransportListener(transportListener);
       }
@@ -437,8 +432,7 @@ public class ActiveMQConnectionFactory extends JNDIBaseStorable implements Conne
          if ("vm".equals(scheme)) {
             this.vmBrokerUri = uri;
          }
-      }
-      catch (URISyntaxException e) {
+      } catch (URISyntaxException e) {
       }
       this.brokerURL = createURI(brokerURL);
 
@@ -460,12 +454,10 @@ public class ActiveMQConnectionFactory extends JNDIBaseStorable implements Conne
                this.brokerURL = URISupport.createRemainingURI(this.brokerURL, map);
             }
 
-         }
-         catch (URISyntaxException e) {
+         } catch (URISyntaxException e) {
          }
 
-      }
-      else {
+      } else {
 
          // It might be a composite URI.
          try {
@@ -479,8 +471,7 @@ public class ActiveMQConnectionFactory extends JNDIBaseStorable implements Conne
 
                this.brokerURL = data.toURI();
             }
-         }
-         catch (URISyntaxException e) {
+         } catch (URISyntaxException e) {
          }
       }
    }
@@ -815,8 +806,7 @@ public class ActiveMQConnectionFactory extends JNDIBaseStorable implements Conne
       if (clientIdGenerator == null) {
          if (clientIDPrefix != null) {
             clientIdGenerator = new IdGenerator(clientIDPrefix);
-         }
-         else {
+         } else {
             clientIdGenerator = new IdGenerator();
          }
       }
@@ -835,8 +825,7 @@ public class ActiveMQConnectionFactory extends JNDIBaseStorable implements Conne
       if (connectionIdGenerator == null) {
          if (connectionIDPrefix != null) {
             connectionIdGenerator = new IdGenerator(connectionIDPrefix);
-         }
-         else {
+         } else {
             connectionIdGenerator = new IdGenerator();
          }
       }
@@ -997,5 +986,13 @@ public class ActiveMQConnectionFactory extends JNDIBaseStorable implements Conne
 
    public void setConsumerExpiryCheckEnabled(boolean consumerExpiryCheckEnabled) {
       this.consumerExpiryCheckEnabled = consumerExpiryCheckEnabled;
+   }
+
+   public List<String> getTrustedPackages() {
+      return trustedPackages;
+   }
+
+   public boolean isTrustAllPackages() {
+      return trustAllPackages;
    }
 }

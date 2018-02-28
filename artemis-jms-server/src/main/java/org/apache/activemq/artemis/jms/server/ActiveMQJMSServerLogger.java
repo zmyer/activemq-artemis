@@ -52,8 +52,8 @@ public interface ActiveMQJMSServerLogger extends BasicLogger {
       format = Message.Format.MESSAGE_FORMAT)
    void serverCachingCommand(Object runnable);
 
-   @LogMessage(level = Logger.Level.INFO)
-   @Message(id = 121005, value = "Invalid \"host\" value \"0.0.0.0\" detected for \"{0}\" connector. Switching to \"{1}\". If this new address is incorrect please manually configure the connector to use the proper one.",
+   @LogMessage(level = Logger.Level.WARN)
+   @Message(id = 122005, value = "Invalid \"host\" value \"0.0.0.0\" detected for \"{0}\" connector. Switching to \"{1}\". If this new address is incorrect please manually configure the connector to use the proper one.",
       format = Message.Format.MESSAGE_FORMAT)
    void invalidHostForConnector(String name, String newHost);
 
@@ -96,6 +96,12 @@ public interface ActiveMQJMSServerLogger extends BasicLogger {
       value = "Failed to send notification: {0}",
       format = Message.Format.MESSAGE_FORMAT)
    void failedToSendNotification(String notification);
+
+   @LogMessage(level = Logger.Level.WARN)
+   @Message(id = 122019,
+      value = "Unable to deactivate server",
+      format = Message.Format.MESSAGE_FORMAT)
+   void failedToDeactivateServer(@Cause Exception e);
 
    @LogMessage(level = Logger.Level.DEBUG)
    @Message(id = 123000, value = "JMS Server Manager Running cached command for {0}." + "(In the event of failover after failback has occurred, this message may be output multiple times.)",

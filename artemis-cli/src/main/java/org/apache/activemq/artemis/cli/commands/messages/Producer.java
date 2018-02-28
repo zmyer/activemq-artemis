@@ -24,7 +24,6 @@ import javax.jms.Session;
 import io.airlift.airline.Command;
 import io.airlift.airline.Option;
 import org.apache.activemq.artemis.cli.commands.ActionContext;
-import org.apache.activemq.artemis.cli.commands.util.ProducerThread;
 import org.apache.activemq.artemis.jms.client.ActiveMQConnectionFactory;
 import org.apache.activemq.artemis.jms.client.ActiveMQDestination;
 
@@ -37,7 +36,7 @@ public class Producer extends DestAbstract {
    @Option(name = "--message-size", description = "Size of each byteMessage (The producer will use byte message on this case)")
    int messageSize = 0;
 
-   @Option(name = "--text-size", description = "Size of each textNessage (The producer will use text message on this case)")
+   @Option(name = "--text-size", description = "Size of each textMessage (The producer will use text message on this case)")
    int textMessageSize;
 
    @Option(name = "--msgttl", description = "TTL for each message")
@@ -50,17 +49,16 @@ public class Producer extends DestAbstract {
    public Object execute(ActionContext context) throws Exception {
       super.execute(context);
 
-      ActiveMQConnectionFactory factory = new ActiveMQConnectionFactory(brokerURL, user, password);
+      ActiveMQConnectionFactory factory = createConnectionFactory();
 
-      Destination dest = ActiveMQDestination.createDestination(this.destination, ActiveMQDestination.QUEUE_TYPE);
+      Destination dest = ActiveMQDestination.createDestination(this.destination, ActiveMQDestination.TYPE.QUEUE);
       try (Connection connection = factory.createConnection()) {
          ProducerThread[] threadsArray = new ProducerThread[threads];
          for (int i = 0; i < threads; i++) {
             Session session;
             if (txBatchSize > 0) {
                session = connection.createSession(true, Session.SESSION_TRANSACTED);
-            }
-            else {
+            } else {
                session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
             }
             threadsArray[i] = new ProducerThread(session, dest, i);

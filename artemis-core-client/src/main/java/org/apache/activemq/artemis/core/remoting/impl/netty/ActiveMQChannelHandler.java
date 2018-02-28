@@ -37,13 +37,13 @@ public class ActiveMQChannelHandler extends ChannelDuplexHandler {
 
    private final BufferHandler handler;
 
-   private final BaseConnectionLifeCycleListener listener;
+   private final BaseConnectionLifeCycleListener<?> listener;
 
    volatile boolean active;
 
    protected ActiveMQChannelHandler(final ChannelGroup group,
                                     final BufferHandler handler,
-                                    final BaseConnectionLifeCycleListener listener) {
+                                    final BaseConnectionLifeCycleListener<?> listener) {
       this.group = group;
       this.handler = handler;
       this.listener = listener;
@@ -57,7 +57,6 @@ public class ActiveMQChannelHandler extends ChannelDuplexHandler {
 
    @Override
    public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
-      // TODO: Think about the id thingy
       listener.connectionReadyForWrites(channelId(ctx.channel()), ctx.channel().isWritable());
    }
 
@@ -65,7 +64,11 @@ public class ActiveMQChannelHandler extends ChannelDuplexHandler {
    public void channelRead(final ChannelHandlerContext ctx, final Object msg) throws Exception {
       ByteBuf buffer = (ByteBuf) msg;
 
-      handler.bufferReceived(channelId(ctx.channel()), new ChannelBufferWrapper(buffer));
+      try {
+         handler.bufferReceived(channelId(ctx.channel()), new ChannelBufferWrapper(buffer));
+      } finally {
+         buffer.release();
+      }
    }
 
    @Override
@@ -97,14 +100,13 @@ public class ActiveMQChannelHandler extends ChannelDuplexHandler {
          try {
             listener.connectionException(channelId(ctx.channel()), me);
             active = false;
-         }
-         catch (Exception ex) {
+         } catch (Exception ex) {
             ActiveMQClientLogger.LOGGER.errorCallingLifeCycleListener(ex);
          }
       }
    }
 
-   protected static int channelId(Channel channel) {
-      return channel.hashCode();
+   protected static Object channelId(Channel channel) {
+      return channel.id();
    }
 }

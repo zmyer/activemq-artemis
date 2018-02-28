@@ -94,8 +94,6 @@ or
 
 ### Data Replication
 
-Support for network-based data replication was added in version 2.3.
-
 When using replication, the live and the backup servers do not share the
 same data directories, all data synchronization is done over the
 network. Therefore all (persistent) data received by the live server
@@ -507,6 +505,12 @@ HA strategy shared store for `master`:
         Note that if false you want failover to occur the you
         can use the the management API as explained at [Management](management.md)</td>
     </tr>
+    <tr>
+        <td>`wait-for-activation`</td>
+        <td>If set to true then server startup will wait until it is activated.
+        If set to false then server startup will be done in the background.
+        Default is true.</td>
+    </tr>
     </tbody>
 </table>
 
@@ -836,11 +840,9 @@ Since the client does not learn about the full topology until after the
 first connection is made there is a window where it does not know about
 the backup. If a failure happens at this point the client can only try
 reconnecting to the original live server. To configure how many attempts
-the client will make you can set the property `initialConnectAttempts`
-on the `ClientSessionFactoryImpl` or `ActiveMQConnectionFactory` or
-`initial-connect-attempts` in xml. The default for this is `0`, that is
-try only once. Once the number of attempts has been made an exception
-will be thrown.
+the client will make you can set the URL parameter `initialConnectAttempts`.
+The default for this is `0`, that is try only once. Once the number of
+attempts has been made an exception will be thrown.
 
 For examples of automatic failover with transacted and non-transacted
 JMS sessions, please see [the examples](examples.md) chapter.

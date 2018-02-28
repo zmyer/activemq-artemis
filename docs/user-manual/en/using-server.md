@@ -88,17 +88,42 @@ For a full list of updated properties always use:
          artemis create - creates a new broker instance
 
  SYNOPSIS
-         artemis create [--allow-anonymous]
-                 [--cluster-password <clusterPassword>] [--cluster-user <clusterUser>]
-                 [--clustered] [--data <data>] [--encoding <encoding>] [--force]
-                 [--home <home>] [--host <host>] [--java-options <javaOptions>]
-                 [--password <password>] [--port-offset <portOffset>] [--replicated]
-                 [--role <role>] [--shared-store] [--silent] [--user <user>] [--]
-                 <directory>
+        artemis create [--addresses <addresses>] [--aio] [--allow-anonymous]
+                [--autocreate] [--blocking] [--cluster-password <clusterPassword>]
+                [--cluster-user <clusterUser>] [--clustered] [--data <data>]
+                [--default-port <defaultPort>] [--disable-persistence]
+                [--encoding <encoding>] [--etc <etc>] [--failover-on-shutdown] [--force]
+                [--global-max-size <globalMaxSize>] [--home <home>] [--host <host>]
+                [--http-host <httpHost>] [--http-port <httpPort>]
+                [--java-options <javaOptions>] [--mapped] [--max-hops <maxHops>]
+                [--message-load-balancing <messageLoadBalancing>] [--name <name>]
+                [--nio] [--no-amqp-acceptor] [--no-autocreate] [--no-autotune]
+                [--no-fsync] [--no-hornetq-acceptor] [--no-mqtt-acceptor]
+                [--no-stomp-acceptor] [--no-web] [--paging] [--password <password>]
+                [--ping <ping>] [--port-offset <portOffset>] [--queues <queues>]
+                [--replicated] [--require-login] [--role <role>] [--shared-store]
+                [--silent] [--slave] [--ssl-key <sslKey>]
+                [--ssl-key-password <sslKeyPassword>] [--ssl-trust <sslTrust>]
+                [--ssl-trust-password <sslTrustPassword>] [--use-client-auth]
+                [--user <user>] [--verbose] [--] <directory>
 
  OPTIONS
+         --addresses <addresses>
+             Comma separated list of addresses
+
+         --aio
+             Sets the journal as asyncio.
+
          --allow-anonymous
-             Enables anonymous configuration on security (Default: input)
+             Enables anonymous configuration on security, opposite of
+             --require-login (Default: input)
+
+         --autocreate
+             Auto create addresses. (default: true)
+
+         --blocking
+             Block producers when address becomes full, opposite of --paging
+             (Default: false)
 
          --cluster-password <clusterPassword>
              The cluster password to use for clustering. (Default: input)
@@ -110,14 +135,33 @@ For a full list of updated properties always use:
              Enable clustering
 
          --data <data>
-             Directory where ActiveMQ Data is used. Path are relative to
-             artemis.instance/bin
+             Directory where ActiveMQ data are stored. Paths can be absolute or
+             relative to artemis.instance directory ('data' by default)
+
+         --default-port <defaultPort>
+             The port number to use for the main 'artemis' acceptor (Default:
+             61616)
+
+         --disable-persistence
+             Disable message persistence to the journal
 
          --encoding <encoding>
              The encoding that text files should use
 
+         --etc <etc>
+             Directory where ActiveMQ configuration is located. Paths can be absolute or
+             relative to artemis.instance directory ('etc' by default)
+
+         --failover-on-shutdown
+             Valid for shared store: will shutdown trigger a failover? (Default:
+             false)
+
          --force
              Overwrite configuration at destination directory
+
+         --global-max-size <globalMaxSize>
+             Maximum amount of memory which message data may consume (Default:
+             Undefined, half of the system's memory)
 
          --home <home>
              Directory where ActiveMQ Artemis is installed
@@ -125,17 +169,80 @@ For a full list of updated properties always use:
          --host <host>
              The host name of the broker (Default: 0.0.0.0 or input if clustered)
 
+         --http-host <httpHost>
+             The host name to use for embedded web server (Default: localhost)
+
+         --http-port <httpPort>
+             The port number to use for embedded web server (Default: 8161)
+
          --java-options <javaOptions>
              Extra java options to be passed to the profile
+
+         --mapped
+             Sets the journal as mapped.
+
+         --max-hops <maxHops>
+             Number of hops on the cluster configuration
+
+         --message-load-balancing <messageLoadBalancing>
+             Load balancing policy on cluster. [ON_DEMAND (default) | STRICT |
+             OFF]
+
+         --name <name>
+             The name of the broker (Default: same as host)
+
+         --nio
+             Sets the journal as nio.
+
+         --no-amqp-acceptor
+             Disable the AMQP specific acceptor.
+
+         --no-autocreate
+             Disable Auto create addresses.
+
+         --no-autotune
+             Disable auto tuning on the journal.
+
+         --no-fsync
+             Disable usage of fdatasync (channel.force(false) from java nio) on
+             the journal
+
+         --no-hornetq-acceptor
+             Disable the HornetQ specific acceptor.
+
+         --no-mqtt-acceptor
+             Disable the MQTT specific acceptor.
+
+         --no-stomp-acceptor
+             Disable the STOMP specific acceptor.
+
+         --no-web
+             Remove the web-server definition from bootstrap.xml
+
+         --paging
+             Page messages to disk when address becomes full, opposite of
+             --blocking (Default: true)
 
          --password <password>
              The user's password (Default: input)
 
+         --ping <ping>
+             A comma separated string to be passed on to the broker config as
+             network-check-list. The broker will shutdown when all these
+             addresses are unreachable.
+
          --port-offset <portOffset>
-             Off sets the default ports
+             Off sets the ports of every acceptor
+
+         --queues <queues>
+             Comma separated list of queues.
 
          --replicated
              Enable broker replication
+
+         --require-login
+             This will configure security to require user / password, opposite of
+             --allow-anonymous
 
          --role <role>
              The name for the role created (Default: amq)
@@ -147,8 +254,29 @@ For a full list of updated properties always use:
              It will disable all the inputs, and it would make a best guess for
              any required input
 
+         --slave
+             Valid for shared store or replication: this is a slave server?
+
+         --ssl-key <sslKey>
+             The key store path for embedded web server
+
+         --ssl-key-password <sslKeyPassword>
+             The key store password
+
+         --ssl-trust <sslTrust>
+             The trust store path in case of client authentication
+
+         --ssl-trust-password <sslTrustPassword>
+             The trust store password
+
+         --use-client-auth
+             If the embedded server requires client authentication
+
          --user <user>
              The username (Default: input)
+
+         --verbose
+             Adds more information on the execution
 
          --
              This option can be used to separate command-line options from the
@@ -156,7 +284,8 @@ For a full list of updated properties always use:
              command-line options
 
          <directory>
-             The instance directory to hold the broker's configuration and data
+             The instance directory to hold the broker's configuration and data.
+             Path must be writable.
 ```
 
 
@@ -166,7 +295,7 @@ Some of these properties may be mandatory in certain configurations and the syst
     ./artemis create /usr/server
     Creating ActiveMQ Artemis instance at: /user/server
 
-    --user: is mandatory with this configuration:
+    --user: is a mandatory property!
     Please provide the default username:
     admin
 
@@ -174,9 +303,12 @@ Some of these properties may be mandatory in certain configurations and the syst
     Please provide the default password:
 
 
-    --allow-anonymous: is mandatory with this configuration:
-    Allow anonymous access? (Y/N):
+    --allow-anonymous | --require-login: is a mandatory property!
+    Allow anonymous access?, valid values are Y,N,True,False
     y
+
+    Auto tuning journal ...
+    done! Your system can make 0.34 writes per millisecond, your journal-buffer-timeout will be 2956000
 
     You can now start the broker by executing:
 
@@ -332,3 +464,13 @@ Just use the following command to install it:
 
 
 The create process should give you a hint of the available commands available for the artemis-service.exe
+
+## Adding Runtime Dependencies
+
+Runtime dependencies like diverts, transformers, broker plugins, JDBC drivers,
+password decoders, etc. must be accessible by the broker at runtime. Package 
+the dependency in a jar, and put it on the broker's classpath. This can be done
+by placing the jar file in the `lib` directory of the broker distribution itself 
+or in the `lib` directory of the broker instance. A broker instance does not have
+a `lib` directory by default so it may need to be created.  It should be on the 
+"top" level with the `bin`, `data`, `log`, etc. directories.

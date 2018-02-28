@@ -19,8 +19,17 @@ package org.apache.activemq.artemis.core.server;
 import java.util.List;
 
 import org.apache.activemq.artemis.core.filter.Filter;
+import org.apache.activemq.artemis.spi.core.protocol.SessionCallback;
 
 public interface Consumer {
+
+   /**
+    *
+    * @see SessionCallback#supportsDirectDelivery()
+    */
+   default boolean supportsDirectDelivery() {
+      return true;
+   }
 
    /**
     * There was a change on semantic during 2.3 here.<br>
@@ -68,4 +77,7 @@ public interface Consumer {
     * disconnect the consumer
     */
    void disconnect();
+
+   /** an unique sequential ID for this consumer */
+   long sequentialID();
 }

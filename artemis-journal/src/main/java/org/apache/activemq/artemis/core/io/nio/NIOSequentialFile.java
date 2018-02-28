@@ -22,20 +22,20 @@ import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
 import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
 import java.util.concurrent.Executor;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
 
 import org.apache.activemq.artemis.api.core.ActiveMQException;
 import org.apache.activemq.artemis.api.core.ActiveMQExceptionType;
 import org.apache.activemq.artemis.api.core.ActiveMQIOErrorException;
 import org.apache.activemq.artemis.api.core.ActiveMQIllegalStateException;
-import org.apache.activemq.artemis.core.io.IOCallback;
 import org.apache.activemq.artemis.core.io.AbstractSequentialFile;
+import org.apache.activemq.artemis.core.io.IOCallback;
 import org.apache.activemq.artemis.core.io.SequentialFile;
 import org.apache.activemq.artemis.core.io.SequentialFileFactory;
 import org.apache.activemq.artemis.journal.ActiveMQJournalBundle;
 import org.apache.activemq.artemis.journal.ActiveMQJournalLogger;
+import org.apache.activemq.artemis.utils.Env;
 
 public final class NIOSequentialFile extends AbstractSequentialFile {
 
@@ -43,14 +43,7 @@ public final class NIOSequentialFile extends AbstractSequentialFile {
 
    private RandomAccessFile rfile;
 
-   /**
-    * The write semaphore here is only used when writing asynchronously
-    */
-   private Semaphore maxIOSemaphore;
-
-   private final int defaultMaxIO;
-
-   private int maxIO;
+   private final int maxIO;
 
    public NIOSequentialFile(final SequentialFileFactory factory,
                             final File directory,
@@ -58,12 +51,7 @@ public final class NIOSequentialFile extends AbstractSequentialFile {
                             final int maxIO,
                             final Executor writerExecutor) {
       super(directory, file, factory, writerExecutor);
-      defaultMaxIO = maxIO;
-   }
-
-   @Override
-   public int getAlignment() {
-      return 1;
+      this.maxIO = maxIO;
    }
 
    @Override
@@ -82,7 +70,7 @@ public final class NIOSequentialFile extends AbstractSequentialFile {
     */
    @Override
    public synchronized void open() throws IOException {
-      open(defaultMaxIO, true);
+      open(maxIO, true);
    }
 
    @Override
@@ -93,48 +81,47 @@ public final class NIOSequentialFile extends AbstractSequentialFile {
          channel = rfile.getChannel();
 
          fileSize = channel.size();
-      }
-      catch (ClosedChannelException e) {
+      } catch (ClosedChannelException e) {
          throw e;
-      }
-      catch (IOException e) {
+      } catch (IOException e) {
          factory.onIOError(new ActiveMQIOErrorException(e.getMessage(), e), e.getMessage(), this);
          throw e;
-      }
-
-      if (writerExecutor != null && useExecutor) {
-         maxIOSemaphore = new Semaphore(maxIO);
-         this.maxIO = maxIO;
       }
    }
 
    @Override
    public void fill(final int size) throws IOException {
-      ByteBuffer bb = ByteBuffer.allocate(size);
-
-      bb.limit(size);
-      bb.position(0);
-
       try {
-         channel.position(0);
-         channel.write(bb);
-         channel.force(false);
-         channel.position(0);
-      }
-      catch (ClosedChannelException e) {
+         //uses the most common OS page size to match the Page Cache entry size and reduce JVM memory footprint
+         final int zeroPageCapacity = Env.osPageSize();
+         final ByteBuffer zeroPage = this.factory.newBuffer(zeroPageCapacity);
+         try {
+            int bytesToWrite = size;
+            long writePosition = 0;
+            while (bytesToWrite > 0) {
+               zeroPage.clear();
+               final int zeroPageLimit = Math.min(bytesToWrite, zeroPageCapacity);
+               zeroPage.limit(zeroPageLimit);
+               //use the cheaper pwrite instead of fseek + fwrite
+               final int writtenBytes = channel.write(zeroPage, writePosition);
+               bytesToWrite -= writtenBytes;
+               writePosition += writtenBytes;
+            }
+            if (factory.isDatasync()) {
+               channel.force(true);
+            }
+            //set the position to 0 to match the fill contract
+            channel.position(0);
+            fileSize = channel.size();
+         } finally {
+            //return it to the factory
+            this.factory.releaseBuffer(zeroPage);
+         }
+      } catch (ClosedChannelException e) {
          throw e;
-      }
-      catch (IOException e) {
+      } catch (IOException e) {
          factory.onIOError(new ActiveMQIOErrorException(e.getMessage(), e), e.getMessage(), this);
          throw e;
-      }
-
-      fileSize = channel.size();
-   }
-
-   public synchronized void waitForClose() throws InterruptedException {
-      while (isOpen()) {
-         wait();
       }
    }
 
@@ -142,13 +129,6 @@ public final class NIOSequentialFile extends AbstractSequentialFile {
    public synchronized void close() throws IOException, InterruptedException, ActiveMQException {
       super.close();
 
-      if (maxIOSemaphore != null) {
-         while (!maxIOSemaphore.tryAcquire(maxIO, 60, TimeUnit.SECONDS)) {
-            ActiveMQJournalLogger.LOGGER.errorClosingFile(getFileName());
-         }
-      }
-
-      maxIOSemaphore = null;
       try {
          if (channel != null) {
             channel.close();
@@ -157,11 +137,9 @@ public final class NIOSequentialFile extends AbstractSequentialFile {
          if (rfile != null) {
             rfile.close();
          }
-      }
-      catch (ClosedChannelException e) {
+      } catch (ClosedChannelException e) {
          throw e;
-      }
-      catch (IOException e) {
+      } catch (IOException e) {
          factory.onIOError(new ActiveMQIOErrorException(e.getMessage(), e), e.getMessage(), this);
          throw e;
       }
@@ -193,11 +171,9 @@ public final class NIOSequentialFile extends AbstractSequentialFile {
          bytes.flip();
 
          return bytesRead;
-      }
-      catch (ClosedChannelException e) {
+      } catch (ClosedChannelException e) {
          throw e;
-      }
-      catch (IOException e) {
+      } catch (IOException e) {
          if (callback != null) {
             callback.onError(ActiveMQExceptionType.IO_ERROR.getCode(), e.getLocalizedMessage());
          }
@@ -210,14 +186,12 @@ public final class NIOSequentialFile extends AbstractSequentialFile {
 
    @Override
    public void sync() throws IOException {
-      if (channel != null) {
+      if (factory.isDatasync() && channel != null) {
          try {
             channel.force(false);
-         }
-         catch (ClosedChannelException e) {
+         } catch (ClosedChannelException e) {
             throw e;
-         }
-         catch (IOException e) {
+         } catch (IOException e) {
             factory.onIOError(new ActiveMQIOErrorException(e.getMessage(), e), e.getMessage(), this);
             throw e;
          }
@@ -232,11 +206,9 @@ public final class NIOSequentialFile extends AbstractSequentialFile {
 
       try {
          return channel.size();
-      }
-      catch (ClosedChannelException e) {
+      } catch (ClosedChannelException e) {
          throw e;
-      }
-      catch (IOException e) {
+      } catch (IOException e) {
          factory.onIOError(new ActiveMQIOErrorException(e.getMessage(), e), e.getMessage(), this);
          throw e;
       }
@@ -247,11 +219,9 @@ public final class NIOSequentialFile extends AbstractSequentialFile {
       try {
          super.position(pos);
          channel.position(pos);
-      }
-      catch (ClosedChannelException e) {
+      } catch (ClosedChannelException e) {
          throw e;
-      }
-      catch (IOException e) {
+      } catch (IOException e) {
          factory.onIOError(new ActiveMQIOErrorException(e.getMessage(), e), e.getMessage(), this);
          throw e;
       }
@@ -264,7 +234,7 @@ public final class NIOSequentialFile extends AbstractSequentialFile {
 
    @Override
    public SequentialFile cloneFile() {
-      return new NIOSequentialFile(factory, directory, getFileName(), maxIO, writerExecutor);
+      return new NIOSequentialFile(factory, directory, getFileName(), maxIO, null);
    }
 
    @Override
@@ -275,8 +245,7 @@ public final class NIOSequentialFile extends AbstractSequentialFile {
 
       try {
          internalWrite(bytes, sync, callback);
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          callback.onError(ActiveMQExceptionType.GENERIC_EXCEPTION.getCode(), e.getMessage());
       }
    }
@@ -284,10 +253,6 @@ public final class NIOSequentialFile extends AbstractSequentialFile {
    @Override
    public void writeDirect(final ByteBuffer bytes, final boolean sync) throws Exception {
       internalWrite(bytes, sync, null);
-   }
-
-   public void writeInternal(final ByteBuffer bytes) throws Exception {
-      internalWrite(bytes, true, null);
    }
 
    @Override
@@ -305,8 +270,7 @@ public final class NIOSequentialFile extends AbstractSequentialFile {
       if (!isOpen()) {
          if (callback != null) {
             callback.onError(ActiveMQExceptionType.IO_ERROR.getCode(), "File not opened");
-         }
-         else {
+         } else {
             throw ActiveMQJournalBundle.BUNDLE.fileNotOpened();
          }
          return;
@@ -314,47 +278,12 @@ public final class NIOSequentialFile extends AbstractSequentialFile {
 
       position.addAndGet(bytes.limit());
 
-      if (maxIOSemaphore == null || callback == null) {
-         // if maxIOSemaphore == null, that means we are not using executors and the writes are synchronous
-         try {
-            doInternalWrite(bytes, sync, callback);
-         }
-         catch (ClosedChannelException e) {
-            throw e;
-         }
-         catch (IOException e) {
-            factory.onIOError(new ActiveMQIOErrorException(e.getMessage(), e), e.getMessage(), this);
-         }
-      }
-      else {
-         // This is a flow control on writing, just like maxAIO on libaio
-         maxIOSemaphore.acquire();
-
-         writerExecutor.execute(new Runnable() {
-            @Override
-            public void run() {
-               try {
-                  try {
-                     doInternalWrite(bytes, sync, callback);
-                  }
-                  catch (ClosedChannelException e) {
-                     ActiveMQJournalLogger.LOGGER.errorSubmittingWrite(e);
-                  }
-                  catch (IOException e) {
-                     ActiveMQJournalLogger.LOGGER.errorSubmittingWrite(e);
-                     factory.onIOError(new ActiveMQIOErrorException(e.getMessage(), e), e.getMessage(), NIOSequentialFile.this);
-                     callback.onError(ActiveMQExceptionType.IO_ERROR.getCode(), e.getMessage());
-                  }
-                  catch (Throwable e) {
-                     ActiveMQJournalLogger.LOGGER.errorSubmittingWrite(e);
-                     callback.onError(ActiveMQExceptionType.IO_ERROR.getCode(), e.getMessage());
-                  }
-               }
-               finally {
-                  maxIOSemaphore.release();
-               }
-            }
-         });
+      try {
+         doInternalWrite(bytes, sync, callback);
+      } catch (ClosedChannelException e) {
+         throw e;
+      } catch (IOException e) {
+         factory.onIOError(new ActiveMQIOErrorException(e.getMessage(), e), e.getMessage(), this);
       }
    }
 
@@ -368,14 +297,51 @@ public final class NIOSequentialFile extends AbstractSequentialFile {
    private void doInternalWrite(final ByteBuffer bytes,
                                 final boolean sync,
                                 final IOCallback callback) throws IOException {
-      channel.write(bytes);
+      try {
+         channel.write(bytes);
 
-      if (sync) {
-         sync();
+         if (sync) {
+            sync();
+         }
+
+         if (callback != null) {
+            callback.done();
+         }
+      } finally {
+         //release it to recycle the write buffer if big enough
+         this.factory.releaseBuffer(bytes);
       }
+   }
 
-      if (callback != null) {
-         callback.done();
+   @Override
+   public void copyTo(SequentialFile dstFile) throws IOException {
+      if (ActiveMQJournalLogger.LOGGER.isDebugEnabled()) {
+         ActiveMQJournalLogger.LOGGER.debug("Copying " + this + " as " + dstFile);
+      }
+      if (isOpen()) {
+         throw new IllegalStateException("File opened!");
+      }
+      if (dstFile.isOpen()) {
+         throw new IllegalArgumentException("dstFile must be closed too");
+      }
+      try (RandomAccessFile src = new RandomAccessFile(getFile(), "rw");
+           FileChannel srcChannel = src.getChannel();
+           FileLock srcLock = srcChannel.lock()) {
+         final long readableBytes = srcChannel.size();
+         if (readableBytes > 0) {
+            try (RandomAccessFile dst = new RandomAccessFile(dstFile.getJavaFile(), "rw");
+                 FileChannel dstChannel = dst.getChannel();
+                 FileLock dstLock = dstChannel.lock()) {
+               final long oldLength = dst.length();
+               final long newLength = oldLength + readableBytes;
+               dst.setLength(newLength);
+               final long transferred = dstChannel.transferFrom(srcChannel, oldLength, readableBytes);
+               if (transferred != readableBytes) {
+                  dstChannel.truncate(oldLength);
+                  throw new IOException("copied less then expected");
+               }
+            }
+         }
       }
    }
 }

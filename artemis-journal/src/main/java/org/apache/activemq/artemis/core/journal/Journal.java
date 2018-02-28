@@ -21,6 +21,7 @@ import java.util.Map;
 
 import org.apache.activemq.artemis.core.io.SequentialFileFactory;
 import org.apache.activemq.artemis.core.journal.impl.JournalFile;
+import org.apache.activemq.artemis.core.persistence.Persister;
 import org.apache.activemq.artemis.core.server.ActiveMQComponent;
 
 /**
@@ -60,23 +61,49 @@ public interface Journal extends ActiveMQComponent {
 
    void appendAddRecord(long id, byte recordType, byte[] record, boolean sync) throws Exception;
 
-   void appendAddRecord(long id, byte recordType, EncodingSupport record, boolean sync) throws Exception;
+   default void appendAddRecord(long id, byte recordType, EncodingSupport record, boolean sync) throws Exception {
+      appendAddRecord(id, recordType, EncoderPersister.getInstance(), record, sync);
+   }
+
+   void appendAddRecord(long id, byte recordType, Persister persister, Object record, boolean sync) throws Exception;
 
    void appendAddRecord(long id,
                         byte recordType,
-                        EncodingSupport record,
+                        Persister persister,
+                        Object record,
                         boolean sync,
                         IOCompletion completionCallback) throws Exception;
 
+   default void appendAddRecord(long id,
+                        byte recordType,
+                        EncodingSupport record,
+                        boolean sync,
+                        IOCompletion completionCallback) throws Exception {
+      appendAddRecord(id, recordType, EncoderPersister.getInstance(), record, sync, completionCallback);
+   }
+
    void appendUpdateRecord(long id, byte recordType, byte[] record, boolean sync) throws Exception;
 
-   void appendUpdateRecord(long id, byte recordType, EncodingSupport record, boolean sync) throws Exception;
+   default void appendUpdateRecord(long id, byte recordType, EncodingSupport record, boolean sync) throws Exception {
+      appendUpdateRecord(id, recordType, EncoderPersister.getInstance(), record, sync);
+   }
 
-   void appendUpdateRecord(long id,
+   void appendUpdateRecord(long id, byte recordType, Persister persister, Object record, boolean sync) throws Exception;
+
+   default void appendUpdateRecord(long id,
                            byte recordType,
                            EncodingSupport record,
                            boolean sync,
-                           IOCompletion completionCallback) throws Exception;
+                           IOCompletion completionCallback) throws Exception {
+      appendUpdateRecord(id, recordType, EncoderPersister.getInstance(), record, sync, completionCallback);
+   }
+
+   void appendUpdateRecord(long id,
+                           byte recordType,
+                           Persister persister,
+                           Object record,
+                           boolean sync,
+                           IOCompletion callback) throws Exception;
 
    void appendDeleteRecord(long id, boolean sync) throws Exception;
 
@@ -86,11 +113,23 @@ public interface Journal extends ActiveMQComponent {
 
    void appendAddRecordTransactional(long txID, long id, byte recordType, byte[] record) throws Exception;
 
-   void appendAddRecordTransactional(long txID, long id, byte recordType, EncodingSupport record) throws Exception;
+   default void appendAddRecordTransactional(long txID, long id, byte recordType, EncodingSupport record) throws Exception {
+      appendAddRecordTransactional(txID, id, recordType, EncoderPersister.getInstance(), record);
+   }
+
+   void appendAddRecordTransactional(long txID,
+                                     long id,
+                                     byte recordType,
+                                     Persister persister,
+                                     Object record) throws Exception;
 
    void appendUpdateRecordTransactional(long txID, long id, byte recordType, byte[] record) throws Exception;
 
-   void appendUpdateRecordTransactional(long txID, long id, byte recordType, EncodingSupport record) throws Exception;
+   default void appendUpdateRecordTransactional(long txID, long id, byte recordType, EncodingSupport record) throws Exception {
+      appendUpdateRecordTransactional(txID, id, recordType, EncoderPersister.getInstance(), record);
+   }
+
+   void appendUpdateRecordTransactional(long txID, long id, byte recordType, Persister persister, Object record) throws Exception;
 
    void appendDeleteRecordTransactional(long txID, long id, byte[] record) throws Exception;
 
@@ -155,17 +194,22 @@ public interface Journal extends ActiveMQComponent {
 
    void lineUpContext(IOCompletion callback);
 
+   default JournalLoadInformation load(List<RecordInfo> committedRecords,
+                               List<PreparedTransactionInfo> preparedTransactions,
+                               TransactionFailureCallback transactionFailure) throws Exception {
+      return load(committedRecords, preparedTransactions, transactionFailure, true);
+   }
+
    JournalLoadInformation load(List<RecordInfo> committedRecords,
                                List<PreparedTransactionInfo> preparedTransactions,
-                               TransactionFailureCallback transactionFailure) throws Exception;
+                               TransactionFailureCallback transactionFailure,
+                               boolean fixBadTx) throws Exception;
 
    int getAlignment() throws Exception;
 
    int getNumberOfRecords();
 
    int getUserVersion();
-
-   void perfBlast(int pages);
 
    void runDirectJournalBlast() throws Exception;
 
@@ -237,4 +281,15 @@ public interface Journal extends ActiveMQComponent {
     * only be called once the synchronization of the backup and live servers is completed.
     */
    void replicationSyncFinished();
+
+   /**
+    * It will make sure there are no more pending operations on the Executors.
+    * */
+   void flush() throws Exception;
+
+   /**
+    * The max size record that can be stored in the journal
+    * @return
+    */
+   long getMaxRecordSize();
 }

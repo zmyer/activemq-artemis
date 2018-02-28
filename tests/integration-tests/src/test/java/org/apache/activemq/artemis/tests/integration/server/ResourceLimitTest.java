@@ -29,6 +29,7 @@ import org.apache.activemq.artemis.core.config.Configuration;
 import org.apache.activemq.artemis.core.security.Role;
 import org.apache.activemq.artemis.core.server.ActiveMQServer;
 import org.apache.activemq.artemis.core.server.ActiveMQServers;
+import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.core.settings.impl.ResourceLimitSettings;
 import org.apache.activemq.artemis.spi.core.security.ActiveMQJAASSecurityManager;
 import org.apache.activemq.artemis.tests.util.ActiveMQTestBase;
@@ -51,10 +52,7 @@ public class ResourceLimitTest extends ActiveMQTestBase {
       resourceLimitSettings.setMaxConnections(1);
       resourceLimitSettings.setMaxQueues(1);
 
-      Configuration configuration = createBasicConfig()
-         .addAcceptorConfiguration(new TransportConfiguration(INVM_ACCEPTOR_FACTORY))
-         .addResourceLimitSettings(resourceLimitSettings)
-         .setSecurityEnabled(true);
+      Configuration configuration = createBasicConfig().addAcceptorConfiguration(new TransportConfiguration(INVM_ACCEPTOR_FACTORY)).addResourceLimitSettings(resourceLimitSettings).setSecurityEnabled(true);
 
       server = addServer(ActiveMQServers.newActiveMQServer(configuration, false));
       server.start();
@@ -62,7 +60,7 @@ public class ResourceLimitTest extends ActiveMQTestBase {
       ActiveMQJAASSecurityManager securityManager = (ActiveMQJAASSecurityManager) server.getSecurityManager();
       securityManager.getConfiguration().addUser("myUser", "password");
       securityManager.getConfiguration().addRole("myUser", "arole");
-      Role role = new Role("arole", false, false, false, false, true, true, false, true);
+      Role role = new Role("arole", false, false, false, false, true, true, false, true, false, true);
       Set<Role> roles = new HashSet<>();
       roles.add(role);
       server.getSecurityRepository().addMatch("#", roles);
@@ -78,8 +76,7 @@ public class ResourceLimitTest extends ActiveMQTestBase {
          ClientSessionFactory extraClientSessionFactory = locator.createSessionFactory();
          ClientSession extraClientSession = extraClientSessionFactory.createSession("myUser", "password", false, true, true, false, 0);
          fail("creating a session factory here should fail");
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          assertTrue(e instanceof ActiveMQSessionCreationException);
       }
 
@@ -91,8 +88,7 @@ public class ResourceLimitTest extends ActiveMQTestBase {
          ClientSessionFactory extraClientSessionFactory = locator.createSessionFactory();
          ClientSession extraClientSession = extraClientSessionFactory.createSession("myUser", "password", false, true, true, false, 0);
          fail("creating a session factory here should fail");
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          assertTrue(e instanceof ActiveMQSessionCreationException);
       }
    }
@@ -102,30 +98,27 @@ public class ResourceLimitTest extends ActiveMQTestBase {
       ServerLocator locator = addServerLocator(createNonHALocator(false));
       ClientSessionFactory clientSessionFactory = locator.createSessionFactory();
       ClientSession clientSession = clientSessionFactory.createSession("myUser", "password", false, true, true, false, 0);
-      clientSession.createQueue("address", "queue");
+      clientSession.createQueue("address", RoutingType.ANYCAST, "queue");
 
       try {
-         clientSession.createQueue("address", "anotherQueue");
-      }
-      catch (Exception e) {
+         clientSession.createQueue("address", RoutingType.ANYCAST, "anotherQueue");
+      } catch (Exception e) {
          assertTrue(e instanceof ActiveMQSessionCreationException);
       }
 
       clientSession.deleteQueue("queue");
 
-      clientSession.createQueue("address", "queue");
+      clientSession.createQueue("address", RoutingType.ANYCAST, "queue");
 
       try {
-         clientSession.createQueue("address", "anotherQueue");
-      }
-      catch (Exception e) {
+         clientSession.createQueue("address", RoutingType.ANYCAST, "anotherQueue");
+      } catch (Exception e) {
          assertTrue(e instanceof ActiveMQSessionCreationException);
       }
 
       try {
          clientSession.createSharedQueue(SimpleString.toSimpleString("address"), SimpleString.toSimpleString("anotherQueue"), false);
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
          assertTrue(e instanceof ActiveMQSessionCreationException);
       }
    }
